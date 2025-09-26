@@ -23,6 +23,7 @@
 #include <peripherals/analog_meter/AnalogMeter.hpp>
 #include <peripherals/environment/Ds18B20SoilSensor.hpp>
 #include <peripherals/environment/Environment.hpp>
+#include <peripherals/environment/Fdc1004SoilMoistureSensor.hpp>
 #include <peripherals/environment/KalmanFilterSoilSensor.hpp>
 #include <peripherals/environment/NtcTemperatureSensor.hpp>
 #include <peripherals/environment/Sht2xSensor.hpp>
@@ -78,6 +79,7 @@ public:
         peripheralManager->registerFactory(environment::makeFactoryForNtcTemperatureSensor());
 
         peripheralManager->registerFactory(environment::makeFactoryForSoilMoisture());
+        peripheralManager->registerFactory(environment::makeFactoryForFdc1004SoilMoisture());
         peripheralManager->registerFactory(environment::makeFactoryForDs18b20());
         peripheralManager->registerFactory(environment::makeFactoryForKalmanSoilMoisture());
 

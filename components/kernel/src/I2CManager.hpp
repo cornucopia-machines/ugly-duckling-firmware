@@ -82,36 +82,39 @@ public:
         i2c_dev_delete_mutex(&device);
     }
 
-    esp_err_t probeRead() {
+    esp_err_t probeRead() const {
         return i2c_dev_check_present(&device);
     }
 
-    uint8_t readRegByte(uint8_t reg) {
+    uint8_t readRegByte(uint8_t reg) const {
         uint8_t value;
-        ESP_ERROR_THROW(i2c_dev_read(&device, &reg, 1, &value, 1));
+        ESP_ERROR_THROW(i2c_dev_read_reg(&device, reg, &value, 1));
         return value;
     }
 
-    uint16_t readRegWord(uint8_t reg) {
+    uint16_t readRegWord(uint8_t reg) const {
         uint16_t value;
-        ESP_ERROR_THROW(i2c_dev_read(&device, &reg, 1, &value, 2));
-        return value;
+        ESP_ERROR_THROW(i2c_dev_read_reg(&device, reg, &value, 2));
+        // I2C uses big-endian
+        return __builtin_bswap16(value);
     }
 
-    void readReg(uint8_t reg, uint8_t* buffer, size_t length) {
-        ESP_ERROR_THROW(i2c_dev_read(&device, &reg, 1, buffer, length));
+    void readReg(uint8_t reg, uint8_t* buffer, size_t length) const {
+        ESP_ERROR_THROW(i2c_dev_read_reg(&device, reg, buffer, length));
     }
 
-    void writeRegByte(uint8_t reg, uint8_t value) {
-        ESP_ERROR_THROW(i2c_dev_write(&device, &reg, 1, &value, 1));
+    void writeRegByte(uint8_t reg, uint8_t value) const {
+        ESP_ERROR_THROW(i2c_dev_write_reg(&device, reg, &value, 1));
     }
 
-    void writeRegWord(uint8_t reg, uint16_t value) {
-        ESP_ERROR_THROW(i2c_dev_write(&device, &reg, 1, &value, 2));
+    void writeRegWord(uint8_t reg, uint16_t value) const {
+        // I2C uses big-endian
+        auto valueBE = __builtin_bswap16(value);
+        ESP_ERROR_THROW(i2c_dev_write_reg(&device, reg, &valueBE, 2));
     }
 
-    void writeReg(uint8_t reg, uint8_t* buffer, size_t length) {
-        ESP_ERROR_THROW(i2c_dev_write(&device, &reg, 1, buffer, length));
+    void writeReg(uint8_t reg, uint8_t* buffer, size_t length) const {
+        ESP_ERROR_THROW(i2c_dev_write_reg(&device, reg, buffer, length));
     }
 
     std::shared_ptr<I2CBus> getBus() const {
