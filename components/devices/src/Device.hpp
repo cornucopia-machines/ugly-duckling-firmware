@@ -422,8 +422,8 @@ static void startDevice() {
                 LOGI("WiFi reset triggered after %lld ms", duration.count());
                 performFactoryReset(statusLed, false);
             } else if (duration >= 200ms) {
-                LOGD("Publishing telemetry after %lld ms", duration.count());
-                telemetryPublisher->requestTelemetryPublishing();
+                LOGD("Intentionally crashing after %lld ms", duration.count());
+                esp_system_abort("Intentional crash; testing core dump handling");
             }
         } });
 
