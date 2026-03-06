@@ -1,0 +1,12 @@
+#
+# Flash
+#
+CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
+
+#
+# LP core coprocessor (used for pulse counting during light sleep)
+#
+CONFIG_ULP_COPROC_ENABLED=y
+CONFIG_ULP_COPROC_TYPE_LP_CORE=y
+# Reserve 4 KB of LP RAM for LP core firmware + shared variables
+CONFIG_ULP_COPROC_RESERVE_MEM=4096

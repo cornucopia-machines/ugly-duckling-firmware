@@ -97,14 +97,6 @@ CONFIG_ESP_COREDUMP_LOGS=n
 # # We don't need Ethernet
 # CONFIG_ETH_USE_SPI_ETHERNET=n
 
-#
-# ULP coprocessor (used for pulse counting during light sleep)
-#
-CONFIG_ULP_COPROC_ENABLED=y
-CONFIG_ULP_COPROC_TYPE_RISCV=y
-# Reserve 4 KB of RTC slow memory for ULP firmware + shared variables
-CONFIG_ULP_COPROC_RESERVE_MEM=4096
-
 # Handle undelivered MQTT messages
 CONFIG_MQTT_REPORT_DELETED_MESSAGES=y
 

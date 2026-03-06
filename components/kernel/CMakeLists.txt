@@ -36,9 +36,9 @@ idf_component_register(
         # ArduinoJSON
         bblanchon__arduinojson
         kode_bq27220
-
-    WHOLE_ARCHIVE
 )
+
+set_target_properties(${COMPONENT_LIB} PROPERTIES WHOLE_ARCHIVE 1)
 
 set(ulp_app_name ulp_pulse_counter)
 set(ulp_sources "${CMAKE_CURRENT_LIST_DIR}/ulp/pulse_counter.c")
