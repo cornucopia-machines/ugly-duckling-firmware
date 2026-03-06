@@ -36,25 +36,28 @@
 // Shared with main CPU (written before coprocessor start, read at any time)
 // ---------------------------------------------------------------------------
 
+// The ULP build system exports these to the main CPU by prepending "ulp_" to each name,
+// producing ulp_channel_count, ulp_gpio_num[], ulp_debounce_us[], ulp_pulse_count[].
+
 /** Number of active channels. Written by main CPU before coprocessor starts. */
-volatile uint32_t ulp_channel_count = 0;
+volatile uint32_t channel_count = 0;
 
 /** RTC/LP GPIO number for each channel. Written by main CPU before coprocessor starts. */
-volatile uint32_t ulp_gpio_num[MAX_CHANNELS];
+volatile uint32_t gpio_num[MAX_CHANNELS];
 
 /**
  * Debounce window in microseconds.
- * Converted to coprocessor CPU cycles (using CYCLES_PER_US) during coprocessor init.
+ * Converted to coprocessor CPU cycles (using DEBOUNCE_CYCLES) during coprocessor init.
  * Written by main CPU before coprocessor starts.
  */
-volatile uint32_t ulp_debounce_us[MAX_CHANNELS];
+volatile uint32_t debounce_us[MAX_CHANNELS];
 
 /**
  * Monotonically increasing pulse count per channel.
  * Only ever incremented by the coprocessor. Read by main CPU to compute deltas.
  * Zeroed by main CPU before coprocessor starts to ensure clean state after reboot.
  */
-volatile uint32_t ulp_pulse_count[MAX_CHANNELS];
+volatile uint32_t pulse_count[MAX_CHANNELS];
 
 // ---------------------------------------------------------------------------
 // Internal coprocessor state (not accessed by main CPU)
@@ -73,24 +76,24 @@ static inline uint32_t get_ccount(void) {
 }
 
 int main(void) {
-    uint32_t n = ulp_channel_count;
+    uint32_t n = channel_count;
 
     for (uint32_t i = 0; i < n; i++) {
-        uint32_t gpio = ulp_gpio_num[i];
+        uint32_t gpio = gpio_num[i];
         // GPIO was initialised as RTC/LP input with pull-down by the main CPU.
         // Re-assert direction here in case of any state change before coprocessor start.
         gpio_input_enable(gpio);
         last_level[i] = gpio_get_level(gpio);
         last_edge_cycle[i] = get_ccount();
         // Convert debounce time from microseconds to coprocessor CPU cycles.
-        debounce_cycles[i] = DEBOUNCE_CYCLES(ulp_debounce_us[i]);
+        debounce_cycles[i] = DEBOUNCE_CYCLES(debounce_us[i]);
     }
 
     while (1) {
         uint32_t now = get_ccount();
 
         for (uint32_t i = 0; i < n; i++) {
-            uint32_t level = gpio_get_level(ulp_gpio_num[i]);
+            uint32_t level = gpio_get_level(gpio_num[i]);
 
             if (level != last_level[i]) {
                 last_level[i] = level;
@@ -99,7 +102,7 @@ int main(void) {
                     // Falling edge detected. Apply debounce.
                     uint32_t elapsed = now - last_edge_cycle[i];
                     if (elapsed >= debounce_cycles[i]) {
-                        ulp_pulse_count[i]++;
+                        pulse_count[i]++;
                         last_edge_cycle[i] = now;
                     }
                 }

@@ -15,6 +15,7 @@
 #include <ArduinoJson.h>
 
 #include <EspException.hpp>
+#include <Log.hpp>
 
 namespace farmhub::kernel {
 
@@ -71,8 +72,6 @@ protected:
 
     static std::map<std::string, PinPtr> BY_NAME;
 };
-
-std::map<std::string, PinPtr> Pin::BY_NAME;
 
 /**
  * @brief An internal GPIO pin of the MCU. These pins can do analog reads as well, and can expose the GPIO number.
@@ -282,9 +281,6 @@ private:
     adc_channel_t channel {};
 };
 
-std::map<std::string, InternalPinPtr> InternalPin::INTERNAL_BY_NAME;
-std::map<gpio_num_t, InternalPinPtr> InternalPin::INTERNAL_BY_GPIO;
-std::vector<adc_oneshot_unit_handle_t> AnalogPin::ANALOG_UNITS { 2 };
 
 }    // namespace farmhub::kernel
 
