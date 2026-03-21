@@ -4,6 +4,9 @@
 
 *.log
 
+# Clangd cache
+.cache/
+
 # File system image
 /config/
 /config-unused/
