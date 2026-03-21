@@ -5,6 +5,7 @@
 #include <cstdlib>
 
 #include <esp_log.h>
+#include <esp_system.h>
 
 #include <Device.hpp>
 #include <MacAddress.hpp>
