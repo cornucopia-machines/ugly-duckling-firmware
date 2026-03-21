@@ -63,7 +63,7 @@ void dispatchToDevice() {
     }
 
     ESP_LOGE("device", "Unrecognized MAC address %s — cannot select device variant", getMacAddress().c_str());
-    abort();
+    esp_system_abort("Unrecognized MAC address");
 }
 }    // namespace
 #endif
@@ -78,7 +78,7 @@ void dispatchToDevice() {
     }
 
     ESP_LOGE("device", "Unrecognized MAC address %s — cannot select device variant", getMacAddress().c_str());
-    abort();
+    esp_system_abort("Unrecognized MAC address");
 }
 }    // namespace
 #endif
