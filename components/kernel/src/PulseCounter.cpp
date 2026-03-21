@@ -7,6 +7,9 @@
 #include <stdexcept>
 #include <utility>
 
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+
 #include <driver/gpio.h>
 #include <esp_err.h>
 #include <esp_pm.h>
@@ -18,6 +21,7 @@
 #include <driver/rtc_io.h>
 #if defined(CONFIG_ULP_COPROC_TYPE_RISCV)
 #include <ulp_riscv.h>
+#include <soc/rtc_cntl_reg.h>
 #elif defined(CONFIG_ULP_COPROC_TYPE_LP_CORE)
 #include <ulp_lp_core.h>
 #endif
@@ -60,19 +64,27 @@ namespace farmhub::kernel {
 class UlpPulseCounter final : public PulseCounter {
 public:
     uint32_t getCount() const override {
+        if (!ulp_running) {
+            // ULP not running, so the count won't be changing
+            return lastSeen;
+        }
         uint32_t current = ulp_pulse_count[channelIndex];
         uint32_t delta = current - lastSeen;
-        LOGTV(PULSE, "Counted %" PRIu32 " ULP pulses on pin %s",
-            delta, pin->getName().c_str());
+        LOGTV(PULSE, "Counted %" PRIu32 " ULP pulses on pin %s, ULP running: %d",
+            delta, pin->getName().c_str(), ulp_running);
         return delta;
     }
 
     uint32_t reset() override {
+        if (!ulp_running) {
+            // ULP not running, so the count won't be changing
+            return lastSeen;
+        }
         uint32_t current = ulp_pulse_count[channelIndex];
         uint32_t delta = current - lastSeen;
         lastSeen = current;
-        LOGTV(PULSE, "Counted %" PRIu32 " ULP pulses and cleared on pin %s",
-            delta, pin->getName().c_str());
+        LOGTV(PULSE, "Counted %" PRIu32 " ULP pulses and cleared on pin %s, ULP running: %d",
+            delta, pin->getName().c_str(), ulp_running);
         return delta;
     }
 
@@ -117,20 +129,39 @@ void PulseCounterManager::start() {
     }
     ulpStarted = true;
 
-    ulp_channel_count = ulpNextChannel;
-
     size_t size = ulp_pulse_counter_bin_end - ulp_pulse_counter_bin_start;
+    LOGTD(PULSE, "Loading ULP binary (%zu bytes)", size);
 #if defined(CONFIG_ULP_COPROC_TYPE_RISCV)
     ESP_ERROR_THROW(ulp_riscv_load_binary(ulp_pulse_counter_bin_start, size));
-    ESP_ERROR_THROW(ulp_riscv_run());
+    // Restart the ULP every 1000 µs after each ulp_riscv_halt() call.
+    // Must be set before ulp_riscv_run(); matches ULP_TIMER_PERIOD_US in pulse_counter.c.
+    ESP_ERROR_THROW(ulp_set_wakeup_period(0, 1000));
 #elif defined(CONFIG_ULP_COPROC_TYPE_LP_CORE)
     ESP_ERROR_THROW(ulp_lp_core_load_binary(ulp_pulse_counter_bin_start, size));
+#endif
+
+    ulp_channel_count = ulpNextChannel;
+    for (uint32_t i = 0; i < ulpNextChannel; i++) {
+        ulp_gpio_num[i]    = ulpChannelConfigs[i].gpioNum;
+        ulp_debounce_us[i] = ulpChannelConfigs[i].debounceUs;
+        ulp_pulse_count[i] = 0;
+    }
+
+#if defined(CONFIG_ULP_COPROC_TYPE_RISCV)
+    ESP_ERROR_THROW(ulp_riscv_run());
+    // Give the ULP a moment to run and halt; then check COCPU_CTRL to see if it actually executed.
+    vTaskDelay(pdMS_TO_TICKS(100));
+    uint32_t cocpuCtrl = REG_READ(RTC_CNTL_COCPU_CTRL_REG);
+    LOGTD(PULSE, "COCPU_CTRL=0x%" PRIx32 " DONE=%d running=%" PRIu32,
+        cocpuCtrl,
+        static_cast<int>((cocpuCtrl & RTC_CNTL_COCPU_DONE_M) != 0),
+        ulp_running);
+#elif defined(CONFIG_ULP_COPROC_TYPE_LP_CORE)
     ulp_lp_core_cfg_t cfg = {
         .wakeup_source = ULP_LP_CORE_WAKEUP_SOURCE_HP_CPU,
     };
     ESP_ERROR_THROW(ulp_lp_core_run(&cfg));
 #endif
-
     LOGTD(PULSE, "ULP pulse counter started with %" PRIu32 " channel(s)", ulpNextChannel);
 #endif
 }
@@ -153,9 +184,12 @@ std::shared_ptr<PulseCounter> PulseCounterManager::createUlp(const PulseCounterC
     uint32_t index = ulpNextChannel++;
 
     auto debounceUs = static_cast<uint32_t>(config.debounceTime.count());
-    ulp_gpio_num[index]    = static_cast<uint32_t>(gpio);
-    ulp_debounce_us[index] = debounceUs;
-    ulp_pulse_count[index] = 0;
+    // Buffer config — written to ULP shared memory after load_binary() in start(),
+    // because load_binary() resets all of RTC slow memory to initial values.
+    ulpChannelConfigs[index] = {
+        .gpioNum = static_cast<uint32_t>(gpio),
+        .debounceUs = debounceUs,
+    };
 
     LOGTD(PULSE, "Registered ULP pulse counter on pin %s (channel %" PRIu32 ", debounce %" PRIu32 " us)",
         config.pin->getName().c_str(), index, debounceUs);

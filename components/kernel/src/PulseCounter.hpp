@@ -206,6 +206,12 @@ private:
     bool ulpStarted = false;
     uint32_t ulpNextChannel = 0;
 
+    struct UlpChannelConfig {
+        uint32_t gpioNum;
+        uint32_t debounceUs;
+    };
+    UlpChannelConfig ulpChannelConfigs[ULP_MAX_CHANNELS] = {};
+
     std::shared_ptr<PulseCounter> createUlp(const PulseCounterConfig& config);
 #endif    // CONFIG_ULP_COPROC_ENABLED
 
