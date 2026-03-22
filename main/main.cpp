@@ -46,7 +46,7 @@ void dispatchToDevice() {
     }
 
     // MK6 Rev3
-    if (macAddressHasPrefix(0x98, 0xA3, 0x16, 0x1A)) {
+    if (macAddressHasPrefix(0xF0, 0x9E, 0x9E, 0x55)) {
         startDevice<UglyDucklingMk6Rev3>();
         return;
     }
