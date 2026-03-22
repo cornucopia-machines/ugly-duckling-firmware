@@ -93,8 +93,6 @@ extern "C" void app_main() {
     startDevice<UglyDucklingMk8Rev2>();
 #elif defined(MK8_REV1)
     startDevice<UglyDucklingMk8Rev1>();
-#elif defined(MKX)
-    startDevice<UglyDucklingMkX>();
 #else
     startDeviceBasedOnMac();
 #endif
