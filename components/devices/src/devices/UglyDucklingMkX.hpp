@@ -22,9 +22,7 @@ public:
 class UglyDucklingMkX : public DeviceDefinition<MkXSettings> {
 public:
     UglyDucklingMkX()
-        : DeviceDefinition(
-            InternalPin::registerPin("STATUS", GPIO_NUM_1),
-            InternalPin::registerPin("BOOT", GPIO_NUM_9)) {
+        : DeviceDefinition({ .model = "mkx", .revision = 1, .boot = GPIO_NUM_9, .status = GPIO_NUM_1 }) {
     }
 
 protected:

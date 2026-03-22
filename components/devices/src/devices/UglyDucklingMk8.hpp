@@ -33,10 +33,7 @@ public:
 class UglyDucklingMk8Base : public DeviceDefinition<Mk8Settings> {
 public:
     explicit UglyDucklingMk8Base(int revision)
-        : DeviceDefinition(
-            InternalPin::registerPin("STATUS", GPIO_NUM_45),
-            InternalPin::registerPin("BOOT", GPIO_NUM_0),
-            revision) {
+        : DeviceDefinition({ .model = "mk8", .revision = revision, .boot = GPIO_NUM_0, .status = GPIO_NUM_45 }) {
         // Switch off strapping pin
         // TODO: Add a LED driver instead
         STATUS2->pinMode(Pin::Mode::Output);

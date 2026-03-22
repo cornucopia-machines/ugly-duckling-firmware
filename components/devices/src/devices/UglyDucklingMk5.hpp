@@ -27,10 +27,7 @@ public:
 class UglyDucklingMk5 : public DeviceDefinition<Mk5Settings> {
 public:
     UglyDucklingMk5()
-        : DeviceDefinition(
-            InternalPin::registerPin("STATUS", GPIO_NUM_2),
-            InternalPin::registerPin("BOOT", GPIO_NUM_0),
-            2) {
+        : DeviceDefinition({ .model = "mk5", .revision = 2, .boot = GPIO_NUM_0, .status = GPIO_NUM_2 }) {
     }
 
 protected:

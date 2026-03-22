@@ -3,7 +3,9 @@
 #include <concepts>
 #include <list>
 #include <memory>
-#include <utility>
+#include <string>
+
+#include <Pin.hpp>
 
 #include <ArduinoJson.h>
 
@@ -51,13 +53,21 @@ namespace farmhub::devices {
 
 #define DEFINE_PIN(...) UD_GET_MACRO(__VA_ARGS__, UD_DEFINE_PIN3, UD_DEFINE_PIN2)(__VA_ARGS__)
 
+struct DeviceConfig {
+    std::string model;
+    int revision;
+    gpio_num_t boot;
+    gpio_num_t status;
+};
+
 template <std::derived_from<DeviceSettings> TDeviceSettings>
 class DeviceDefinition {
 public:
-    DeviceDefinition(PinPtr statusPin, InternalPinPtr bootPin, int revision = 1)
-        : statusPin(std::move(statusPin))
-        , bootPin(std::move(bootPin))
-        , revision(revision) {
+    explicit DeviceDefinition(DeviceConfig config)
+        : model(std::move(config.model))
+        , revision(config.revision)
+        , bootPin(InternalPin::registerPin("BOOT", config.boot))
+        , statusPin(InternalPin::registerPin("STATUS", config.status)) {
     }
 
     virtual ~DeviceDefinition() = default;
@@ -103,9 +113,10 @@ public:
         return nullptr;
     }
 
-    const PinPtr statusPin;
-    const InternalPinPtr bootPin;
+    const std::string model;
     const int revision;
+    const InternalPinPtr bootPin;
+    const InternalPinPtr statusPin;
 
 protected:
     virtual void registerDeviceSpecificPeripheralFactories(const std::shared_ptr<PeripheralManager>& peripheralManager, const PeripheralServices& services, const std::shared_ptr<TDeviceSettings>& settings) {

@@ -31,10 +31,7 @@ public:
 class UglyDucklingMk6Base : public DeviceDefinition<Mk6Settings> {
 public:
     explicit UglyDucklingMk6Base(int revision)
-        : DeviceDefinition(
-            InternalPin::registerPin("STATUS", GPIO_NUM_2),
-            InternalPin::registerPin("BOOT", GPIO_NUM_0),
-            revision) {
+        : DeviceDefinition({ .model = "mk6", .revision = revision, .boot = GPIO_NUM_0, .status = GPIO_NUM_2 }) {
         // Switch off strapping pin
         // TODO(lptr): Add a LED driver instead
         LEDA_RED->pinMode(Pin::Mode::Output);

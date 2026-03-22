@@ -537,7 +537,7 @@ static void startDevice() {
     mqttRoot->publish(
         "init",
         [settings, networkConfig, initState, peripheralsInitJson, functionsInitJson, powerManager, deviceDefinition](JsonObject& json) {
-            json["model"] = settings->model.get();
+            json["model"] = deviceDefinition->model;
             json["revision"] = deviceDefinition->revision;
             json["instance"] = networkConfig->instance.get();
             json["mac"] = getMacAddress();
