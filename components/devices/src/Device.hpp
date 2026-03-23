@@ -1,5 +1,9 @@
 #pragma once
 
+#ifndef UD_PLATFORM
+#error "UD_PLATFORM is not defined — set it via DeviceCommon.cmake"
+#endif
+
 // Helper macros to convert macro to string
 #define STRINGIFY(x) #x
 #define TOSTRING(x) STRINGIFY(x)
@@ -538,11 +542,7 @@ static void startDevice() {
         [settings, networkConfig, initState, peripheralsInitJson, functionsInitJson, powerManager, deviceDefinition](JsonObject& json) {
             json["model"] = deviceDefinition->model;
             json["revision"] = deviceDefinition->revision;
-#if defined(CONFIG_IDF_TARGET_ESP32S3)
-            json["platform"] = "esp32s3";
-#elif defined(CONFIG_IDF_TARGET_ESP32C6)
-            json["platform"] = "esp32c6";
-#endif
+            json["platform"] = UD_PLATFORM;
             json["instance"] = networkConfig->instance.get();
             json["mac"] = getMacAddress();
             auto device = json["settings"].to<JsonObject>();

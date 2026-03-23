@@ -17,16 +17,20 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - environment: esp32s3-release
+          - environment: spinach-release
+            platform: spinach
             target: esp32s3
             ud_debug: 0
-          - environment: esp32s3-debug
+          - environment: spinach-debug
+            platform: spinach
             target: esp32s3
             ud_debug: 1
-          - environment: esp32c6-release
+          - environment: carrot-release
+            platform: carrot
             target: esp32c6
             ud_debug: 0
-          - environment: esp32c6-debug
+          - environment: carrot-debug
+            platform: carrot
             target: esp32c6
             ud_debug: 1
 

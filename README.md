@@ -12,6 +12,32 @@ Devices are identified by a location (denoting the installation site) and a uniq
 Devices can have multiple peripherals, such as sensors, actuators, and displays.
 Each peripheral is identified by its type and a name that is unique within the device.
 
+## Hardware platforms and models
+
+Ugly Duckling hardware is organised into two layers:
+
+### Platforms
+
+A **platform** is an abstract hardware environment that a firmware binary is built for.
+Platforms are named independently of the underlying chip, so multiple distinct platforms can target the same chip — a new board family on the same silicon gets its own platform name rather than sharing a binary with an unrelated board.
+Each platform maps to one ESP-IDF target (and therefore one compiled binary), but the name expresses the role of the hardware rather than its silicon.
+
+There are currently two platforms:
+
+| Platform    | Chip     | Models                                     |
+| ----------- | -------- | ------------------------------------------ |
+| **Spinach** | ESP32-S3 | MK5, MK6 (rev1–rev3), MK7, MK8 (rev1–rev2) |
+| **Carrot**  | ESP32-C6 | MKX                                        |
+
+Each platform produces a single firmware binary that covers all models on that platform.
+The correct model is selected at runtime based on the device's MAC address.
+
+### Models
+
+A **model** identifies a specific PCB hardware revision.
+Within a model, **revisions** track incremental hardware changes (e.g. different motor nSLEEP pin routing on MK6 rev1/rev2 vs rev3).
+Both the model and revision are reported in boot logs and in the MQTT `init` message (`model`, `revision`, and `platform` fields), so operators can identify exactly what is running without inspecting the MAC address.
+
 ## Network configuration
 
 Network configuration is stored under the `network-config` key in NVS (the `config` namespace).
@@ -20,14 +46,14 @@ It includes both the device identity and the MQTT broker settings:
 ```jsonc
 {
   "instance": "chicken-door", // the instance name, defaults to MAC address
-  "location": "my-farm",      // the name of the location the device is installed at
-  "host": "...",              // broker host name
-  "port": 1883,               // broker port, defaults to 1883
+  "location": "my-farm", // the name of the location the device is installed at
+  "host": "...", // broker host name
+  "port": 1883, // broker port, defaults to 1883
   "clientId": "chicken-door", // client ID, defaults to "ugly-duckling-$instance" if omitted
-  "queueSize": 16,            // MQTT message queue size, defaults to 16
+  "queueSize": 16, // MQTT message queue size, defaults to 16
   "ntp": {
-    "host": "pool.ntp.org"    // NTP server host name, optional
-  }
+    "host": "pool.ntp.org", // NTP server host name, optional
+  },
 }
 ```
 
@@ -40,18 +66,18 @@ To enable this, the following parameters must be present in the network config:
   "serverCert": [
     "-----BEGIN CERTIFICATE-----",
     "...",
-    "-----END CERTIFICATE-----"
+    "-----END CERTIFICATE-----",
   ],
   "clientCert": [
     "-----BEGIN CERTIFICATE-----",
     "...",
-    "-----END CERTIFICATE-----"
+    "-----END CERTIFICATE-----",
   ],
   "clientKey": [
     "-----BEGIN RSA PRIVATE KEY-----",
     "...",
-    "-----END RSA PRIVATE KEY-----"
-  ]
+    "-----END RSA PRIVATE KEY-----",
+  ],
 }
 ```
 
@@ -64,21 +90,21 @@ This describes the device peripherals and functions.
 
 ```jsonc
 {
-    "peripherals": [
-      {
-        "type": "chicken-door",
-        "name": "main-coop-door",
-        "params": {
-          "motor": "b",
-          "openPin": "B2",
-          "closedPin": "B1",
-          "lightSensor": {
-            "scl": "C2",
-            "sda": "C3"
-          }
-        }
-      }
-    ]
+  "peripherals": [
+    {
+      "type": "chicken-door",
+      "name": "main-coop-door",
+      "params": {
+        "motor": "b",
+        "openPin": "B2",
+        "closedPin": "B1",
+        "lightSensor": {
+          "scl": "C2",
+          "sda": "C3",
+        },
+      },
+    },
+  ],
 }
 ```
 
@@ -122,7 +148,7 @@ Sending a message to `$DEVICE_ROOT/commands/update` with a URL to a firmware bin
 
 ```jsonc
 {
-    "url": "https://github.com/.../.../releases/download/.../firmware.bin"
+  "url": "https://github.com/.../.../releases/download/.../firmware.bin",
 }
 ```
 
@@ -147,19 +173,29 @@ Actually needs [ESP-IDF-Clang Docker image](https://github.com/lptr/esp-idf-clan
 
 ### Building
 
-There are two ways to build the firmware:
-
-1. Using the ESP-IDF build system. In this case you have to set the right target and pass `UD_GEN` to the build system manually.
-2. Pass the ugly duckling generation via `UD_GEN` to `idf.py`. Make sure the `IDF_TARGET` environment variable matches the target required by the specified generation.
+Set `IDF_TARGET` to the chip for your platform (`esp32s3` for Spinach, `esp32c6` for Carrot) and build:
 
 ```bash
-idf.py build -DUD_GEN=MK7
+idf.py build
 ```
 
-You can also set `UD_DEBUG` as an environment variable or add `-DUD_DEBUG=1` to the build command to enable debug output.
+The resulting binary uses runtime MAC detection to select the correct model at boot.
+No `UD_GEN` is required for normal builds.
+
+You can add `-DUD_DEBUG=1` to enable debug output:
 
 ```bash
-idf.py build -DUD_GEN=MK7 -DUD_DEBUG=1
+idf.py build -DUD_DEBUG=1
+```
+
+#### Pinning to a specific model (development / simulation)
+
+Pass `UD_GEN` to skip MAC detection and force a specific model.
+Make sure `IDF_TARGET` matches the platform the model belongs to:
+
+```bash
+idf.py build -DUD_GEN=MK7       # Spinach (ESP32-S3)
+idf.py build -DUD_GEN=MKX       # Carrot (ESP32-C6)
 ```
 
 ### Flashing

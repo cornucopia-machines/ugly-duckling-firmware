@@ -247,14 +247,18 @@ mkX-release   (esp32c6, UD_GEN=MKX)
 **After (4 entries):**
 
 ```text
-esp32s3-release   (esp32s3, no UD_GEN — runtime detection)
-esp32s3-debug     (esp32s3, no UD_GEN, UD_DEBUG=1)
-esp32c6-release   (esp32c6, no UD_GEN — runtime detection)
-esp32c6-debug     (esp32c6, no UD_GEN, UD_DEBUG=1)
+spinach-release   (esp32s3, no UD_GEN — runtime detection)
+spinach-debug     (esp32s3, no UD_GEN, UD_DEBUG=1)
+carrot-release    (esp32c6, no UD_GEN — runtime detection)
+carrot-debug      (esp32c6, no UD_GEN, UD_DEBUG=1)
 ```
 
+Platform names (`spinach` for ESP32-S3, `carrot` for ESP32-C6) are symbolic and
+decouple artifact naming from chip identifiers, allowing multiple boards on the same
+chip family to share a platform name in the future.
+
 Artifact filenames change from e.g. `ugly-duckling-mk6-release.bin` to
-`ugly-duckling-esp32s3-release.bin`.
+`ugly-duckling-spinach-release.bin`.
 
 The `DeviceCommon.cmake` `UD_GEN` validation is relaxed: when `UD_GEN` is unset,
 the IDF target is used directly without a fatal error.
@@ -263,12 +267,12 @@ the IDF target is used directly without a fatal error.
 
 All S3 generations (`sdkconfig.mk5.defaults` through `sdkconfig.mk8.defaults`) are
 identical — all set `CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y`. For C6 generations we use 8MB.
-Replace the five per-generation files with two target files:
+Replace the five per-generation files with two platform files:
 
-- `sdkconfig.esp32s3.defaults` — `CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y`
-- `sdkconfig.esp32c6.defaults` — `CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y`
+- `sdkconfig.spinach.defaults` — `CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y`
+- `sdkconfig.carrot.defaults` — `CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y`
 
-`DeviceCommon.cmake` is updated to load `sdkconfig.{target}.defaults` instead of
+`DeviceCommon.cmake` is updated to load `sdkconfig.{platform}.defaults` instead of
 `sdkconfig.{ud_gen_lower}.defaults`.
 
 ### Step 8 — Report Hardware Revision at Runtime
