@@ -268,7 +268,7 @@ jobs:
             --base-url "${{ vars.R2_PUBLIC_URL }}" \
             --branch "${{ github.ref_name }}" \
             --commit-sha "${{ github.sha }}" \
-            --keep-snapshot "0.32.11-11-g8552f75:Used in testing crash reports"
+            --keep-snapshot "0.32.13-23-gb599b6e:Used in testing crash reports"
         env:
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
