@@ -95,10 +95,21 @@ private:
         json["cause-description"] = resolveCauseDescription(excCause);
         json["tcb"] = "0x" + toHexString(summary.exc_tcb);
         json["pc"] = "0x" + toHexString(summary.exc_pc);
+
 #if __XTENSA__
+        json["arch"] = "xtensa";
         // TODO Add more fields for Xtensa
 #else
-        // TODO Add more fields for RISC-V
+        json["arch"] = "riscv";
+        json["mstatus"] = "0x" + toHexString(summary.ex_info.mstatus);
+        json["mtvec"] = "0x" + toHexString(summary.ex_info.mtvec);
+        json["mtval"] = "0x" + toHexString(summary.ex_info.mtval);
+        json["ra"] = "0x" + toHexString(summary.ex_info.ra);
+        json["sp"] = "0x" + toHexString(summary.ex_info.sp);
+        auto excAJson = json["exc_a"].to<JsonArray>();
+        for (int i = 0; i < 8; i++) {
+            excAJson.add("0x" + toHexString(summary.ex_info.exc_a[i]));
+        }
 #endif
 
         static constexpr size_t PANIC_REASON_SIZE = 256;
