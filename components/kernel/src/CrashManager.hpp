@@ -65,9 +65,6 @@ private:
             case ESP_ERR_NOT_FOUND:
                 LOGTV(CRASH, "No core dump found");
                 return CoreDumpStatus::NoDump;
-            case ESP_ERR_INVALID_SIZE:
-                LOGTD(CRASH, "Invalid core dump size, likely no core dump saved");
-                return CoreDumpStatus::NoDump;
             case ESP_ERR_INVALID_CRC:
                 LOGTE(CRASH, "Invalid core dump CRC, likely corrupted");
                 return CoreDumpStatus::DumpInvalid;

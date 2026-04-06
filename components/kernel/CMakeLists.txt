@@ -10,17 +10,20 @@ idf_component_register(
         esp_app_format
         esp_driver_gpio
         esp_driver_i2c
+        esp_driver_ledc
+        esp_driver_pcnt
         esp_event
         esp_http_client
         esp_https_ota
         esp_netif
+        esp_pm
         esp_timer
         esp_wifi
         espcoredump
         mbedtls
         mqtt
+        network_provisioning
         nvs_flash
-        wifi_provisioning
 
         # ESP-IDF-lib components
         bh1750
@@ -31,7 +34,9 @@ idf_component_register(
         si7021
         tsl2591
 
+        # BQ27220 fuel gauge
+        espressif__bq27220
+
         # ArduinoJSON
         bblanchon__arduinojson
-        kode_bq27220
 )

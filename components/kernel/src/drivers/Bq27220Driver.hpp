@@ -14,6 +14,49 @@ using namespace farmhub::kernel;
 
 namespace farmhub::kernel::drivers {
 
+// Default Gauging Parameter
+static const parameter_cedv_t default_cedv = {
+    .full_charge_cap = 2000,
+    .design_cap = 2000,
+    .reserve_cap = 0,
+    .near_full = 1800,
+    .self_discharge_rate = 20,
+    .EDV0 = 3490,
+    .EDV1 = 3511,
+    .EDV2 = 3535,
+    .EMF = 3670,
+    .C0 = 115,
+    .R0 = 968,
+    .T0 = 4547,
+    .R1 = 4764,
+    .TC = 11,
+    .C1 = 0,
+    .DOD0 = 4147,
+    .DOD10 = 4002,
+    .DOD20 = 3969,
+    .DOD30 = 3938,
+    .DOD40 = 3880,
+    .DOD50 = 3824,
+    .DOD60 = 3794,
+    .DOD70 = 3753,
+    .DOD80 = 3677,
+    .DOD90 = 3574,
+    .DOD100 = 3490,
+};
+
+// Default Gauging Config
+static const gauging_config_t default_config = {
+    .CCT = 1,
+    .CSYNC = 0,
+    .EDV_CMP = 0,
+    .SC = 1,
+    .FIXED_EDV0 = 0,
+    .FCC_LIM = 1,
+    .FC_FOR_VDQ = 1,
+    .IGNORE_SD = 1,
+    .SME0 = 0,
+};
+
 class Bq27220Driver final : public BatteryDriver {
 public:
     Bq27220Driver(
@@ -39,63 +82,44 @@ public:
         ESP_ERROR_THROW(device->probeRead());
 
         // Get the bus handle
-        auto* bus = device->getBus()->lookupHandle();
+        auto port = device->getBus()->port;
+        i2c_config_t conf = {
+            .mode = I2C_MODE_MASTER,
+            .master = { .clk_speed = 100000 },
+        };
+        auto* bus = i2c_bus_create(port, &conf);
 
         // Initialize BQ27220 on existing bus
-        // TODO Synchronize speed with other devices on the same bus?
-        ESP_ERROR_THROW(bq27220_init(bus, device->getAddress(), 400000, &gauge));
+        bq27220_config_t bq27220_cfg = {
+            .i2c_bus = bus,
+            .cfg = &default_config,
+            .cedv = &default_cedv,
+        };
+        gauge = bq27220_create(&bq27220_cfg);
     }
 
     int getVoltage() override {
-        int value;
-        ESP_ERROR_THROW(bq27220_read_voltage_mv(gauge, &value));
-        return value;
+        return bq27220_get_voltage(gauge);
     }
 
     double getPercentage() override {
-        int value;
-        ESP_ERROR_THROW(bq27220_read_state_of_charge_percent(gauge, &value));
-        return value;
+        return bq27220_get_state_of_charge(gauge);
     }
 
     std::optional<double> getCurrent() override {
-        int value;
-        ESP_ERROR_THROW(bq27220_read_average_current_ma(gauge, &value));
-        return value;
+        return bq27220_get_current(gauge);
     }
 
     double getTemperature() {
-        float value;
-        ESP_ERROR_THROW(bq27220_read_temperature_c(gauge, &value));
-        return value;
+        return bq27220_get_temperature(gauge) / 10.0 - 273.15;
     }
 
     std::optional<seconds> getTimeToEmpty() override {
-        int value;
-        esp_err_t err = bq27220_read_time_to_empty_min(gauge, &value);
-        switch (err) {
-            case ESP_OK:
-                return minutes(value);
-            case ESP_ERR_INVALID_RESPONSE:
-                // Not discharging
-                return std::nullopt;
-            default:
-                throw EspException(err);
-        }
+        return minutes { bq27220_get_time_to_empty(gauge) };
     }
 
     std::optional<seconds> getTimeToFull() {
-        int value;
-        esp_err_t err = bq27220_read_time_to_full_min(gauge, &value);
-        switch (err) {
-            case ESP_OK:
-                return minutes(value);
-            case ESP_ERR_INVALID_RESPONSE:
-                // Not charging
-                return std::nullopt;
-            default:
-                throw EspException(err);
-        }
+        return minutes { bq27220_get_time_to_full(gauge) };
     }
 
 private:

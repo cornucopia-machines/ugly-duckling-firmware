@@ -167,7 +167,7 @@ The following commands are available to manage NVS entries on the device:
 
 ### Prerequisites
 
-- ESP-IDF v5.5.3 (see [installation instructions](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/get-started/index.html))
+- ESP-IDF v6.0 (see [installation instructions](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/get-started/index.html))
 
 Actually needs [ESP-IDF-Clang Docker image](https://github.com/lptr/esp-idf-clang-docker).
 
