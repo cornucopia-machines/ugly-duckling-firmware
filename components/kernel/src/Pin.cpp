@@ -5,7 +5,7 @@
 #include <vector>
 
 #include <esp_adc/adc_oneshot.h>
-#include <hal/gpio_types.h>
+#include <soc/gpio_num.h>
 
 namespace farmhub::kernel {
 

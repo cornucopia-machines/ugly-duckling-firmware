@@ -7,7 +7,7 @@
 #include <stdexcept>
 #include <utility>
 
-#include <freertos/FreeRTOS.h>
+#include <freertos/projdefs.h>
 #include <freertos/task.h>
 
 #include <driver/gpio.h>
@@ -20,8 +20,10 @@
 #ifdef CONFIG_ULP_COPROC_ENABLED
 #include <driver/rtc_io.h>
 #if defined(CONFIG_ULP_COPROC_TYPE_RISCV)
-#include <ulp_riscv.h>
 #include <soc/rtc_cntl_reg.h>
+#include <soc/soc.h>
+#include <ulp_common.h>
+#include <ulp_riscv.h>
 #elif defined(CONFIG_ULP_COPROC_TYPE_LP_CORE)
 #include <ulp_lp_core.h>
 #endif
@@ -64,7 +66,7 @@ namespace farmhub::kernel {
 class UlpPulseCounter final : public PulseCounter {
 public:
     uint32_t getCount() const override {
-        if (!ulp_running) {
+        if (ulp_running == 0U) {
             // ULP not running, so the count won't be changing
             return lastSeen;
         }
@@ -76,7 +78,7 @@ public:
     }
 
     uint32_t reset() override {
-        if (!ulp_running) {
+        if (ulp_running == 0U) {
             // ULP not running, so the count won't be changing
             return lastSeen;
         }
@@ -129,6 +131,7 @@ void PulseCounterManager::start() {
     }
     ulpStarted = true;
 
+    // NOLINTNEXTLINE(clang-analyzer-security.PointerSub) -- linker-emitted symbols, not a real array
     size_t size = ulp_pulse_counter_bin_end - ulp_pulse_counter_bin_start;
     LOGTD(PULSE, "Loading ULP binary (%zu bytes)", size);
 #if defined(CONFIG_ULP_COPROC_TYPE_RISCV)
@@ -151,6 +154,7 @@ void PulseCounterManager::start() {
     ESP_ERROR_THROW(ulp_riscv_run());
     // Give the ULP a moment to run and halt; then check COCPU_CTRL to see if it actually executed.
     vTaskDelay(pdMS_TO_TICKS(100));
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-cstyle-cast,performance-no-int-to-ptr) -- ESP-IDF REG_READ macro
     uint32_t cocpuCtrl = REG_READ(RTC_CNTL_COCPU_CTRL_REG);
     LOGTD(PULSE, "COCPU_CTRL=0x%" PRIx32 " DONE=%d running=%" PRIu32,
         cocpuCtrl,
