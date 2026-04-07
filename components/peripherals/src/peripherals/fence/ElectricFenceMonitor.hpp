@@ -1,7 +1,7 @@
 #pragma once
 
 #include <chrono>
-#include <list>
+#include <vector>
 
 #include <Concurrent.hpp>
 #include <PulseCounter.hpp>
@@ -84,7 +84,7 @@ private:
         std::shared_ptr<PulseCounter> counter;
     };
 
-    std::list<FencePin> pins;
+    std::vector<FencePin> pins;
 };
 
 inline PeripheralFactory makeFactory() {

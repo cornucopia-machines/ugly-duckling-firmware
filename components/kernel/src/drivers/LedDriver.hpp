@@ -26,7 +26,7 @@ public:
             pin->getName().c_str());
 
         pin->pinMode(Pin::Mode::Output);
-        Task::loop(name, 2048, [this](Task& /*task*/) {
+        Task::loop(name, 2048, [this](Task& _task) {
             handleIteration();
         });
     }

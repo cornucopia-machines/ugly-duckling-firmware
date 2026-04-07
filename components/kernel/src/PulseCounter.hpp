@@ -2,8 +2,8 @@
 
 #include <atomic>
 #include <chrono>
-#include <list>
 #include <memory>
+#include <vector>
 
 #include <driver/gpio.h>
 #include <driver/rtc_io.h>
@@ -146,13 +146,13 @@ public:
 
             // Make sure we handle any state changes when the device wakes up due to a GPIO interrupt
             esp_pm_sleep_cbs_register_config_t sleepCallbackConfig = {
-                .enter_cb = [](int64_t /*timeToSleepInUs*/, void* arg) {
+                .enter_cb = [](int64_t _timeToSleepInUs, void* arg) {
                     auto* self = static_cast<PulseCounterManager*>(arg);
                     for (auto& counter : self->counters) {
                         counter->handleGoingToLightSleep();
                     }
                     return ESP_OK; },
-                .exit_cb = [](int64_t /*timeSleptInUs*/, void* arg) {
+                .exit_cb = [](int64_t _timeSleptInUs, void* arg) {
                     auto* self = static_cast<PulseCounterManager*>(arg);
                     for (auto& counter : self->counters) {
                         counter->handleWakingUpFromLightSleep();
@@ -178,7 +178,7 @@ public:
 
 private:
     bool initialized = false;
-    std::list<std::shared_ptr<PulseCounter>> counters;
+    std::vector<std::shared_ptr<PulseCounter>> counters;
 };
 
 }    // namespace farmhub::kernel

@@ -1,8 +1,8 @@
 #pragma once
 
-#include <list>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include <Pin.hpp>
 
@@ -103,11 +103,11 @@ public:
     /**
      * @brief Returns zero or more JSON configurations for any built-in peripheral of the device.
      */
-    virtual std::list<std::string> getBuiltInPeripherals() {
+    virtual std::vector<std::string> getBuiltInPeripherals() {
         return {};
     }
 
-    virtual std::shared_ptr<BatteryDriver> createBatteryDriver(const std::shared_ptr<I2CManager>& /*i2c*/) {
+    virtual std::shared_ptr<BatteryDriver> createBatteryDriver(const std::shared_ptr<I2CManager>& _i2c) {
         return nullptr;
     }
 
@@ -117,7 +117,7 @@ public:
     const InternalPinPtr statusPin;
 
 protected:
-    virtual void registerDeviceSpecificPeripheralFactories(const std::shared_ptr<PeripheralManager>& peripheralManager, const PeripheralServices& services, const std::shared_ptr<DeviceSettings>& /*settings*/) {
+    virtual void registerDeviceSpecificPeripheralFactories(const std::shared_ptr<PeripheralManager>& peripheralManager, const PeripheralServices& services, const std::shared_ptr<DeviceSettings>& _settings) {
     }
 };
 

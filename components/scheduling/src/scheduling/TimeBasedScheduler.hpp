@@ -2,8 +2,8 @@
 
 #include <algorithm>
 #include <chrono>
-#include <list>
 #include <optional>
+#include <vector>
 
 #include <scheduling/IScheduler.hpp>
 #include <utils/Chrono.hpp>
@@ -24,7 +24,7 @@ public:
         return "time";
     }
 
-    void setSchedules(const std::list<TimeBasedSchedule>& newSchedules) {
+    void setSchedules(const std::vector<TimeBasedSchedule>& newSchedules) {
         LOGTD(SCHEDULING, "TimeBasedScheduler: Setting %zu schedules",
             newSchedules.size());
         schedules = newSchedules;
@@ -41,7 +41,7 @@ public:
      * @param now The current time_point.
      * @return A structure indicating the current target state of the valve, and the time after which the next transition should occur.
      */
-    static ScheduleResult getStateUpdate(const std::list<TimeBasedSchedule>& schedules, time_point<system_clock> now) {
+    static ScheduleResult getStateUpdate(const std::vector<TimeBasedSchedule>& schedules, time_point<system_clock> now) {
         auto targetState = std::optional<TargetState>();
         auto validFor = std::optional<milliseconds>();
 
@@ -105,7 +105,7 @@ public:
     }
 
 private:
-    std::list<TimeBasedSchedule> schedules;
+    std::vector<TimeBasedSchedule> schedules;
 };
 
 }    // namespace farmhub::utils::scheduling

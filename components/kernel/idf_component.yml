@@ -2,7 +2,6 @@
 dependencies:
   idf:
     version: "6.0"
-  espressif/catch2: "3.7.0"
   espressif/mqtt: "^1.0.0"
   espressif/network_provisioning: "^1.2.2"
   espressif/bq27220: "^0.1.0"

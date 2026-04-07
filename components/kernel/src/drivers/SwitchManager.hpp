@@ -61,7 +61,7 @@ public:
     };
 
     SwitchManager() {
-        Task::loop("switch-manager", 3072, [this](Task& /*task*/) {
+        Task::loop("switch-manager", 3072, [this](Task& _task) {
             SwitchStateChange stateChange = switchStateInterrupts.take();
             std::shared_ptr<SwitchState> state;
             {

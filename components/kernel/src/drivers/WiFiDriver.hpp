@@ -1,7 +1,6 @@
 #pragma once
 
 #include <chrono>
-#include <list>
 
 #include <esp_event.h>
 #include <esp_wifi.h>

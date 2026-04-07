@@ -1,5 +1,8 @@
 #pragma once
 
+#include <optional>
+#include <utility>
+
 #include <ArduinoJson.h>
 
 #include "IPeripheral.hpp"
@@ -9,7 +12,6 @@ namespace farmhub::peripherals::api {
 
 enum class DoorState : int8_t {
     Closed = -1,
-    None = 0,
     Open = 1
 };
 
@@ -17,13 +19,17 @@ inline static const char* toString(DoorState state) {
     switch (state) {
         case DoorState::Closed:
             return "Closed";
-        case DoorState::None:
-            return "None";
         case DoorState::Open:
             return "Open";
-        default:
-            return "INVALID";
     }
+    std::unreachable();
+}
+
+inline static const char* toString(std::optional<DoorState> state) {
+    if (!state) {
+        return "Unknown";
+    }
+    return toString(*state);
 }
 
 struct IDoor : virtual IPeripheral {
@@ -39,7 +45,7 @@ struct IDoor : virtual IPeripheral {
     /**
      * @brief Get the current state of the door.
      */
-    virtual DoorState getState() = 0;
+    virtual std::optional<DoorState> getState() = 0;
 };
 
 }    // namespace farmhub::peripherals::api

@@ -43,7 +43,7 @@ public:
             rtcInSync.set();
         }
 
-        Task::run("ntp-sync", 4096, [this, &networkReady](Task& /*task*/) {
+        Task::run("ntp-sync", 4096, [this, &networkReady](Task& _task) {
             while (true) {
                 {
                     networkReady.awaitSet();
