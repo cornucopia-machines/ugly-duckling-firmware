@@ -63,11 +63,10 @@ public:
             name.c_str(),
             valve->getName().c_str());
 
-        auto compositeScheduler = std::make_shared<CompositeScheduler>(std::vector<std::shared_ptr<IScheduler>> {
+        auto compositeScheduler = std::make_shared<CompositeScheduler>(
             overrideScheduler,
             timeBasedScheduler,
-            moistureBasedScheduler,
-        });
+            moistureBasedScheduler);
 
         runScheduledTransitionLoop<IValve, ConfigSpec>(
             name,

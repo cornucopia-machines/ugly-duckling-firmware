@@ -1,5 +1,6 @@
 #pragma once
 
+#include <concepts>
 #include <vector>
 
 #include <utils/Chrono.hpp>
@@ -9,8 +10,9 @@
 namespace farmhub::utils::scheduling {
 
 struct CompositeScheduler : IScheduler {
-    CompositeScheduler(std::vector<std::shared_ptr<IScheduler>> schedulers)
-        : schedulers(std::move(schedulers)) {
+    template <std::derived_from<IScheduler>... Schedulers>
+    CompositeScheduler(std::shared_ptr<Schedulers>... schedulers)
+        : schedulers { std::move(schedulers)... } {
     }
 
     ScheduleResult tick() override {
