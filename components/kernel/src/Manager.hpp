@@ -2,7 +2,6 @@
 
 #include <concepts>
 #include <functional>
-#include <list>
 #include <map>
 #include <memory>
 #include <string>
@@ -191,12 +190,12 @@ public:
         }
 
         const auto& name = settings->name.get();
+        initJson["name"] = name;
+        initJson["type"] = settings->type.get();
+        settings->params.store(initJson);
         try {
             this->createWithFactory(name, settings->type.get(), [&](const FactoryT& factory) {
-                initJson["name"] = name;
-                initJson["type"] = factory.productType;
                 initJson["factory"] = factory.factoryType;
-                settings->params.store(initJson);
                 return make(name, factory, settings->params.get().get());
             });
         } catch (const std::exception& e) {

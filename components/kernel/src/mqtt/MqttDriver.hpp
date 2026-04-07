@@ -2,7 +2,6 @@
 
 #include <atomic>
 #include <chrono>
-#include <list>
 #include <memory>
 #include <optional>
 #include <utility>
@@ -14,6 +13,7 @@
 
 #include <Concurrent.hpp>
 #include <Configuration.hpp>
+#include <Overloaded.hpp>
 #include <State.hpp>
 #include <Task.hpp>
 #include <mqtt/PendingMessages.hpp>
@@ -79,14 +79,14 @@ public:
         , incomingQueue("mqtt-incoming", config->queueSize.get()) {
 
         Task::run("mqtt", 5120, [this](Task& task) {
-            esp_mqtt_client_config_t mqttConfig = {};
+            esp_mqtt_client_config_t mqttConfig = { };
             client = esp_mqtt_client_init(&mqttConfig);
 
             ESP_ERROR_CHECK(esp_mqtt_client_register_event(client, MQTT_EVENT_ANY, handleMqttEventCallback, this));
 
             runEventLoop(task);
         });
-        Task::loop("mqtt:incoming", 4096, [this](Task& /*task*/) {
+        Task::loop("mqtt:incoming", 4096, [this](Task& _task) {
             incomingQueue.take([this](const IncomingMessage& message) {
                 processIncomingMessage(message);
             });
@@ -127,17 +127,17 @@ public:
                     .path = nullptr,
                     .port = port,
                 },
-                .verification {},
+                .verification { },
             },
             .credentials {
                 .username = nullptr,
                 .client_id = clientId.c_str(),
                 .set_null_client_id = false,
-                .authentication {},
+                .authentication { },
             },
             // TODO Configure last will
             .session {
-                .last_will {},
+                .last_will { },
                 .disable_clean_session = false,
                 .keepalive = duration_cast<seconds>(MQTT_SESSION_KEEP_ALIVE).count(),
                 .disable_keepalive = false,
@@ -149,16 +149,16 @@ public:
                 .timeout_ms = duration_cast<milliseconds>(MQTT_NETWORK_TIMEOUT).count(),
                 .refresh_connection_after_ms = 0,    // No need to refresh connection
                 .disable_auto_reconnect = false,
-                .tcp_keep_alive_cfg = {},
+                .tcp_keep_alive_cfg = { },
                 .transport = nullptr,    // Use default transport
                 .if_name = nullptr,      // Use default interface
             },
-            .task {},
+            .task { },
             .buffer {
                 .size = 8192,
                 .out_size = 4096,
             },
-            .outbox {},
+            .outbox { },
         };
 
         LOGTD(MQTT, "server: %s:%" PRIu32 ", client ID is '%s'",
@@ -190,41 +190,41 @@ private:
     static constexpr milliseconds MQTT_QUEUE_TIMEOUT = 1s;
 
     struct PendingSubscription {
-        const int messageId;
-        const steady_clock::time_point subscribedAt;
+        int messageId;
+        steady_clock::time_point subscribedAt;
     };
 
     struct OutgoingMessage {
-        const std::string topic;
-        const std::string payload;
-        const Retention retain;
-        const QoS qos;
+        std::string topic;
+        std::string payload;
+        Retention retain;
+        QoS qos;
         TaskHandle_t waitingTask;
-        const LogPublish log;
+        LogPublish log;
     };
 
     struct IncomingMessage {
-        const std::string topic;
-        const std::string payload;
+        std::string topic;
+        std::string payload;
     };
 
     struct Subscription {
-        const std::string topic;
-        const QoS qos;
-        const SubscriptionHandler handle;
+        std::string topic;
+        QoS qos;
+        SubscriptionHandler handle;
     };
 
     struct MessagePublished {
-        const int messageId;
-        const bool success;
+        int messageId;
+        bool success;
     };
 
     struct Subscribed {
-        const int messageId;
+        int messageId;
     };
 
     struct Connected {
-        const bool sessionPresent;
+        bool sessionPresent;
     };
 
     struct Disconnected { };
@@ -304,7 +304,7 @@ private:
             });
     }
 
-    static std::string joinStrings(const std::list<std::string>& strings) {
+    static std::string joinStrings(const std::vector<std::string>& strings) {
         if (strings.empty()) {
             return "";
         }
@@ -321,7 +321,7 @@ private:
         Connected,
     };
 
-    void runEventLoop(Task& /*task*/) {
+    void runEventLoop(Task& _task) {
         // We are not yet connected
         auto state = MqttState::Disconnected;
         auto connectionStarted = steady_clock::time_point();
@@ -330,14 +330,14 @@ private:
         auto nextSessionShouldBeClean = true;
 
         // List of messages we are waiting on
-        std::list<PendingSubscription> pendingSubscriptions;
+        std::vector<PendingSubscription> pendingSubscriptions;
 
         while (true) {
             auto now = steady_clock::now();
 
             // Cull pending subscriptions
             // TODO Do this with deleted messages?
-            pendingSubscriptions.remove_if([&](const auto& pendingSubscription) {
+            std::erase_if(pendingSubscriptions, [&](const auto& pendingSubscription) {
                 if (now - pendingSubscription.subscribedAt > MQTT_NETWORK_TIMEOUT) {
                     LOGTE(MQTT, "Subscription timed out with message id %d", pendingSubscription.messageId);
                     // Force next session to start clean, so we can re-subscribe
@@ -369,9 +369,8 @@ private:
 
             eventQueue.drainIn(duration_cast<ticks>(MQTT_LOOP_INTERVAL), [&](const auto& event) {
                 std::visit(
-                    [&](auto&& arg) {
-                        using T = std::decay_t<decltype(arg)>;
-                        if constexpr (std::is_same_v<T, Connected>) {
+                    overloaded {
+                        [&](const Connected& arg) {
                             LOGTV(MQTT, "Processing connected event, session present: %d",
                                 arg.sessionPresent);
                             state = MqttState::Connected;
@@ -385,7 +384,8 @@ private:
                                 // because we got a clean session
                                 processSubscriptions(subscriptions, pendingSubscriptions);
                             }
-                        } else if constexpr (std::is_same_v<T, Disconnected>) {
+                        },
+                        [&](const Disconnected&) {
                             LOGTV(MQTT, "Processing disconnected event");
                             state = MqttState::Disconnected;
                             stopClient();
@@ -395,19 +395,23 @@ private:
 
                             // Clear pending subscriptions
                             pendingSubscriptions.clear();
-                        } else if constexpr (std::is_same_v<T, MessagePublished>) {
+                        },
+                        [&](const MessagePublished& arg) {
                             LOGTV(MQTT, "Processing message published: %d", arg.messageId);
                             pendingMessages.handlePublished(arg.messageId, arg.success);
-                        } else if constexpr (std::is_same_v<T, Subscribed>) {
+                        },
+                        [&](const Subscribed& arg) {
                             LOGTV(MQTT, "Processing subscribed event: %d", arg.messageId);
-                            pendingSubscriptions.remove_if([&](const auto& pendingSubscription) {
+                            std::erase_if(pendingSubscriptions, [&](const auto& pendingSubscription) {
                                 return pendingSubscription.messageId == arg.messageId;
                             });
-                        } else if constexpr (std::is_same_v<T, OutgoingMessage>) {
+                        },
+                        [&](const OutgoingMessage& arg) {
                             LOGTV(MQTT, "Processing outgoing message to %s",
                                 arg.topic.c_str());
                             processOutgoingMessage(arg);
-                        } else if constexpr (std::is_same_v<T, Subscription>) {
+                        },
+                        [&](const Subscription& arg) {
                             LOGTV(MQTT, "Processing subscription");
                             subscriptions.push_back(arg);
                             if (state == MqttState::Connected) {
@@ -418,7 +422,7 @@ private:
                                 // clean session to make the subscription.
                                 nextSessionShouldBeClean = true;
                             }
-                        }
+                        },
                     },
                     event);
             });
@@ -430,7 +434,7 @@ private:
 
         stopClient();
 
-        esp_mqtt_client_config_t mqttConfig {};
+        esp_mqtt_client_config_t mqttConfig { };
         configMqttClient(mqttConfig);
         mqttConfig.session.disable_clean_session = !startCleanSession;
         esp_mqtt_set_config(client, &mqttConfig);
@@ -456,7 +460,7 @@ private:
 
     bool clientRunning = false;
 
-    static void handleMqttEventCallback(void* userData, esp_event_base_t /*eventBase*/, int32_t eventId, void* eventData) {
+    static void handleMqttEventCallback(void* userData, esp_event_base_t _eventBase, int32_t eventId, void* eventData) {
         auto* event = static_cast<esp_mqtt_event_handle_t>(eventData);
         // LOGTV(MQTT, "Event dispatched from event loop: base=%s, event_id=%d, client=%p, data=%p, data_len=%d, topic=%p, topic_len=%d, msg_id=%d",
         //     eventBase, event->event_id, event->client, event->data, event->data_len, event->topic, event->topic_len, event->msg_id);
@@ -479,7 +483,7 @@ private:
             case MQTT_EVENT_DISCONNECTED: {
                 LOGTD(MQTT, "Disconnected from MQTT server");
                 ready.clear();
-                eventQueue.offerIn(MQTT_QUEUE_TIMEOUT, Disconnected {});
+                eventQueue.offerIn(MQTT_QUEUE_TIMEOUT, Disconnected { });
                 break;
             }
             case MQTT_EVENT_SUBSCRIBED: {
@@ -571,7 +575,7 @@ private:
         }
     }
 
-    void processSubscriptions(const std::list<Subscription>& subscriptions, std::list<PendingSubscription>& pendingSubscriptions) {
+    void processSubscriptions(const std::vector<Subscription>& subscriptions, std::vector<PendingSubscription>& pendingSubscriptions) {
         std::vector<esp_mqtt_topic_t> topics;
         for (auto it = subscriptions.begin(); it != subscriptions.end();) {
             // Break up subscriptions into batches
@@ -587,7 +591,7 @@ private:
         }
     }
 
-    void processSubscriptionBatch(const std::vector<esp_mqtt_topic_t>& topics, std::list<PendingSubscription>& pendingSubscriptions) {
+    void processSubscriptionBatch(const std::vector<esp_mqtt_topic_t>& topics, std::vector<PendingSubscription>& pendingSubscriptions) {
         int ret = esp_mqtt_client_subscribe_multiple(client, topics.data(), static_cast<int>(topics.size()));
 
         if (ret < 0) {
@@ -622,7 +626,7 @@ private:
 #endif
         for (const auto& subscription : subscriptions) {
             if (topicMatches(subscription.topic.c_str(), topic.c_str())) {
-                Task::run("mqtt:incoming-handler", 4096, [topic, payload, subscription](Task& /*task*/) {
+                Task::run("mqtt:incoming-handler", 4096, [topic, payload, subscription](Task& _task) {
                     JsonDocument json;
                     deserializeJson(json, payload);
                     subscription.handle(topic, json.as<JsonObject>());
@@ -701,13 +705,13 @@ private:
     StateSource& ready;
 
     std::string hostname;
-    uint32_t port {};
+    uint32_t port { };
     esp_mqtt_client_handle_t client;
 
     Queue<std::variant<Connected, Disconnected, MessagePublished, Subscribed, OutgoingMessage, Subscription>> eventQueue;
     Queue<IncomingMessage> incomingQueue;
     // TODO Use a map instead
-    std::list<Subscription> subscriptions;
+    std::vector<Subscription> subscriptions;
     PendingMessages pendingMessages;
 
     std::atomic<int> disconnectCount { 0 };

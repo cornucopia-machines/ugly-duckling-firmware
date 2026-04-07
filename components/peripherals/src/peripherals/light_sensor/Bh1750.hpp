@@ -36,7 +36,7 @@ class Bh1750 final
 public:
     Bh1750(
         const std::string& name,
-        const std::shared_ptr<I2CManager>& /*i2c*/,
+        const std::shared_ptr<I2CManager>& _i2c,
         const I2CConfig& config,
         seconds measurementFrequency,
         seconds latencyInterval)

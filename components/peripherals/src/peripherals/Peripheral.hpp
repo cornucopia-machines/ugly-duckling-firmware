@@ -1,7 +1,6 @@
 #pragma once
 
 #include <functional>
-#include <list>
 #include <map>
 #include <memory>
 #include <tuple>

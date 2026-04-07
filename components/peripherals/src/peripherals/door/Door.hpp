@@ -3,13 +3,13 @@
 #include <chrono>
 #include <concepts>
 #include <limits>
-#include <list>
 #include <map>
 #include <utility>
 #include <variant>
 
 #include <Concurrent.hpp>
 #include <Named.hpp>
+#include <Overloaded.hpp>
 #include <Task.hpp>
 #include <Telemetry.hpp>
 #include <Watchdog.hpp>
@@ -144,7 +144,7 @@ public:
 
         motorController.stop();
 
-        Task::run(name, 4096, 2, [this](Task& /*task*/) {
+        Task::run(name, 4096, 2, [this](Task& _task) {
             runLoop();
         });
     }
@@ -158,23 +158,25 @@ public:
         return true;
     }
 
-    DoorState getState() override {
+    std::optional<DoorState> getState() override {
         Lock lock(stateMutex);
         return lastState;
     }
 
     void populateTelemetry(JsonObject& telemetry) {
         Lock lock(stateMutex);
-        telemetry["state"] = lastState;
+        if (lastState) {
+            telemetry["state"] = *lastState;
+        }
         if (targetState) {
             telemetry["targetState"] = *targetState;
         }
         telemetry["operationState"] = operationState;
     }
 
-    void shutdown(const ShutdownParameters& /*params*/) override {
+    void shutdown(const ShutdownParameters& _params) override {
         if (operationState == OperationState::Running) {
-            updateQueue.put(ShutdownSpec {});
+            updateQueue.put(ShutdownSpec { });
         }
     }
 
@@ -184,7 +186,7 @@ private:
         bool openSwitchEngaged = openSwitch->isEngaged();
         bool closedSwitchEngaged = closedSwitch->isEngaged();
         while (operationState == OperationState::Running) {
-            DoorState currentState = determineCurrentState(openSwitchEngaged, closedSwitchEngaged);
+            auto currentState = determineCurrentState(openSwitchEngaged, closedSwitchEngaged);
             if (atTargetState(targetState, currentState)) {
                 if (motorController.isMoving()) {
                     LOGTD(DOOR, "Door reached target state %s",
@@ -224,9 +226,8 @@ private:
 
             updateQueue.take([&](auto& change) {
                 std::visit(
-                    [&](auto&& arg) {
-                        using T = std::decay_t<decltype(arg)>;
-                        if constexpr (std::is_same_v<T, SwitchEvent>) {
+                    overloaded {
+                        [&](const SwitchEvent& arg) {
                             LOGTV(DOOR, "Status update received: switch=%s, engaged=%s",
                                 arg.switchState->getName().c_str(),
                                 arg.engaged ? "true" : "false");
@@ -235,7 +236,8 @@ private:
                             } else if (arg.switchState == closedSwitch) {
                                 closedSwitchEngaged = arg.engaged;
                             }
-                        } else if constexpr (std::is_same_v<T, ConfigureSpec>) {
+                        },
+                        [&](const ConfigureSpec& arg) {
                             Lock lock(stateMutex);
                             TargetState newTargetState = calculateEffectiveTargetState(arg.targetState, currentState);
 
@@ -245,15 +247,17 @@ private:
                                 targetState = newTargetState;
                                 shouldPublishTelemetry = true;
                             }
-                        } else if constexpr (std::is_same_v<T, WatchdogTimeout>) {
+                        },
+                        [&](const WatchdogTimeout&) {
                             LOGTE(DOOR, "Watchdog timed out, stopping operation");
                             operationState = OperationState::WatchdogTimeout;
                             motorController.stop();
-                        } else if constexpr (std::is_same_v<T, ShutdownSpec>) {
+                        },
+                        [&](const ShutdownSpec&) {
                             LOGTI(DOOR, "Shutting down door operation");
                             operationState = OperationState::Stopped;
                             motorController.stop();
-                        }
+                        },
                     },
                     change);
             });
@@ -263,34 +267,38 @@ private:
     }
 
     static bool
-    atTargetState(std::optional<TargetState> targetState, DoorState state) {
+    atTargetState(std::optional<TargetState> targetState, std::optional<DoorState> currentState) {
         if (!targetState) {
+            return false;
+        }
+        if (!currentState) {
             return false;
         }
         switch (*targetState) {
             case TargetState::Open:
-                return state == DoorState::Open;
+                return *currentState == DoorState::Open;
             case TargetState::Closed:
-                return state == DoorState::Closed;
-            default:
-                throw std::invalid_argument("Unknown target state");
+                return *currentState == DoorState::Closed;
         }
+        std::unreachable();
     }
 
-    static TargetState calculateEffectiveTargetState(std::optional<TargetState> newTargetState, DoorState currentState) {
+    static TargetState calculateEffectiveTargetState(std::optional<TargetState> newTargetState, std::optional<DoorState> currentState) {
         if (newTargetState) {
             return *newTargetState;
         }
-        switch (currentState) {
-            case DoorState::None:
-                return TargetState::Closed;
+        if (!currentState) {
+            // No target and unknown current state, default to closed for safety
+            return TargetState::Closed;
+        }
+
+        switch (*currentState) {
             case DoorState::Open:
                 return TargetState::Open;
             case DoorState::Closed:
                 return TargetState::Closed;
-            default:
-                throw std::invalid_argument("Unknown door state");
         }
+        std::unreachable();
     }
 
     void handleWatchdogEvent(WatchdogState state) {
@@ -306,7 +314,7 @@ private:
             case WatchdogState::TimedOut:
                 LOGTV(DOOR, "Watchdog timed out");
                 sleepLock.reset();
-                updateQueue.put(WatchdogTimeout {});
+                updateQueue.put(WatchdogTimeout { });
                 break;
         }
     }
@@ -315,11 +323,11 @@ private:
         updateQueue.put(event);
     }
 
-    DoorState determineCurrentState(bool open, bool closed) {
+    std::optional<DoorState> determineCurrentState(bool open, bool closed) {
         if (open && closed) {
             // TODO Handle this as a failure?
             LOGTW(DOOR, "Both open and closed switches are engaged, should the switches be inverted?");
-            return DoorState::None;
+            return std::nullopt;
         }
         if (open) {
             return DoorState::Open;
@@ -335,7 +343,7 @@ private:
         }
 
         LOGTD(DOOR, "Neither open nor closed switches are engaged");
-        return DoorState::None;
+        return std::nullopt;
     }
 
     const std::shared_ptr<PwmMotorDriver> motor;
@@ -362,7 +370,7 @@ private:
 
     Mutex stateMutex;
     std::optional<TargetState> targetState;
-    DoorState lastState = DoorState::None;
+    std::optional<DoorState> lastState;
 
     std::optional<PowerManagementLockGuard> sleepLock;
 };

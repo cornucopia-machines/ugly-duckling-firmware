@@ -38,7 +38,9 @@ if(WOKWI)
     endif()
 endif()
 
-component_compile_definitions("${UD_GEN}")
+if(UD_GEN)
+    component_compile_definitions("${UD_GEN}")
+endif()
 
 if(NOT DEFINED FARMHUB_LOG_VERBOSE)
     set(FARMHUB_LOG_VERBOSE "$ENV{FARMHUB_LOG_VERBOSE}")

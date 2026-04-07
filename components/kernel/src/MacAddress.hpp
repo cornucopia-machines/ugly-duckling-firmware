@@ -32,11 +32,11 @@ static const std::string& getMacAddress() {
     return macAddress;
 }
 
-template <size_t L>
-    requires(L <= MAC_ADDRESS_LENGTH)
+template <typename... Bytes>
 [[maybe_unused]]
-static bool macAddressStartsWith(const std::array<uint8_t, L>& prefix) {
+static bool macAddressHasPrefix(Bytes... bytes) {
     const auto mac = getRawMacAddress();
+    const std::array<uint8_t, sizeof...(Bytes)> prefix { static_cast<uint8_t>(bytes)... };
     return std::equal(prefix.begin(), prefix.end(), mac.begin());
 }
 

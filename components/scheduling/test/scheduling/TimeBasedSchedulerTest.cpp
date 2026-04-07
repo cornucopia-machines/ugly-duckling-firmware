@@ -51,14 +51,14 @@ TEST_CASE("not scheduled when empty") {
 }
 
 TEST_CASE("keeps closed until schedule starts") {
-    std::list<TimeBasedSchedule> schedules {
+    std::vector<TimeBasedSchedule> schedules {
         TimeBasedSchedule { .start = T0, .period = 1h, .duration = 15s },
     };
     REQUIRE(TimeBasedScheduler::getStateUpdate(schedules, T0 - 1s) == ScheduleResult { .targetState = TargetState::Closed, .nextDeadline = 1s });
 }
 
 TEST_CASE("keeps open when schedule is started and in period") {
-    std::list<TimeBasedSchedule> schedules {
+    std::vector<TimeBasedSchedule> schedules {
         TimeBasedSchedule { .start = T0, .period = 1h, .duration = 15s },
     };
     REQUIRE(TimeBasedScheduler::getStateUpdate(schedules, T0) == ScheduleResult { .targetState = TargetState::Open, .nextDeadline = 15s });
@@ -66,7 +66,7 @@ TEST_CASE("keeps open when schedule is started and in period") {
 }
 
 TEST_CASE("keeps closed when schedule is started and outside period") {
-    std::list<TimeBasedSchedule> schedules {
+    std::vector<TimeBasedSchedule> schedules {
         TimeBasedSchedule { .start = T0, .period = 1h, .duration = 15s },
     };
     REQUIRE(TimeBasedScheduler::getStateUpdate(schedules, T0 + 15s) == ScheduleResult { .targetState = TargetState::Closed, .nextDeadline = 1h - 15s });
@@ -76,7 +76,7 @@ TEST_CASE("keeps closed when schedule is started and outside period") {
 TEST_CASE("when there are overlapping schedules keep closed until earliest opens") {
     // --OOOOOO--------------
     // ----OOOOOO------------
-    std::list<TimeBasedSchedule> schedules {
+    std::vector<TimeBasedSchedule> schedules {
         TimeBasedSchedule { .start = T0 + 5min, .period = 1h, .duration = 15min },
         TimeBasedSchedule { .start = T0 + 10min, .period = 1h, .duration = 15min },
     };
@@ -88,7 +88,7 @@ TEST_CASE("when there are overlapping schedules keep closed until earliest opens
 TEST_CASE("when there are overlapping schedules keep open until latest closes") {
     // --OOOOOO--------------
     // ----OOOOOO------------
-    std::list<TimeBasedSchedule> schedules {
+    std::vector<TimeBasedSchedule> schedules {
         TimeBasedSchedule { .start = T0 + 5min, .period = 1h, .duration = 15min },
         TimeBasedSchedule { .start = T0 + 10min, .period = 1h, .duration = 15min },
     };
@@ -106,7 +106,7 @@ TEST_CASE("when there are overlapping schedules keep open until latest closes") 
 
 TEST_CASE("handles back-to-back schedules without gap") {
     // Two schedules that touch end-to-start: [0..10s) and [10s..20s)
-    std::list<TimeBasedSchedule> schedules {
+    std::vector<TimeBasedSchedule> schedules {
         TimeBasedSchedule { .start = T0, .period = 30s, .duration = 10s },
         TimeBasedSchedule { .start = T0 + 10s, .period = 30s, .duration = 10s },
     };
@@ -122,7 +122,7 @@ TEST_CASE("handles back-to-back schedules without gap") {
 }
 
 TEST_CASE("stays closed until first open, then reverts correctly") {
-    std::list<TimeBasedSchedule> schedules {
+    std::vector<TimeBasedSchedule> schedules {
         TimeBasedSchedule { .start = T0 + 5s, .period = 60s, .duration = 2s },
     };
 
@@ -135,7 +135,7 @@ TEST_CASE("stays closed until first open, then reverts correctly") {
 }
 
 TEST_CASE("non-overlapping sequences alternate open and closed as expected") {
-    std::list<TimeBasedSchedule> schedules {
+    std::vector<TimeBasedSchedule> schedules {
         TimeBasedSchedule { .start = T0 + 0s, .period = 20s, .duration = 5s },
         TimeBasedSchedule { .start = T0 + 10s, .period = 20s, .duration = 5s },
     };

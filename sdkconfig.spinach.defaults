@@ -1,4 +1,9 @@
 #
+# Flash
+#
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+
+#
 # ULP coprocessor (used for pulse counting during light sleep)
 #
 CONFIG_ULP_COPROC_ENABLED=y

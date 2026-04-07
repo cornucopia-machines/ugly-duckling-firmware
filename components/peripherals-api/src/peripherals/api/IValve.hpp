@@ -9,7 +9,6 @@ namespace farmhub::peripherals::api {
 
 enum class ValveState : int8_t {
     Closed = -1,
-    None = 0,
     Open = 1
 };
 
@@ -19,11 +18,14 @@ inline static const char* toString(ValveState state) {
             return "Closed";
         case ValveState::Open:
             return "Open";
-        case ValveState::None:
-            return "None";
-        default:
-            return "INVALID";
     }
+}
+
+inline static const char* toString(std::optional<ValveState> state) {
+    if (!state) {
+        return "Unknown";
+    }
+    return toString(*state);
 }
 
 struct IValve : virtual IPeripheral {
@@ -39,7 +41,7 @@ struct IValve : virtual IPeripheral {
     /**
      * @brief Get the current state of the valve.
      */
-    virtual ValveState getState() const = 0;
+    virtual std::optional<ValveState> getState() const = 0;
 };
 
 }    // namespace farmhub::peripherals::api
@@ -58,25 +60,24 @@ struct Converter<ValveState> {
             case ValveState::Open:
                 dst.set("Open");
                 break;
-            default:
-                throw std::invalid_argument("Invalid ValveState");
-                break;
         }
     }
 
     static farmhub::peripherals::api::ValveState fromJson(JsonVariantConst src) {
-        const char* str = src.as<const char*>();
+        auto* str = src.as<const char*>();
         if (strcmp(str, "Closed") == 0) {
             return farmhub::peripherals::api::ValveState::Closed;
-        }
-        if (strcmp(str, "Open") == 0) {
+        } else {
             return farmhub::peripherals::api::ValveState::Open;
         }
-        throw std::invalid_argument("Invalid ValveState");
     }
 
     static bool checkJson(JsonVariantConst src) {
-        return src.is<const char*>();
+        if (!src.is<const char*>()) {
+            return false;
+        }
+        auto* value = src.as<const char*>();
+        return strcmp(value, "Closed") == 0 || strcmp(value, "Open") == 0;
     }
 };
 

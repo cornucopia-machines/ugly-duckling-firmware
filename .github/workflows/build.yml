@@ -8,7 +8,7 @@ env:
   CCACHE_DIR: ${{ github.workspace }}/.ccache
   CCACHE_MAXSIZE: 256M
   CCACHE_COMPRESS: true
-  ESP_IDF_VERSION: v5.5.3
+  ESP_IDF_VERSION: v6.0
 
 jobs:
   build:
@@ -17,38 +17,26 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - environment: mk5-release
-            ud_gen: MK5
-            ud_debug: 0
+          - environment: spinach-release
+            platform: spinach
             target: esp32s3
-          - environment: mk6-release
-            ud_gen: MK6
             ud_debug: 0
+          - environment: spinach-debug
+            platform: spinach
             target: esp32s3
-          - environment: mk7-release
-            ud_gen: MK7
-            ud_debug: 0
-            target: esp32s3
-          - environment: mk8-release
-            ud_gen: MK8
-            ud_debug: 0
-            target: esp32s3
-
-          # Debug variant
-          - environment: mk6-debug
-            ud_gen: MK6
             ud_debug: 1
-            target: esp32s3
-
-          # Future release with ESP32-C6
-          - environment: mkX-release
-            ud_gen: MKX
-            ud_debug: 0
+          - environment: carrot-release
+            platform: carrot
             target: esp32c6
+            ud_debug: 0
+          - environment: carrot-debug
+            platform: carrot
+            target: esp32c6
+            ud_debug: 1
 
     env:
       # Enable verbose logging in debug artifacts for farmhub tags
-      FARMHUB_LOG_VERBOSE: env,scheduling
+      FARMHUB_LOG_VERBOSE: ""
 
     steps:
       - uses: actions/checkout@v5
@@ -78,7 +66,6 @@ jobs:
           command: |
             ccache --max-size=${{ env.CCACHE_MAXSIZE }} && \
             idf.py build \
-              -DUD_GEN=${{ matrix.ud_gen }} \
               -DUD_DEBUG=${{ matrix.ud_debug }} \
               -DFSUPLOAD=1 \
               -DFARMHUB_LOG_VERBOSE=${{ env.FARMHUB_LOG_VERBOSE }} \
@@ -281,7 +268,7 @@ jobs:
             --base-url "${{ vars.R2_PUBLIC_URL }}" \
             --branch "${{ github.ref_name }}" \
             --commit-sha "${{ github.sha }}" \
-            --keep-snapshot "0.32.11-11-g8552f75:Used in testing crash reports"
+            --keep-snapshot "0.32.13-27-g1b7a43e:Used in testing crash reports"
         env:
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}

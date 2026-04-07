@@ -22,7 +22,7 @@ class HttpUpdater {
 public:
     static void startUpdate(const std::string& url, const std::shared_ptr<NvsStore>& nvs) {
         nvs->set(HttpUpdater::UPDATE_KEY, url);
-        Task::run("update", 3072, [](Task& /*task*/) {
+        Task::run("update", 3072, [](Task& _task) {
             LOGTI(UPDATE, "Restarting in 5 seconds to apply update");
             Task::delay(5s);
             esp_restart();

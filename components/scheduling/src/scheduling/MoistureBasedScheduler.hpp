@@ -120,9 +120,8 @@ static constexpr std::optional<ms> getNextDeadline(State state) {
             return 0s;
         case State::Fault:
             return {};
-        default:
-            throw std::invalid_argument("Unknown state");
     }
+    std::unreachable();
 }
 
 struct MoistureTarget {
@@ -404,7 +403,7 @@ private:
         }
     }
 
-    void updateModel(const ms /*now*/) {
+    void updateModel(const ms _now) {
         const double dMoisture = telemetry.moisture - moistureAtPulseEnd;
         const double dVolume = std::max(volumeDelivered, detail::epsilon);
 

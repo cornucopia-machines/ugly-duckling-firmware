@@ -3,14 +3,13 @@
 #include <chrono>
 #include <concepts>
 #include <functional>
-#include <list>
 #include <memory>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 #include <ArduinoJson.h>
 
-using std::list;
 using std::ref;
 using std::reference_wrapper;
 
@@ -112,7 +111,7 @@ public:
     }
 
 private:
-    list<reference_wrapper<ConfigurationEntry>> entries;
+    std::vector<reference_wrapper<ConfigurationEntry>> entries;
 };
 
 class EmptyConfiguration : public ConfigurationSection { };
@@ -246,7 +245,7 @@ public:
         parent->add(*this);
     }
 
-    const std::list<T>& get() const {
+    const std::vector<T>& get() const {
         return entries;
     }
 
@@ -278,7 +277,7 @@ public:
 
 private:
     const std::string name;
-    std::list<T> entries;
+    std::vector<T> entries;
 };
 
 }    // namespace farmhub::kernel
@@ -331,7 +330,7 @@ struct Converter<JsonAsString> {
         return { value };
     }
 
-    static bool checkJson(JsonVariantConst /* src */) {
+    static bool checkJson(JsonVariantConst _src) {
         return true;
     }
 };

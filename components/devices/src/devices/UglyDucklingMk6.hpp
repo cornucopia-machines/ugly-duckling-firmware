@@ -3,7 +3,6 @@
 #include <map>
 #include <memory>
 
-#include <MacAddress.hpp>
 #include <Pin.hpp>
 #include <drivers/BatteryDriver.hpp>
 #include <drivers/Drv8833Driver.hpp>
@@ -21,81 +20,19 @@ using namespace farmhub::peripherals::valve;
 
 namespace farmhub::devices {
 
-namespace pins {
-static const InternalPinPtr BOOT = InternalPin::registerPin("BOOT", GPIO_NUM_0);
-static const InternalPinPtr BATTERY = InternalPin::registerPin("BATTERY", GPIO_NUM_1);
-static const InternalPinPtr STATUS = InternalPin::registerPin("STATUS", GPIO_NUM_2);
-static const InternalPinPtr STATUS2 = InternalPin::registerPin("STATUS2", GPIO_NUM_4);
-
-static const InternalPinPtr IOB1 = InternalPin::registerPin("B1", GPIO_NUM_5);
-static const InternalPinPtr IOA1 = InternalPin::registerPin("A1", GPIO_NUM_6);
-static const InternalPinPtr DIPROPI = InternalPin::registerPin("DIPROPI", GPIO_NUM_7);
-static const InternalPinPtr IOA2 = InternalPin::registerPin("A2", GPIO_NUM_15);
-static const InternalPinPtr AIN1 = InternalPin::registerPin("AIN1", GPIO_NUM_16);
-static const InternalPinPtr AIN2 = InternalPin::registerPin("AIN2", GPIO_NUM_17);
-static const InternalPinPtr BIN2 = InternalPin::registerPin("BIN2", GPIO_NUM_18);
-static const InternalPinPtr BIN1 = InternalPin::registerPin("BIN1", GPIO_NUM_8);
-
-static const InternalPinPtr DMINUS = InternalPin::registerPin("D-", GPIO_NUM_19);
-static const InternalPinPtr DPLUS = InternalPin::registerPin("D+", GPIO_NUM_20);
-
-static const InternalPinPtr LEDA_RED = InternalPin::registerPin("LEDA_RED", GPIO_NUM_46);
-static const InternalPinPtr LEDA_GREEN = InternalPin::registerPin("LEDA_GREEN", GPIO_NUM_9);
-
-static const InternalPinPtr NFault = InternalPin::registerPin("NFault", GPIO_NUM_11);
-static const InternalPinPtr BTN1 = InternalPin::registerPin("BTN1", GPIO_NUM_12);
-static const InternalPinPtr BTN2 = InternalPin::registerPin("BTN2", GPIO_NUM_13);
-static const InternalPinPtr IOC4 = InternalPin::registerPin("C4", GPIO_NUM_14);
-static const InternalPinPtr IOC3 = InternalPin::registerPin("C3", GPIO_NUM_21);
-static const InternalPinPtr IOC2 = InternalPin::registerPin("C2", GPIO_NUM_47);
-static const InternalPinPtr IOC1 = InternalPin::registerPin("C1", GPIO_NUM_48);
-static const InternalPinPtr IOB2 = InternalPin::registerPin("B2", GPIO_NUM_45);
-
-static const InternalPinPtr SDA = InternalPin::registerPin("SDA", GPIO_NUM_35);
-static const InternalPinPtr SCL = InternalPin::registerPin("SCL", GPIO_NUM_36);
-
-static const InternalPinPtr LEDB_GREEN = InternalPin::registerPin("LEDB_GREEN", GPIO_NUM_37);
-static const InternalPinPtr LEDB_RED = InternalPin::registerPin("LEDB_RED", GPIO_NUM_38);
-
-static const InternalPinPtr TCK = InternalPin::registerPin("TCK", GPIO_NUM_39);
-static const InternalPinPtr TDO = InternalPin::registerPin("TDO", GPIO_NUM_40);
-static const InternalPinPtr TDI = InternalPin::registerPin("TDI", GPIO_NUM_41);
-static const InternalPinPtr TMS = InternalPin::registerPin("TMS", GPIO_NUM_42);
-static const InternalPinPtr RXD0 = InternalPin::registerPin("RXD0", GPIO_NUM_44);
-static const InternalPinPtr TXD0 = InternalPin::registerPin("TXD0", GPIO_NUM_43);
-
-// Available on MK6 Rev3+
-static const InternalPinPtr LOADEN = InternalPin::registerPin("LOADEN", GPIO_NUM_10);
-}    // namespace pins
-
-class Mk6Settings
-    : public DeviceSettings {
+class UglyDucklingMk6Base : public DeviceDefinition {
 public:
-    Mk6Settings()
-        : DeviceSettings("mk6") {
-    }
-
-    /**
-     * @brief The built-in motor driver's nSLEEP pin can be manually set by a jumper,
-     * but can be connected to a GPIO pin, too. Defaults to C2 on Rev1 and Rev2,
-     * and to LOADEN on Rev3+.
-     */
-    Property<PinPtr> motorNSleepPin { this, "motorNSleepPin" };
-};
-
-class UglyDucklingMk6 : public DeviceDefinition<Mk6Settings> {
-public:
-    UglyDucklingMk6()
-        : DeviceDefinition(pins::STATUS, pins::BOOT) {
+    explicit UglyDucklingMk6Base(int revision)
+        : DeviceDefinition({ .model = "mk6", .revision = revision, .boot = GPIO_NUM_0, .status = GPIO_NUM_2 }) {
         // Switch off strapping pin
         // TODO(lptr): Add a LED driver instead
-        pins::LEDA_RED->pinMode(Pin::Mode::Output);
-        pins::LEDA_RED->digitalWrite(1);
+        LEDA_RED->pinMode(Pin::Mode::Output);
+        LEDA_RED->digitalWrite(1);
     }
 
-    static std::shared_ptr<BatteryDriver> createBatteryDriver(const std::shared_ptr<I2CManager>& /*i2c*/) {
+    std::shared_ptr<BatteryDriver> createBatteryDriver(const std::shared_ptr<I2CManager>& _i2c) override {
         return std::make_shared<AnalogBatteryDriver>(
-            pins::BATTERY,
+            BATTERY,
             1.2424,
             BatteryParameters {
                 .maximumVoltage = 4100,
@@ -105,29 +42,93 @@ public:
     }
 
 protected:
-    void registerDeviceSpecificPeripheralFactories(const std::shared_ptr<PeripheralManager>& peripheralManager, const PeripheralServices& services, const std::shared_ptr<Mk6Settings>& settings) override {
-        auto isRev1 = macAddressStartsWith(std::array<uint8_t, 4> { 0x34, 0x85, 0x18 });
-        auto isRev2 = macAddressStartsWith(std::array<uint8_t, 4> { 0xec, 0xda, 0x3b, 0x5b });
+    virtual PinPtr motorNSleepPin() const = 0;
 
-        // LOADEN was introduced on Rev3, so we default to C2 on earlier revisions
-        auto motorNSleepPin = settings->motorNSleepPin.getOrDefault((isRev1 || isRev2)
-                ? pins::IOC2
-                : pins::LOADEN);
-
+    void registerDeviceSpecificPeripheralFactories(const std::shared_ptr<PeripheralManager>& peripheralManager, const PeripheralServices& services, const std::shared_ptr<DeviceSettings>& settings) override {
+        auto nSleepPin = settings->motorNSleepPin.getOrDefault(motorNSleepPin());
         auto motorDriver = Drv8833Driver::create(
             services.pwmManager,
-            pins::AIN1,
-            pins::AIN2,
-            pins::BIN1,
-            pins::BIN2,
-            pins::NFault,
-            motorNSleepPin,
+            AIN1,
+            AIN2,
+            BIN1,
+            BIN2,
+            NFault,
+            nSleepPin,
             true);
 
         std::map<std::string, std::shared_ptr<PwmMotorDriver>> motors = { { "a", motorDriver->getMotorA() }, { "b", motorDriver->getMotorB() } };
 
         peripheralManager->registerFactory(valve::makeFactory(motors, ValveControlStrategyType::Latching));
         peripheralManager->registerFactory(door::makeFactory(motors));
+    }
+
+protected:
+    DEFINE_PIN(GPIO_NUM_1, BATTERY)
+    DEFINE_PIN(GPIO_NUM_4, STATUS2)
+    DEFINE_PIN(GPIO_NUM_5, IOB1, "B1")
+    DEFINE_PIN(GPIO_NUM_6, IOA1, "A1")
+    DEFINE_PIN(GPIO_NUM_7, DIPROPI)
+    DEFINE_PIN(GPIO_NUM_15, IOA2, "A2")
+    DEFINE_PIN(GPIO_NUM_16, AIN1)
+    DEFINE_PIN(GPIO_NUM_17, AIN2)
+    DEFINE_PIN(GPIO_NUM_18, BIN2)
+    DEFINE_PIN(GPIO_NUM_8, BIN1)
+    DEFINE_PIN(GPIO_NUM_19, DMINUS, "D-")
+    DEFINE_PIN(GPIO_NUM_20, DPLUS, "D+")
+    DEFINE_PIN(GPIO_NUM_46, LEDA_RED)
+    DEFINE_PIN(GPIO_NUM_9, LEDA_GREEN)
+    DEFINE_PIN(GPIO_NUM_11, NFault)
+    DEFINE_PIN(GPIO_NUM_12, BTN1)
+    DEFINE_PIN(GPIO_NUM_13, BTN2)
+    DEFINE_PIN(GPIO_NUM_14, IOC4, "C4")
+    DEFINE_PIN(GPIO_NUM_21, IOC3, "C3")
+    DEFINE_PIN(GPIO_NUM_47, IOC2, "C2")
+    DEFINE_PIN(GPIO_NUM_48, IOC1, "C1")
+    DEFINE_PIN(GPIO_NUM_45, IOB2, "B2")
+    DEFINE_PIN(GPIO_NUM_35, SDA)
+    DEFINE_PIN(GPIO_NUM_36, SCL)
+    DEFINE_PIN(GPIO_NUM_37, LEDB_GREEN)
+    DEFINE_PIN(GPIO_NUM_38, LEDB_RED)
+    DEFINE_PIN(GPIO_NUM_39, TCK)
+    DEFINE_PIN(GPIO_NUM_40, TDO)
+    DEFINE_PIN(GPIO_NUM_41, TDI)
+    DEFINE_PIN(GPIO_NUM_42, TMS)
+    DEFINE_PIN(GPIO_NUM_44, RXD0)
+    DEFINE_PIN(GPIO_NUM_43, TXD0)
+    // Available on MK6 Rev3+
+    DEFINE_PIN(GPIO_NUM_10, LOADEN)
+};
+
+// MAC prefix 0x34:0x85:0x18
+class UglyDucklingMk6Rev1 : public UglyDucklingMk6Base {
+public:
+    UglyDucklingMk6Rev1() : UglyDucklingMk6Base(1) {}
+
+protected:
+    PinPtr motorNSleepPin() const override {
+        return IOC2;
+    }
+};
+
+// MAC prefix 0xec:0xda:0x3b:0x5b
+class UglyDucklingMk6Rev2 : public UglyDucklingMk6Base {
+public:
+    UglyDucklingMk6Rev2() : UglyDucklingMk6Base(2) {}
+
+protected:
+    PinPtr motorNSleepPin() const override {
+        return IOC2;
+    }
+};
+
+// All other known MK6 MAC ranges
+class UglyDucklingMk6Rev3 : public UglyDucklingMk6Base {
+public:
+    UglyDucklingMk6Rev3() : UglyDucklingMk6Base(3) {}
+
+protected:
+    PinPtr motorNSleepPin() const override {
+        return LOADEN;
     }
 };
 

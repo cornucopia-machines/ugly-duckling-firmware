@@ -1,5 +1,9 @@
 #pragma once
 
+#ifndef UD_PLATFORM
+#error "UD_PLATFORM is not defined — set it via DeviceCommon.cmake"
+#endif
+
 // Helper macros to convert macro to string
 #define STRINGIFY(x) #x
 #define TOSTRING(x) STRINGIFY(x)
@@ -147,9 +151,8 @@ static void performFactoryReset(const std::shared_ptr<LedDriver>& statusLed, boo
     esp_restart();
 }
 
-template <class TDeviceDefinition>
-std::shared_ptr<BatteryDriver> initBattery(const std::shared_ptr<I2CManager>& i2c) {
-    auto battery = TDeviceDefinition::createBatteryDriver(i2c);
+std::shared_ptr<BatteryDriver> initBattery(const std::shared_ptr<DeviceDefinition>& deviceDefinition, const std::shared_ptr<I2CManager>& i2c) {
+    auto battery = deviceDefinition->createBatteryDriver(i2c);
     if (battery != nullptr) {
         // If the battery voltage is below the device's threshold, we should not boot yet.
         // This is to prevent the device from booting and immediately shutting down
@@ -199,7 +202,7 @@ void registerBasicCommands(const std::shared_ptr<MqttRoot>& mqttRoot) {
         fsync(fileno(stdout));
         esp_restart();
     });
-    mqttRoot->registerCommand("sleep", [](const JsonObject& request, JsonObject& /*response*/) {
+    mqttRoot->registerCommand("sleep", [](const JsonObject& request, JsonObject& _response) {
         seconds duration = seconds(request["duration"].as<int64_t>());
         esp_sleep_enable_timer_wakeup((microseconds(duration)).count());
         LOGI("Sleeping deep for %lld seconds",
@@ -336,10 +339,11 @@ enum class InitState : std::uint8_t {
     FunctionError = 2,
 };
 
-template <std::derived_from<DeviceSettings> TDeviceSettings, std::derived_from<DeviceDefinition<TDeviceSettings>> TDeviceDefinition>
+template <std::derived_from<DeviceDefinition> TDeviceDefinition>
 static void startDevice() {
     auto i2c = std::make_shared<I2CManager>();
-    auto battery = initBattery<TDeviceDefinition>(i2c);
+    auto deviceDefinition = std::make_shared<TDeviceDefinition>();
+    auto battery = initBattery(deviceDefinition, i2c);
 
     initNvsFlash();
 
@@ -350,8 +354,6 @@ static void startDevice() {
     ESP_ERROR_CHECK(heap_trace_init_standalone(trace_record, NUM_RECORDS));
 #endif
 
-    auto deviceDefinition = std::make_shared<TDeviceDefinition>();
-
     auto configNvs = std::make_shared<NvsStore>("config");
 
     LOGD("NVS configurations:");
@@ -360,7 +362,9 @@ static void startDevice() {
     });
 
     auto networkConfig = loadConfigFromNvs<NetworkConfig>(configNvs, "network-config");
-    auto settings = loadConfigFromNvs<TDeviceSettings>(configNvs, "device-config");
+    auto settings = loadConfigFromNvs<DeviceSettings>(configNvs, "device-config");
+
+    const std::string modelWithRevision = deviceDefinition->model + " (rev" + std::to_string(deviceDefinition->revision) + ")";
 
     auto watchdog = initWatchdog(settings->watchdogTimeout.get());
 
@@ -385,7 +389,7 @@ static void startDevice() {
         farmhubVersion);
     LOGI("Initializing FarmHub kernel version %s on %s instance '%s' with hostname '%s' and MAC address %s",
         farmhubVersion,
-        settings->model.get().c_str(),
+        modelWithRevision.c_str(),
         networkConfig->instance.get().c_str(),
         networkConfig->getHostname().c_str(),
         getMacAddress().c_str());
@@ -538,8 +542,10 @@ static void startDevice() {
 
     mqttRoot->publish(
         "init",
-        [settings, networkConfig, initState, peripheralsInitJson, functionsInitJson, powerManager](JsonObject& json) {
-            json["model"] = settings->model.get();
+        [settings, networkConfig, initState, peripheralsInitJson, functionsInitJson, powerManager, deviceDefinition](JsonObject& json) {
+            json["model"] = deviceDefinition->model;
+            json["revision"] = deviceDefinition->revision;
+            json["platform"] = UD_PLATFORM;
             json["instance"] = networkConfig->instance.get();
             json["mac"] = getMacAddress();
             auto device = json["settings"].to<JsonObject>();
@@ -551,7 +557,7 @@ static void startDevice() {
             json["debug"] = false;
 #endif
             json["reset"] = esp_reset_reason();
-            json["wakeup"] = esp_sleep_get_wakeup_cause();
+            json["wakeup"] = esp_sleep_get_wakeup_causes();
             json["bootCount"] = bootCount++;
             json["time"] = duration_cast<seconds>(system_clock::now().time_since_epoch()).count();
             json["state"] = static_cast<int>(initState);
@@ -568,7 +574,7 @@ static void startDevice() {
     LOGI("Device ready in %.2f s (kernel version %s on %s instance '%s' with hostname '%s' and IP '%s', SSID '%s', current time is %lld)",
         duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count() / 1000.0,
         farmhubVersion,
-        settings->model.get().c_str(),
+        modelWithRevision.c_str(),
         networkConfig->instance.get().c_str(),
         networkConfig->getHostname().c_str(),
         wifi->getIp().value_or("<no-ip>").c_str(),

@@ -1,12 +1,11 @@
 #pragma once
 
 #include <chrono>
-#include <list>
 
 #include <esp_event.h>
 #include <esp_wifi.h>
-#include <wifi_provisioning/manager.h>
-#include <wifi_provisioning/scheme_softap.h>
+#include <network_provisioning/manager.h>
+#include <network_provisioning/scheme_softap.h>
 
 #include <Concurrent.hpp>
 #include <State.hpp>
@@ -46,7 +45,7 @@ public:
         // Register event handlers
         ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &WiFiDriver::onEvent, this));
         ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, ESP_EVENT_ANY_ID, &WiFiDriver::onEvent, this));
-        ESP_ERROR_CHECK(esp_event_handler_register(WIFI_PROV_EVENT, ESP_EVENT_ANY_ID, &WiFiDriver::onEvent, this));
+        ESP_ERROR_CHECK(esp_event_handler_register(NETWORK_PROV_EVENT, ESP_EVENT_ANY_ID, &WiFiDriver::onEvent, this));
 
         wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
         ESP_ERROR_CHECK(esp_wifi_init(&cfg));
@@ -109,7 +108,7 @@ private:
             driver->onWiFiEvent(eventId, eventData);
         } else if (eventBase == IP_EVENT) {
             driver->onIpEvent(eventId, eventData);
-        } else if (eventBase == WIFI_PROV_EVENT) {
+        } else if (eventBase == NETWORK_PROV_EVENT) {
             driver->onWiFiProvEvent(eventId, eventData);
         }
     }
@@ -194,33 +193,33 @@ private:
 
     void onWiFiProvEvent(int32_t eventId, void* eventData) {
         switch (eventId) {
-            case WIFI_PROV_START: {
+            case NETWORK_PROV_START: {
                 LOGTD(WIFI, "provisioning started");
                 break;
             }
-            case WIFI_PROV_CRED_RECV: {
+            case NETWORK_PROV_WIFI_CRED_RECV: {
                 auto* wifiConfig = static_cast<wifi_sta_config_t*>(eventData);
                 LOGTD(WIFI, "Received Wi-Fi credentials for SSID '%s'",
                     reinterpret_cast<const char*>(wifiConfig->ssid));
                 break;
             }
-            case WIFI_PROV_CRED_FAIL: {
-                auto* reason = static_cast<wifi_prov_sta_fail_reason_t*>(eventData);
+            case NETWORK_PROV_WIFI_CRED_FAIL: {
+                auto* reason = static_cast<network_prov_wifi_sta_fail_reason_t*>(eventData);
                 LOGTD(WIFI, "provisioning failed because %s",
-                    *reason == WIFI_PROV_STA_AUTH_ERROR
+                    *reason == NETWORK_PROV_WIFI_STA_AUTH_ERROR
                         ? "authentication failed"
                         : "AP not found");
-                ESP_ERROR_CHECK(wifi_prov_mgr_reset_sm_state_on_failure());
+                ESP_ERROR_CHECK(network_prov_mgr_reset_wifi_sm_state_on_failure());
                 break;
             }
-            case WIFI_PROV_CRED_SUCCESS: {
+            case NETWORK_PROV_WIFI_CRED_SUCCESS: {
                 LOGTD(WIFI, "provisioning successful");
                 break;
             }
-            case WIFI_PROV_END: {
+            case NETWORK_PROV_END: {
                 LOGTD(WIFI, "provisioning finished");
                 eventQueue.offer(WiFiEvent::ProvisioningFinished);
-                wifi_prov_mgr_deinit();
+                network_prov_mgr_deinit();
                 break;
             }
             default:
@@ -300,7 +299,7 @@ private:
         connectToStation(wifiConfig);
 #else
         bool provisioned = false;
-        ESP_ERROR_CHECK(wifi_prov_mgr_is_provisioned(&provisioned));
+        ESP_ERROR_CHECK(network_prov_mgr_is_wifi_provisioned(&provisioned));
         if (provisioned) {
             wifi_config_t wifiConfig;
             ESP_ERROR_CHECK(esp_wifi_get_config(WIFI_IF_STA, &wifiConfig));
@@ -368,16 +367,16 @@ private:
 
     static void startProvisioning() {
         // Initialize provisioning manager
-        wifi_prov_mgr_config_t config = {
-            .scheme = wifi_prov_scheme_softap,
-            .scheme_event_handler = WIFI_PROV_EVENT_HANDLER_NONE,
-            .app_event_handler = WIFI_PROV_EVENT_HANDLER_NONE,
-            .wifi_prov_conn_cfg = {
+        network_prov_mgr_config_t config = {
+            .scheme = network_prov_scheme_softap,
+            .scheme_event_handler = NETWORK_PROV_EVENT_HANDLER_NONE,
+            .app_event_handler = NETWORK_PROV_EVENT_HANDLER_NONE,
+            .network_prov_wifi_conn_cfg = {
                 // TODO Shall we limit the number of connection attempts?
                 .wifi_conn_attempts = 0,    // Infinite attempts
             },
         };
-        ESP_ERROR_CHECK(wifi_prov_mgr_init(config));
+        ESP_ERROR_CHECK(network_prov_mgr_init(config));
 
         char serviceName[32];
         uint8_t mac[6];
@@ -388,7 +387,7 @@ private:
         LOGTD(WIFI, "Starting provisioning service '%s'",
             serviceName);
 
-        ESP_ERROR_CHECK(wifi_prov_mgr_start_provisioning(WIFI_PROV_SECURITY_1, pop, serviceName, serviceKey));
+        ESP_ERROR_CHECK(network_prov_mgr_start_provisioning(network_prov_security_t::NETWORK_PROV_SECURITY_1, pop, serviceName, serviceKey));
 
         // TODO Maybe print QR code?
     }

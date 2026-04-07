@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.16.0)
 project(kalman_cli LANGUAGES CXX)
 
 # Ensure we build with a modern standard
-set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_STANDARD 26)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 

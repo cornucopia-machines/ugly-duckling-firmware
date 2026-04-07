@@ -65,9 +65,6 @@ private:
             case ESP_ERR_NOT_FOUND:
                 LOGTV(CRASH, "No core dump found");
                 return CoreDumpStatus::NoDump;
-            case ESP_ERR_INVALID_SIZE:
-                LOGTD(CRASH, "Invalid core dump size, likely no core dump saved");
-                return CoreDumpStatus::NoDump;
             case ESP_ERR_INVALID_CRC:
                 LOGTE(CRASH, "Invalid core dump CRC, likely corrupted");
                 return CoreDumpStatus::DumpInvalid;
@@ -93,12 +90,32 @@ private:
         json["task"] = std::string(summary.exc_task);
         json["cause"] = excCause;
         json["cause-description"] = resolveCauseDescription(excCause);
-        json["tcb"] = "0x" + toHexString(summary.exc_tcb);
-        json["pc"] = "0x" + toHexString(summary.exc_pc);
+        json["tcb"] = toHexString(summary.exc_tcb);
+        json["pc"] = toHexString(summary.exc_pc);
+
 #if __XTENSA__
-        // TODO Add more fields for Xtensa
+        json["arch"] = "xtensa";
+        json["vaddr"] = toHexString(summary.ex_info.exc_vaddr);
+        auto excAJson = json["exc_a"].to<JsonArray>();
+        for (int i = 0; i < 16; i++) {
+            excAJson.add(toHexString(summary.ex_info.exc_a[i]));
+        }
+        auto epcxJson = json["epcx"].to<JsonArray>();
+        for (int i = 0; i < EPCx_REGISTER_COUNT; i++) {
+            epcxJson.add(toHexString(summary.ex_info.epcx[i]));
+        }
+        json["epcx_reg_bits"] = toHexString(summary.ex_info.epcx_reg_bits);
 #else
-        // TODO Add more fields for RISC-V
+        json["arch"] = "riscv";
+        json["mstatus"] = toHexString(summary.ex_info.mstatus);
+        json["mtvec"] = toHexString(summary.ex_info.mtvec);
+        json["mtval"] = toHexString(summary.ex_info.mtval);
+        json["ra"] = toHexString(summary.ex_info.ra);
+        json["sp"] = toHexString(summary.ex_info.sp);
+        auto excAJson = json["exc_a"].to<JsonArray>();
+        for (int i = 0; i < 8; i++) {
+            excAJson.add(toHexString(summary.ex_info.exc_a[i]));
+        }
 #endif
 
         static constexpr size_t PANIC_REASON_SIZE = 256;
@@ -128,7 +145,7 @@ private:
         auto framesJson = backtraceJson["frames"].to<JsonArray>();
         for (int i = 0; i < summary.exc_bt_info.depth; i++) {
             const auto& frame = summary.exc_bt_info.bt[i];
-            framesJson.add("0x" + toHexString(frame));
+            framesJson.add(toHexString(frame));
         }
 #else
         size_t encodedLen = ((summary.exc_bt_info.dump_size + 2) / 3 * 4) + 1;

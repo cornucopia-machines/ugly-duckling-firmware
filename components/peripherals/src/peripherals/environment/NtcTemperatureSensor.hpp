@@ -40,7 +40,7 @@ private:
     double beta;
 
     utils::DebouncedMeasurement<Celsius> measurement {
-        [this](const utils::DebouncedParams<Celsius> /*params*/) {
+        [this](const utils::DebouncedParams<Celsius> _params) {
             const auto analogValue = pin.analogRead();
             double celsius = (1.0 / (std::log(1.0 / (4095.0 / analogValue - 1.0)) / beta + 1.0 / 298.15)) - 273.15;
             LOGTV(ENV, "NTC temperature sensor '%s' reading: %.2f °C (raw: %d)",

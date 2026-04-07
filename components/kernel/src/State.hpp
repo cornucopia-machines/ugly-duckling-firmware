@@ -1,7 +1,6 @@
 #pragma once
 
 #include <chrono>
-#include <list>
 
 #include <freertos/FreeRTOS.h>        // NOLINT(misc-header-include-cycle)
 #include <freertos/event_groups.h>    // NOLINT(misc-header-include-cycle)

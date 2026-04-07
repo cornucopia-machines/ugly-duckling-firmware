@@ -9,7 +9,7 @@ namespace farmhub::kernel::mqtt {
 class MqttLog {
 public:
     static void init(Level publishLevel, const std::shared_ptr<Queue<LogRecord>>& logRecords, std::shared_ptr<MqttRoot> mqttRoot) {
-        Task::loop("mqtt:log", 3072, [publishLevel, logRecords, mqttRoot](Task& /*task*/) {
+        Task::loop("mqtt:log", 3072, [publishLevel, logRecords, mqttRoot](Task& _task) {
             logRecords->take([&](const LogRecord& record) {
                 if (record.level > publishLevel) {
                     return;

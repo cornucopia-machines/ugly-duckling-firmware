@@ -8,7 +8,7 @@ namespace farmhub::kernel {
 static constexpr const char* DIGITS = "0123456789abcdef";
 
 std::string toHexString(uint64_t value) {
-    char buffer[17] = {0};
+    char buffer[17] = { 0 };
 
     for (int i = 15; i >= 0; --i) {
         buffer[i] = DIGITS[value & 0xF];
@@ -20,7 +20,7 @@ std::string toHexString(uint64_t value) {
         ++start;
     }
 
-    return { start };
+    return std::string("0x") + start;
 }
 
 std::string toStringWithPrecision(double value, int precision) {

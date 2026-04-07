@@ -1,7 +1,7 @@
 #pragma once
 
-#include <list>
 #include <memory>
+#include <vector>
 #include <utility>
 
 #include <ArduinoJson.h>
@@ -41,7 +41,7 @@ private:
         std::function<void(JsonObject&)> populate;
     };
 
-    std::list<Feature> features;
+    std::vector<Feature> features;
 };
 
 class TelemetryPublisher {

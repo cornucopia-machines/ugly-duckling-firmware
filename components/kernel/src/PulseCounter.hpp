@@ -2,8 +2,8 @@
 
 #include <atomic>
 #include <chrono>
-#include <list>
 #include <memory>
+#include <vector>
 
 #include <driver/gpio.h>
 #include <esp_sleep.h>
@@ -195,9 +195,9 @@ public:
 private:
     // GPIO interrupt path
     bool gpioInitialized = false;
-    std::list<GpioPulseCounter*> gpioCounters;
+    std::vector<GpioPulseCounter*> gpioCounters;
 
-    std::list<std::shared_ptr<PulseCounter>> ulpCounters;
+    std::vector<std::shared_ptr<PulseCounter>> ulpCounters;
 
 #ifdef CONFIG_ULP_COPROC_ENABLED
     static constexpr uint32_t ULP_MAX_CHANNELS = 4;
