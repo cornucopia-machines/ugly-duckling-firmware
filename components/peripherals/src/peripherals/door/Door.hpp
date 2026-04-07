@@ -272,9 +272,8 @@ private:
                 return state == DoorState::Open;
             case TargetState::Closed:
                 return state == DoorState::Closed;
-            default:
-                throw std::invalid_argument("Unknown target state");
         }
+        std::unreachable();
     }
 
     static TargetState calculateEffectiveTargetState(std::optional<TargetState> newTargetState, DoorState currentState) {
@@ -288,9 +287,8 @@ private:
                 return TargetState::Open;
             case DoorState::Closed:
                 return TargetState::Closed;
-            default:
-                throw std::invalid_argument("Unknown door state");
         }
+        std::unreachable();
     }
 
     void handleWatchdogEvent(WatchdogState state) {

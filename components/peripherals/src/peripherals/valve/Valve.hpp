@@ -59,8 +59,8 @@ public:
                 TargetState lastStoredState;
                 if (nvs->get(name, lastStoredState)) {
                     initState = lastStoredState;
-                    LOGI("Restored state for valve '%s' from NVS: %d",
-                        name.c_str(), static_cast<int>(state));
+                    LOGI("Restored state for valve '%s' from NVS: %s",
+                        name.c_str(), static_cast<int>(initState));
                 } else {
                     initState = TargetState::Closed;
                     LOGI("No stored state for valve '%s', defaulting to closed",
@@ -72,7 +72,9 @@ public:
     }
 
     void populateTelemetry(JsonObject& telemetry) {
-        telemetry["state"] = this->state;
+        if (this->state) {
+            telemetry["state"] = *this->state;
+        }
     }
 
     void closeBeforeShutdown() {
@@ -91,7 +93,7 @@ public:
         return transitionTo(target.value_or(strategy->getDefaultState()));
     }
 
-    ValveState getState() const override {
+    std::optional<ValveState> getState() const override {
         return state;
     }
 
@@ -148,7 +150,7 @@ private:
 
     const std::shared_ptr<NvsStore> nvs;
     const std::unique_ptr<ValveControlStrategy> strategy;
-    ValveState state = ValveState::None;
+    std::optional<ValveState> state;
 };
 
 }    // namespace farmhub::peripherals::valve

@@ -120,9 +120,8 @@ static constexpr std::optional<ms> getNextDeadline(State state) {
             return 0s;
         case State::Fault:
             return {};
-        default:
-            throw std::invalid_argument("Unknown state");
     }
+    std::unreachable();
 }
 
 struct MoistureTarget {

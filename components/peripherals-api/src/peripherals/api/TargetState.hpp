@@ -41,25 +41,24 @@ struct Converter<TargetState> {
             case TargetState::Open:
                 dst.set("Open");
                 break;
-            default:
-                throw std::invalid_argument("Invalid TargetState " + std::to_string(static_cast<int>(src)));
-                break;
         }
     }
 
     static farmhub::peripherals::api::TargetState fromJson(JsonVariantConst src) {
-        const char* str = src.as<const char*>();
+        auto* str = src.as<const char*>();
         if (strcmp(str, "Closed") == 0) {
             return farmhub::peripherals::api::TargetState::Closed;
-        }
-        if (strcmp(str, "Open") == 0) {
+        } else {
             return farmhub::peripherals::api::TargetState::Open;
         }
-        throw std::invalid_argument("Invalid TargetState '" + std::string(str) + "'");
     }
 
     static bool checkJson(JsonVariantConst src) {
-        return src.is<const char*>();
+        if (!src.is<const char*>()) {
+            return false;
+        }
+        auto* str = src.as<const char*>();
+        return strcmp(str, "Closed") == 0 || strcmp(str, "Open") == 0;
     }
 };
 }    // namespace ArduinoJson
