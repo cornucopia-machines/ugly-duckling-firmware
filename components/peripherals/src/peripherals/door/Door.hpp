@@ -158,14 +158,16 @@ public:
         return true;
     }
 
-    DoorState getState() override {
+    std::optional<DoorState> getState() override {
         Lock lock(stateMutex);
         return lastState;
     }
 
     void populateTelemetry(JsonObject& telemetry) {
         Lock lock(stateMutex);
-        telemetry["state"] = lastState;
+        if (lastState) {
+            telemetry["state"] = *lastState;
+        }
         if (targetState) {
             telemetry["targetState"] = *targetState;
         }
@@ -184,7 +186,7 @@ private:
         bool openSwitchEngaged = openSwitch->isEngaged();
         bool closedSwitchEngaged = closedSwitch->isEngaged();
         while (operationState == OperationState::Running) {
-            DoorState currentState = determineCurrentState(openSwitchEngaged, closedSwitchEngaged);
+            auto currentState = determineCurrentState(openSwitchEngaged, closedSwitchEngaged);
             if (atTargetState(targetState, currentState)) {
                 if (motorController.isMoving()) {
                     LOGTD(DOOR, "Door reached target state %s",
@@ -263,26 +265,32 @@ private:
     }
 
     static bool
-    atTargetState(std::optional<TargetState> targetState, DoorState state) {
+    atTargetState(std::optional<TargetState> targetState, std::optional<DoorState> currentState) {
         if (!targetState) {
+            return false;
+        }
+        if (!currentState) {
             return false;
         }
         switch (*targetState) {
             case TargetState::Open:
-                return state == DoorState::Open;
+                return *currentState == DoorState::Open;
             case TargetState::Closed:
-                return state == DoorState::Closed;
+                return *currentState == DoorState::Closed;
         }
         std::unreachable();
     }
 
-    static TargetState calculateEffectiveTargetState(std::optional<TargetState> newTargetState, DoorState currentState) {
+    static TargetState calculateEffectiveTargetState(std::optional<TargetState> newTargetState, std::optional<DoorState> currentState) {
         if (newTargetState) {
             return *newTargetState;
         }
-        switch (currentState) {
-            case DoorState::None:
-                return TargetState::Closed;
+        if (!currentState) {
+            // No target and unknown current state, default to closed for safety
+            return TargetState::Closed;
+        }
+
+        switch (*currentState) {
             case DoorState::Open:
                 return TargetState::Open;
             case DoorState::Closed:
@@ -313,11 +321,11 @@ private:
         updateQueue.put(event);
     }
 
-    DoorState determineCurrentState(bool open, bool closed) {
+    std::optional<DoorState> determineCurrentState(bool open, bool closed) {
         if (open && closed) {
             // TODO Handle this as a failure?
             LOGTW(DOOR, "Both open and closed switches are engaged, should the switches be inverted?");
-            return DoorState::None;
+            return std::nullopt;
         }
         if (open) {
             return DoorState::Open;
@@ -333,7 +341,7 @@ private:
         }
 
         LOGTD(DOOR, "Neither open nor closed switches are engaged");
-        return DoorState::None;
+        return std::nullopt;
     }
 
     const std::shared_ptr<PwmMotorDriver> motor;
@@ -360,7 +368,7 @@ private:
 
     Mutex stateMutex;
     std::optional<TargetState> targetState;
-    DoorState lastState = DoorState::None;
+    std::optional<DoorState> lastState;
 
     std::optional<PowerManagementLockGuard> sleepLock;
 };
