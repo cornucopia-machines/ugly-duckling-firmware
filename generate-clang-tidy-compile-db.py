@@ -23,6 +23,7 @@ UNSUPPORTED_FLAGS = [
     "-fstrict-volatile-bitfields",
     "-mlong-calls",
     "-mlongcalls",
+    "-mno-target-align",
     "-nostartfiles",
 ]
 
