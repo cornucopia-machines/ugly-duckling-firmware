@@ -86,7 +86,7 @@ public:
 
             runEventLoop(task);
         });
-        Task::loop("mqtt:incoming", 4096, [this](Task& /*task*/) {
+        Task::loop("mqtt:incoming", 4096, [this](Task& _task) {
             incomingQueue.take([this](const IncomingMessage& message) {
                 processIncomingMessage(message);
             });
@@ -321,7 +321,7 @@ private:
         Connected,
     };
 
-    void runEventLoop(Task& /*task*/) {
+    void runEventLoop(Task& _task) {
         // We are not yet connected
         auto state = MqttState::Disconnected;
         auto connectionStarted = steady_clock::time_point();
@@ -456,7 +456,7 @@ private:
 
     bool clientRunning = false;
 
-    static void handleMqttEventCallback(void* userData, esp_event_base_t /*eventBase*/, int32_t eventId, void* eventData) {
+    static void handleMqttEventCallback(void* userData, esp_event_base_t _eventBase, int32_t eventId, void* eventData) {
         auto* event = static_cast<esp_mqtt_event_handle_t>(eventData);
         // LOGTV(MQTT, "Event dispatched from event loop: base=%s, event_id=%d, client=%p, data=%p, data_len=%d, topic=%p, topic_len=%d, msg_id=%d",
         //     eventBase, event->event_id, event->client, event->data, event->data_len, event->topic, event->topic_len, event->msg_id);
@@ -622,7 +622,7 @@ private:
 #endif
         for (const auto& subscription : subscriptions) {
             if (topicMatches(subscription.topic.c_str(), topic.c_str())) {
-                Task::run("mqtt:incoming-handler", 4096, [topic, payload, subscription](Task& /*task*/) {
+                Task::run("mqtt:incoming-handler", 4096, [topic, payload, subscription](Task& _task) {
                     JsonDocument json;
                     deserializeJson(json, payload);
                     subscription.handle(topic, json.as<JsonObject>());

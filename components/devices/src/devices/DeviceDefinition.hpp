@@ -107,7 +107,7 @@ public:
         return {};
     }
 
-    virtual std::shared_ptr<BatteryDriver> createBatteryDriver(const std::shared_ptr<I2CManager>& /*i2c*/) {
+    virtual std::shared_ptr<BatteryDriver> createBatteryDriver(const std::shared_ptr<I2CManager>& _i2c) {
         return nullptr;
     }
 
@@ -117,7 +117,7 @@ public:
     const InternalPinPtr statusPin;
 
 protected:
-    virtual void registerDeviceSpecificPeripheralFactories(const std::shared_ptr<PeripheralManager>& peripheralManager, const PeripheralServices& services, const std::shared_ptr<DeviceSettings>& /*settings*/) {
+    virtual void registerDeviceSpecificPeripheralFactories(const std::shared_ptr<PeripheralManager>& peripheralManager, const PeripheralServices& services, const std::shared_ptr<DeviceSettings>& _settings) {
     }
 };
 

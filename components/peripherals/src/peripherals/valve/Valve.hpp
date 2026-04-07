@@ -85,7 +85,7 @@ public:
     }
 
     // Allow graceful shutdown
-    void shutdown(const ShutdownParameters& /*params*/) override {
+    void shutdown(const ShutdownParameters& _params) override {
         closeBeforeShutdown();
     }
 

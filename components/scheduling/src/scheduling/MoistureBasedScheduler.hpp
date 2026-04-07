@@ -403,7 +403,7 @@ private:
         }
     }
 
-    void updateModel(const ms /*now*/) {
+    void updateModel(const ms _now) {
         const double dMoisture = telemetry.moisture - moistureAtPulseEnd;
         const double dVolume = std::max(volumeDelivered, detail::epsilon);
 

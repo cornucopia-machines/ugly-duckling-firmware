@@ -77,7 +77,7 @@ private:
     const InternalPinPtr pin;
     onewire_addr_t sensor {};
     utils::DebouncedMeasurement<Celsius> measurement {
-        [this](const utils::DebouncedParams<Celsius> /*params*/) -> std::optional<Celsius> {
+        [this](const utils::DebouncedParams<Celsius> _params) -> std::optional<Celsius> {
             float temperature;
             auto err = ds18x20_measure(pin->getGpio(), sensor, false);
             if (err != ESP_OK) {

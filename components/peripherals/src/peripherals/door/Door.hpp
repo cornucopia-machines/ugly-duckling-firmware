@@ -144,7 +144,7 @@ public:
 
         motorController.stop();
 
-        Task::run(name, 4096, 2, [this](Task& /*task*/) {
+        Task::run(name, 4096, 2, [this](Task& _task) {
             runLoop();
         });
     }
@@ -174,7 +174,7 @@ public:
         telemetry["operationState"] = operationState;
     }
 
-    void shutdown(const ShutdownParameters& /*params*/) override {
+    void shutdown(const ShutdownParameters& _params) override {
         if (operationState == OperationState::Running) {
             updateQueue.put(ShutdownSpec {});
         }

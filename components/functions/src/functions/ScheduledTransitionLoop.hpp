@@ -47,7 +47,7 @@ void runScheduledTransitionLoop(
     Queue<TConfigSpec>& configQueue,
     std::function<void(const TConfigSpec&)> configHandler) {
 
-    Task::run(name, 4096, [name, loggingTag, peripheral, scheduler, telemetryPublisher, &configQueue, configHandler](Task& /*task*/) {
+    Task::run(name, 4096, [name, loggingTag, peripheral, scheduler, telemetryPublisher, &configQueue, configHandler](Task& _task) {
         auto shouldPublishTelemetry = true;
         while (true) {
             ScheduleResult result = scheduler->tick();

@@ -30,7 +30,7 @@ public:
         LEDA_RED->digitalWrite(1);
     }
 
-    std::shared_ptr<BatteryDriver> createBatteryDriver(const std::shared_ptr<I2CManager>& /*i2c*/) override {
+    std::shared_ptr<BatteryDriver> createBatteryDriver(const std::shared_ptr<I2CManager>& _i2c) override {
         return std::make_shared<AnalogBatteryDriver>(
             BATTERY,
             1.2424,

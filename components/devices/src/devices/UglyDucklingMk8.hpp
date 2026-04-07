@@ -115,7 +115,7 @@ public:
     UglyDucklingMk8Rev1() : UglyDucklingMk8Base(1) {}
 
 protected:
-    void registerDeviceSpecificPeripheralFactories(const std::shared_ptr<PeripheralManager>& peripheralManager, const PeripheralServices& services, const std::shared_ptr<DeviceSettings>& /*settings*/) override {
+    void registerDeviceSpecificPeripheralFactories(const std::shared_ptr<PeripheralManager>& peripheralManager, const PeripheralServices& services, const std::shared_ptr<DeviceSettings>& _settings) override {
         registerMotorAndValves(peripheralManager, services);
     }
 };
@@ -125,7 +125,7 @@ class UglyDucklingMk8Rev2 : public UglyDucklingMk8Base {
 public:
     UglyDucklingMk8Rev2() : UglyDucklingMk8Base(2) {}
 protected:
-    void registerDeviceSpecificPeripheralFactories(const std::shared_ptr<PeripheralManager>& peripheralManager, const PeripheralServices& services, const std::shared_ptr<DeviceSettings>& /*settings*/) override {
+    void registerDeviceSpecificPeripheralFactories(const std::shared_ptr<PeripheralManager>& peripheralManager, const PeripheralServices& services, const std::shared_ptr<DeviceSettings>& _settings) override {
         registerMotorAndValves(peripheralManager, services);
 
         ina219 = std::make_shared<Ina219Driver>(

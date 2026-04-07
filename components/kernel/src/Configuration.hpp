@@ -331,7 +331,7 @@ struct Converter<JsonAsString> {
         return { value };
     }
 
-    static bool checkJson(JsonVariantConst /* src */) {
+    static bool checkJson(JsonVariantConst _src) {
         return true;
     }
 };

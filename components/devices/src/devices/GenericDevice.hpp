@@ -30,7 +30,7 @@ public:
     }
 
 protected:
-    void registerDeviceSpecificPeripheralFactories(const std::shared_ptr<PeripheralManager>& /*peripheralManager*/, const PeripheralServices& /*services*/, const std::shared_ptr<DeviceSettings>& /*settings*/) override {
+    void registerDeviceSpecificPeripheralFactories(const std::shared_ptr<PeripheralManager>& _peripheralManager, const PeripheralServices& _services, const std::shared_ptr<DeviceSettings>& _settings) override {
     }
 };
 

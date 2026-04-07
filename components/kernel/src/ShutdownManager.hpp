@@ -15,7 +15,7 @@ public:
 
     void startShutdown() {
         // Run in separate task to allocate enough stack
-        Task::run("shutdown", 8192, [this](Task& /*task*/) {
+        Task::run("shutdown", 8192, [this](Task& _task) {
             // Notify all shutdown listeners
             for (auto& listener : shutdownListeners) {
                 listener();

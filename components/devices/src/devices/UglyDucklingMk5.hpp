@@ -23,7 +23,7 @@ public:
     }
 
 protected:
-    void registerDeviceSpecificPeripheralFactories(const std::shared_ptr<PeripheralManager>& peripheralManager, const PeripheralServices& services, const std::shared_ptr<DeviceSettings>& /*settings*/) override {
+    void registerDeviceSpecificPeripheralFactories(const std::shared_ptr<PeripheralManager>& peripheralManager, const PeripheralServices& services, const std::shared_ptr<DeviceSettings>& _settings) override {
         auto motorA = std::make_shared<Drv8874Driver>(
             services.pwmManager,
             AIN1,
