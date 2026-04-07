@@ -1,3 +1,11 @@
 CONFIG_ESP_TASK_WDT_EN=n
 CONFIG_COMPILER_CXX_EXCEPTIONS=y
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=15000
+
+#
+# ULP coprocessor (used for pulse counting during light sleep)
+#
+CONFIG_ULP_COPROC_ENABLED=y
+CONFIG_ULP_COPROC_TYPE_RISCV=y
+# Reserve 4 KB of RTC slow memory for ULP firmware + shared variables
+CONFIG_ULP_COPROC_RESERVE_MEM=4096
