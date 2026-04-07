@@ -19,10 +19,13 @@
 #ifdef CONFIG_ULP_COPROC_ENABLED
 #include <driver/rtc_io.h>
 #if defined(CONFIG_ULP_COPROC_TYPE_RISCV)
-#include <soc/rtc_cntl_reg.h>
-#include <soc/soc.h>
 #include <ulp_common.h>
 #include <ulp_riscv.h>
+#ifdef FARMHUB_DEBUG
+#include <soc/rtc_cntl_reg.h>
+#include <soc/soc.h>
+#include <Task.hpp>
+#endif
 #elif defined(CONFIG_ULP_COPROC_TYPE_LP_CORE)
 #include <ulp_lp_core.h>
 #endif
@@ -37,7 +40,6 @@ extern const uint8_t ulp_pulse_counter_bin_end[]   asm("_binary_ulp_pulse_counte
 
 #include <EspException.hpp>
 #include <Log.hpp>
-#include <Task.hpp>
 
 using namespace std::chrono;
 
