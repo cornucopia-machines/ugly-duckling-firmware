@@ -20,7 +20,7 @@
         ],
         "limitSymbolsToIncludedHeaders": true
       },
-      "cppStandard": "c++23"
+      "cppStandard": "c++26"
     },
     {
       "name": "Embedded Tests",
@@ -43,14 +43,14 @@
         ],
         "limitSymbolsToIncludedHeaders": true
       },
-      "cppStandard": "c++23"
+      "cppStandard": "c++26"
     },
     {
       "name": "Native Unit Tests",
       "compileCommands": [
         "${workspaceFolder}/test/unit-tests/build-native/compile_commands.json"
       ],
-      "cppStandard": "c++23"
+      "cppStandard": "c++26"
     }
   ]
 }
