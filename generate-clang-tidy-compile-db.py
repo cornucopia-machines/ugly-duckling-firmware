@@ -37,6 +37,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 EXTRA_ARGS = [
     "-Wno-extern-c-compat",
     "-include", str(SCRIPT_DIR / "tools" / "clang-tidy-compat.h"),
+    "-Wno-unused-command-line-argument",
 ]
 
 def run(cmd):
