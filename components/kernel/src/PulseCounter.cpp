@@ -7,7 +7,6 @@
 #include <stdexcept>
 #include <utility>
 
-#include <freertos/projdefs.h>
 #include <freertos/task.h>
 
 #include <driver/gpio.h>
@@ -38,6 +37,7 @@ extern const uint8_t ulp_pulse_counter_bin_end[]   asm("_binary_ulp_pulse_counte
 
 #include <EspException.hpp>
 #include <Log.hpp>
+#include <Task.hpp>
 
 using namespace std::chrono;
 
@@ -152,17 +152,20 @@ void PulseCounterManager::start() {
 
 #if defined(CONFIG_ULP_COPROC_TYPE_RISCV)
     ESP_ERROR_THROW(ulp_riscv_run());
+#ifdef FARMHUB_DEBUG
     // Give the ULP a moment to run and halt; then check COCPU_CTRL to see if it actually executed.
-    vTaskDelay(pdMS_TO_TICKS(100));
+    Task::delay(100ms);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-cstyle-cast,performance-no-int-to-ptr) -- ESP-IDF REG_READ macro
     uint32_t cocpuCtrl = REG_READ(RTC_CNTL_COCPU_CTRL_REG);
     LOGTD(PULSE, "COCPU_CTRL=0x%" PRIx32 " DONE=%d running=%" PRIu32,
         cocpuCtrl,
         static_cast<int>((cocpuCtrl & RTC_CNTL_COCPU_DONE_M) != 0),
         ulp_running);
+#endif
 #elif defined(CONFIG_ULP_COPROC_TYPE_LP_CORE)
     ulp_lp_core_cfg_t cfg = {
         .wakeup_source = ULP_LP_CORE_WAKEUP_SOURCE_HP_CPU,
+        .lp_timer_sleep_duration_us = 0, // Not used with HP CPU wakeup source
     };
     ESP_ERROR_THROW(ulp_lp_core_run(&cfg));
 #endif
