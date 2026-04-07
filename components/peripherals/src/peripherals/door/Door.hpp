@@ -10,6 +10,7 @@
 
 #include <Concurrent.hpp>
 #include <Named.hpp>
+#include <Overloaded.hpp>
 #include <Task.hpp>
 #include <Telemetry.hpp>
 #include <Watchdog.hpp>
@@ -176,7 +177,7 @@ public:
 
     void shutdown(const ShutdownParameters& _params) override {
         if (operationState == OperationState::Running) {
-            updateQueue.put(ShutdownSpec {});
+            updateQueue.put(ShutdownSpec { });
         }
     }
 
@@ -226,9 +227,8 @@ private:
 
             updateQueue.take([&](auto& change) {
                 std::visit(
-                    [&](auto&& arg) {
-                        using T = std::decay_t<decltype(arg)>;
-                        if constexpr (std::is_same_v<T, SwitchEvent>) {
+                    overloaded {
+                        [&](const SwitchEvent& arg) {
                             LOGTV(DOOR, "Status update received: switch=%s, engaged=%s",
                                 arg.switchState->getName().c_str(),
                                 arg.engaged ? "true" : "false");
@@ -237,7 +237,8 @@ private:
                             } else if (arg.switchState == closedSwitch) {
                                 closedSwitchEngaged = arg.engaged;
                             }
-                        } else if constexpr (std::is_same_v<T, ConfigureSpec>) {
+                        },
+                        [&](const ConfigureSpec& arg) {
                             Lock lock(stateMutex);
                             TargetState newTargetState = calculateEffectiveTargetState(arg.targetState, currentState);
 
@@ -247,15 +248,17 @@ private:
                                 targetState = newTargetState;
                                 shouldPublishTelemetry = true;
                             }
-                        } else if constexpr (std::is_same_v<T, WatchdogTimeout>) {
+                        },
+                        [&](const WatchdogTimeout&) {
                             LOGTE(DOOR, "Watchdog timed out, stopping operation");
                             operationState = OperationState::WatchdogTimeout;
                             motorController.stop();
-                        } else if constexpr (std::is_same_v<T, ShutdownSpec>) {
+                        },
+                        [&](const ShutdownSpec&) {
                             LOGTI(DOOR, "Shutting down door operation");
                             operationState = OperationState::Stopped;
                             motorController.stop();
-                        }
+                        },
                     },
                     change);
             });
@@ -312,7 +315,7 @@ private:
             case WatchdogState::TimedOut:
                 LOGTV(DOOR, "Watchdog timed out");
                 sleepLock.reset();
-                updateQueue.put(WatchdogTimeout {});
+                updateQueue.put(WatchdogTimeout { });
                 break;
         }
     }

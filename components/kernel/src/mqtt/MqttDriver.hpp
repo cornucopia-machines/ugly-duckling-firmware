@@ -14,6 +14,7 @@
 
 #include <Concurrent.hpp>
 #include <Configuration.hpp>
+#include <Overloaded.hpp>
 #include <State.hpp>
 #include <Task.hpp>
 #include <mqtt/PendingMessages.hpp>
@@ -79,7 +80,7 @@ public:
         , incomingQueue("mqtt-incoming", config->queueSize.get()) {
 
         Task::run("mqtt", 5120, [this](Task& task) {
-            esp_mqtt_client_config_t mqttConfig = {};
+            esp_mqtt_client_config_t mqttConfig = { };
             client = esp_mqtt_client_init(&mqttConfig);
 
             ESP_ERROR_CHECK(esp_mqtt_client_register_event(client, MQTT_EVENT_ANY, handleMqttEventCallback, this));
@@ -127,17 +128,17 @@ public:
                     .path = nullptr,
                     .port = port,
                 },
-                .verification {},
+                .verification { },
             },
             .credentials {
                 .username = nullptr,
                 .client_id = clientId.c_str(),
                 .set_null_client_id = false,
-                .authentication {},
+                .authentication { },
             },
             // TODO Configure last will
             .session {
-                .last_will {},
+                .last_will { },
                 .disable_clean_session = false,
                 .keepalive = duration_cast<seconds>(MQTT_SESSION_KEEP_ALIVE).count(),
                 .disable_keepalive = false,
@@ -149,16 +150,16 @@ public:
                 .timeout_ms = duration_cast<milliseconds>(MQTT_NETWORK_TIMEOUT).count(),
                 .refresh_connection_after_ms = 0,    // No need to refresh connection
                 .disable_auto_reconnect = false,
-                .tcp_keep_alive_cfg = {},
+                .tcp_keep_alive_cfg = { },
                 .transport = nullptr,    // Use default transport
                 .if_name = nullptr,      // Use default interface
             },
-            .task {},
+            .task { },
             .buffer {
                 .size = 8192,
                 .out_size = 4096,
             },
-            .outbox {},
+            .outbox { },
         };
 
         LOGTD(MQTT, "server: %s:%" PRIu32 ", client ID is '%s'",
@@ -369,9 +370,8 @@ private:
 
             eventQueue.drainIn(duration_cast<ticks>(MQTT_LOOP_INTERVAL), [&](const auto& event) {
                 std::visit(
-                    [&](auto&& arg) {
-                        using T = std::decay_t<decltype(arg)>;
-                        if constexpr (std::is_same_v<T, Connected>) {
+                    overloaded {
+                        [&](const Connected& arg) {
                             LOGTV(MQTT, "Processing connected event, session present: %d",
                                 arg.sessionPresent);
                             state = MqttState::Connected;
@@ -385,7 +385,8 @@ private:
                                 // because we got a clean session
                                 processSubscriptions(subscriptions, pendingSubscriptions);
                             }
-                        } else if constexpr (std::is_same_v<T, Disconnected>) {
+                        },
+                        [&](const Disconnected&) {
                             LOGTV(MQTT, "Processing disconnected event");
                             state = MqttState::Disconnected;
                             stopClient();
@@ -395,19 +396,23 @@ private:
 
                             // Clear pending subscriptions
                             pendingSubscriptions.clear();
-                        } else if constexpr (std::is_same_v<T, MessagePublished>) {
+                        },
+                        [&](const MessagePublished& arg) {
                             LOGTV(MQTT, "Processing message published: %d", arg.messageId);
                             pendingMessages.handlePublished(arg.messageId, arg.success);
-                        } else if constexpr (std::is_same_v<T, Subscribed>) {
+                        },
+                        [&](const Subscribed& arg) {
                             LOGTV(MQTT, "Processing subscribed event: %d", arg.messageId);
                             pendingSubscriptions.remove_if([&](const auto& pendingSubscription) {
                                 return pendingSubscription.messageId == arg.messageId;
                             });
-                        } else if constexpr (std::is_same_v<T, OutgoingMessage>) {
+                        },
+                        [&](const OutgoingMessage& arg) {
                             LOGTV(MQTT, "Processing outgoing message to %s",
                                 arg.topic.c_str());
                             processOutgoingMessage(arg);
-                        } else if constexpr (std::is_same_v<T, Subscription>) {
+                        },
+                        [&](const Subscription& arg) {
                             LOGTV(MQTT, "Processing subscription");
                             subscriptions.push_back(arg);
                             if (state == MqttState::Connected) {
@@ -418,7 +423,7 @@ private:
                                 // clean session to make the subscription.
                                 nextSessionShouldBeClean = true;
                             }
-                        }
+                        },
                     },
                     event);
             });
@@ -430,7 +435,7 @@ private:
 
         stopClient();
 
-        esp_mqtt_client_config_t mqttConfig {};
+        esp_mqtt_client_config_t mqttConfig { };
         configMqttClient(mqttConfig);
         mqttConfig.session.disable_clean_session = !startCleanSession;
         esp_mqtt_set_config(client, &mqttConfig);
@@ -479,7 +484,7 @@ private:
             case MQTT_EVENT_DISCONNECTED: {
                 LOGTD(MQTT, "Disconnected from MQTT server");
                 ready.clear();
-                eventQueue.offerIn(MQTT_QUEUE_TIMEOUT, Disconnected {});
+                eventQueue.offerIn(MQTT_QUEUE_TIMEOUT, Disconnected { });
                 break;
             }
             case MQTT_EVENT_SUBSCRIBED: {
@@ -701,7 +706,7 @@ private:
     StateSource& ready;
 
     std::string hostname;
-    uint32_t port {};
+    uint32_t port { };
     esp_mqtt_client_handle_t client;
 
     Queue<std::variant<Connected, Disconnected, MessagePublished, Subscribed, OutgoingMessage, Subscription>> eventQueue;
