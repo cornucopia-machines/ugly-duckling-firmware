@@ -2,8 +2,8 @@
 
 #include <atomic>
 #include <chrono>
-#include <list>
 #include <memory>
+#include <vector>
 
 #include <driver/gpio.h>
 #include <driver/rtc_io.h>
@@ -178,7 +178,7 @@ public:
 
 private:
     bool initialized = false;
-    std::list<std::shared_ptr<PulseCounter>> counters;
+    std::vector<std::shared_ptr<PulseCounter>> counters;
 };
 
 }    // namespace farmhub::kernel

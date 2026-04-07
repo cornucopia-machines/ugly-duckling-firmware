@@ -2,7 +2,6 @@
 
 #include <atomic>
 #include <chrono>
-#include <list>
 #include <memory>
 #include <utility>
 #include <variant>

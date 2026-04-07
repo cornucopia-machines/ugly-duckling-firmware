@@ -1,8 +1,8 @@
 #pragma once
 
-#include <list>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include <Pin.hpp>
 
@@ -103,7 +103,7 @@ public:
     /**
      * @brief Returns zero or more JSON configurations for any built-in peripheral of the device.
      */
-    virtual std::list<std::string> getBuiltInPeripherals() {
+    virtual std::vector<std::string> getBuiltInPeripherals() {
         return {};
     }
 

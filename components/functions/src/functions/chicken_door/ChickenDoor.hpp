@@ -83,7 +83,7 @@ public:
         auto lightSensorScheduler = std::make_shared<LightSensorScheduler>(lightSensor);
         auto delayScheduler = std::make_shared<DelayScheduler>(lightSensorScheduler);
 
-        auto compositeScheduler = std::make_shared<CompositeScheduler>(std::list<std::shared_ptr<IScheduler>> {
+        auto compositeScheduler = std::make_shared<CompositeScheduler>(std::vector<std::shared_ptr<IScheduler>> {
             overrideScheduler,
             delayScheduler,
         });

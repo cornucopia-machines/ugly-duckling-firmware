@@ -63,7 +63,7 @@ public:
             name.c_str(),
             valve->getName().c_str());
 
-        auto compositeScheduler = std::make_shared<CompositeScheduler>(std::list<std::shared_ptr<IScheduler>> {
+        auto compositeScheduler = std::make_shared<CompositeScheduler>(std::vector<std::shared_ptr<IScheduler>> {
             overrideScheduler,
             timeBasedScheduler,
             moistureBasedScheduler,
@@ -107,7 +107,7 @@ public:
 private:
     struct ConfigSpec {
         std::optional<OverrideSchedule> overrideSpec;
-        std::list<TimeBasedSchedule> scheduleSpec;
+        std::vector<TimeBasedSchedule> scheduleSpec;
         std::optional<MoistureTarget> soilMoistureTargetSpec;
     };
     Queue<ConfigSpec> configQueue { "configQueue", 1 };

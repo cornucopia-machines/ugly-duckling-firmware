@@ -1,7 +1,7 @@
 #pragma once
 
 #include <functional>
-#include <list>
+#include <vector>
 
 #include <Task.hpp>
 
@@ -25,7 +25,7 @@ public:
     }
 
 private:
-    std::list<std::function<void()>> shutdownListeners;
+    std::vector<std::function<void()>> shutdownListeners;
 };
 
 }    // namespace farmhub::kernel

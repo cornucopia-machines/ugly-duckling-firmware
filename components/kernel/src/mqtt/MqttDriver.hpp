@@ -2,7 +2,6 @@
 
 #include <atomic>
 #include <chrono>
-#include <list>
 #include <memory>
 #include <optional>
 #include <utility>
@@ -191,41 +190,41 @@ private:
     static constexpr milliseconds MQTT_QUEUE_TIMEOUT = 1s;
 
     struct PendingSubscription {
-        const int messageId;
-        const steady_clock::time_point subscribedAt;
+        int messageId;
+        steady_clock::time_point subscribedAt;
     };
 
     struct OutgoingMessage {
-        const std::string topic;
-        const std::string payload;
-        const Retention retain;
-        const QoS qos;
+        std::string topic;
+        std::string payload;
+        Retention retain;
+        QoS qos;
         TaskHandle_t waitingTask;
-        const LogPublish log;
+        LogPublish log;
     };
 
     struct IncomingMessage {
-        const std::string topic;
-        const std::string payload;
+        std::string topic;
+        std::string payload;
     };
 
     struct Subscription {
-        const std::string topic;
-        const QoS qos;
-        const SubscriptionHandler handle;
+        std::string topic;
+        QoS qos;
+        SubscriptionHandler handle;
     };
 
     struct MessagePublished {
-        const int messageId;
-        const bool success;
+        int messageId;
+        bool success;
     };
 
     struct Subscribed {
-        const int messageId;
+        int messageId;
     };
 
     struct Connected {
-        const bool sessionPresent;
+        bool sessionPresent;
     };
 
     struct Disconnected { };
@@ -305,7 +304,7 @@ private:
             });
     }
 
-    static std::string joinStrings(const std::list<std::string>& strings) {
+    static std::string joinStrings(const std::vector<std::string>& strings) {
         if (strings.empty()) {
             return "";
         }
@@ -331,14 +330,14 @@ private:
         auto nextSessionShouldBeClean = true;
 
         // List of messages we are waiting on
-        std::list<PendingSubscription> pendingSubscriptions;
+        std::vector<PendingSubscription> pendingSubscriptions;
 
         while (true) {
             auto now = steady_clock::now();
 
             // Cull pending subscriptions
             // TODO Do this with deleted messages?
-            pendingSubscriptions.remove_if([&](const auto& pendingSubscription) {
+            std::erase_if(pendingSubscriptions, [&](const auto& pendingSubscription) {
                 if (now - pendingSubscription.subscribedAt > MQTT_NETWORK_TIMEOUT) {
                     LOGTE(MQTT, "Subscription timed out with message id %d", pendingSubscription.messageId);
                     // Force next session to start clean, so we can re-subscribe
@@ -403,7 +402,7 @@ private:
                         },
                         [&](const Subscribed& arg) {
                             LOGTV(MQTT, "Processing subscribed event: %d", arg.messageId);
-                            pendingSubscriptions.remove_if([&](const auto& pendingSubscription) {
+                            std::erase_if(pendingSubscriptions, [&](const auto& pendingSubscription) {
                                 return pendingSubscription.messageId == arg.messageId;
                             });
                         },
@@ -576,7 +575,7 @@ private:
         }
     }
 
-    void processSubscriptions(const std::list<Subscription>& subscriptions, std::list<PendingSubscription>& pendingSubscriptions) {
+    void processSubscriptions(const std::vector<Subscription>& subscriptions, std::vector<PendingSubscription>& pendingSubscriptions) {
         std::vector<esp_mqtt_topic_t> topics;
         for (auto it = subscriptions.begin(); it != subscriptions.end();) {
             // Break up subscriptions into batches
@@ -592,7 +591,7 @@ private:
         }
     }
 
-    void processSubscriptionBatch(const std::vector<esp_mqtt_topic_t>& topics, std::list<PendingSubscription>& pendingSubscriptions) {
+    void processSubscriptionBatch(const std::vector<esp_mqtt_topic_t>& topics, std::vector<PendingSubscription>& pendingSubscriptions) {
         int ret = esp_mqtt_client_subscribe_multiple(client, topics.data(), static_cast<int>(topics.size()));
 
         if (ret < 0) {
@@ -712,7 +711,7 @@ private:
     Queue<std::variant<Connected, Disconnected, MessagePublished, Subscribed, OutgoingMessage, Subscription>> eventQueue;
     Queue<IncomingMessage> incomingQueue;
     // TODO Use a map instead
-    std::list<Subscription> subscriptions;
+    std::vector<Subscription> subscriptions;
     PendingMessages pendingMessages;
 
     std::atomic<int> disconnectCount { 0 };

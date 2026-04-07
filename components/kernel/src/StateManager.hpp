@@ -1,5 +1,7 @@
 #pragma once
 
+#include <vector>
+
 #include <State.hpp>
 
 namespace farmhub::kernel {
@@ -27,7 +29,7 @@ public:
         return { name, eventGroup, eventBits };
     }
 
-    State combineStates(const std::string& name, const std::list<State>& states) const {
+    State combineStates(const std::string& name, const std::vector<State>& states) const {
         LOGD("Creating combined state: %s",
             name.c_str());
         EventBits_t eventBits = 0;

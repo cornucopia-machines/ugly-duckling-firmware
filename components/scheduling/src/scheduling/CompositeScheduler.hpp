@@ -1,6 +1,6 @@
 #pragma once
 
-#include <list>
+#include <vector>
 
 #include <utils/Chrono.hpp>
 
@@ -9,7 +9,7 @@
 namespace farmhub::utils::scheduling {
 
 struct CompositeScheduler : IScheduler {
-    CompositeScheduler(std::list<std::shared_ptr<IScheduler>> schedulers)
+    CompositeScheduler(std::vector<std::shared_ptr<IScheduler>> schedulers)
         : schedulers(std::move(schedulers)) {
     }
 
@@ -40,7 +40,7 @@ private:
         };
     }
 
-    std::list<std::shared_ptr<IScheduler>> schedulers;
+    std::vector<std::shared_ptr<IScheduler>> schedulers;
 };
 
 }    // namespace farmhub::utils::scheduling

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <list>
 #include <memory>
 
 #include <esp_sleep.h>
