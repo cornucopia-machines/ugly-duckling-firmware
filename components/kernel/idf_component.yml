@@ -1,9 +1,12 @@
 ## IDF Component Manager Manifest File
 dependencies:
   idf:
-    version: "5.5.3"
+    version: "6.0"
   espressif/catch2: "3.7.0"
-  bblanchon/arduinojson: "7.4.2"
+  espressif/mqtt: "^1.0.0"
+  espressif/network_provisioning: "^1.2.2"
+  espressif/bq27220: "^0.1.0"
+  bblanchon/arduinojson: "7.4.3"
   esp-idf-lib/bh1750: "^1.1.7"
   esp-idf-lib/ds18x20: "^1.2.8"
   esp-idf-lib/i2cdev: "^2.1.1"
@@ -11,4 +14,3 @@ dependencies:
   esp-idf-lib/sht3x: "^1.0.8"
   esp-idf-lib/si7021: "^1.0.8"
   esp-idf-lib/tsl2591: "^1.0.7"
-  kodediy/kode_bq27220: "1.0.0"

@@ -554,7 +554,7 @@ static void startDevice() {
             json["debug"] = false;
 #endif
             json["reset"] = esp_reset_reason();
-            json["wakeup"] = esp_sleep_get_wakeup_cause();
+            json["wakeup"] = esp_sleep_get_wakeup_causes();
             json["bootCount"] = bootCount++;
             json["time"] = duration_cast<seconds>(system_clock::now().time_since_epoch()).count();
             json["state"] = static_cast<int>(initState);
