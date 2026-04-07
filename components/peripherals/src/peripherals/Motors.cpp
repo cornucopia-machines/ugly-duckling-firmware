@@ -1,6 +1,7 @@
 #include "Motors.hpp"
 #include "PeripheralException.hpp"
 #include "drivers/MotorDriver.hpp"
+#include <map>
 #include <memory>
 #include <string>
 
