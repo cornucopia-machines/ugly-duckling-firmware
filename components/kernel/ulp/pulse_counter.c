@@ -80,28 +80,28 @@ int main(void) {
     running = 1;
     uint32_t n = channel_count;
 
-    for (uint32_t i = 0; i < n; i++) {
-        gpio_input_enable(gpio_num[i]);
-        last_level[i]      = gpio_get_level(gpio_num[i]);
-        last_edge_cycle[i] = get_ccount();
-        debounce_cycles[i] = debounce_us[i] * CYCLES_PER_US;
+    for (uint32_t gpio_idx = 0; gpio_idx < n; gpio_idx++) {
+        gpio_input_enable(gpio_num[gpio_idx]);
+        last_level[gpio_idx]      = gpio_get_level(gpio_num[gpio_idx]);
+        last_edge_cycle[gpio_idx] = get_ccount();
+        debounce_cycles[gpio_idx] = debounce_us[gpio_idx] * CYCLES_PER_US;
     }
 
     while (1) {
         uint32_t now = get_ccount();
 
-        for (uint32_t i = 0; i < n; i++) {
-            uint32_t level = gpio_get_level(gpio_num[i]);
+        for (uint32_t gpio_idx = 0; gpio_idx < n; gpio_idx++) {
+            uint32_t level = gpio_get_level(gpio_num[gpio_idx]);
 
-            if (level != last_level[i]) {
-                last_level[i] = level;
+            if (level != last_level[gpio_idx]) {
+                last_level[gpio_idx] = level;
 
                 if (level == 0) {
                     // Falling edge detected. Apply debounce.
-                    uint32_t elapsed = now - last_edge_cycle[i];
-                    if (elapsed >= debounce_cycles[i]) {
-                        pulse_count[i]++;
-                        last_edge_cycle[i] = now;
+                    uint32_t elapsed = now - last_edge_cycle[gpio_idx];
+                    if (elapsed >= debounce_cycles[gpio_idx]) {
+                        pulse_count[gpio_idx]++;
+                        last_edge_cycle[gpio_idx] = now;
                     }
                 }
             }
