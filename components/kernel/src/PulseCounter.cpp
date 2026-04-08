@@ -22,9 +22,13 @@
 #include <ulp_common.h>
 #include <ulp_riscv.h>
 #ifdef FARMHUB_DEBUG
+#include <bits/chrono.h>
 #include <soc/rtc_cntl_reg.h>
 #include <soc/soc.h>
+
 #include <Task.hpp>
+
+using namespace std::chrono_literals;
 #endif
 #elif defined(CONFIG_ULP_COPROC_TYPE_LP_CORE)
 #include <ulp_lp_core.h>
