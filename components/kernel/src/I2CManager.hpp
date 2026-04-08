@@ -28,7 +28,7 @@ public:
     InternalPinPtr scl;
 
     std::string toString() const {
-        return "I2C address: 0x" + toHexString(address) + ", SDA: " + sda->getName() + ", SCL: " + scl->getName();
+        return "I2C address: " + toHexString(address) + ", SDA: " + sda->getName() + ", SCL: " + scl->getName();
     }
 };
 
