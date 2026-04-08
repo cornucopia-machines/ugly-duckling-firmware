@@ -148,8 +148,8 @@ void PulseCounterManager::start() {
     ulp_riscv_timer_stop();
     ulp_riscv_reset();
     ESP_ERROR_THROW(ulp_riscv_load_binary(ulp_pulse_counter_bin_start, size));
-    // Restart the ULP every 1000 µs after each ulp_riscv_halt() call.
-    // Must be set before ulp_riscv_run(); matches ULP_TIMER_PERIOD_US in pulse_counter.c.
+    // The timer triggers the very first ULP start; after that the ULP runs
+    // continuously and never halts, so the period value doesn't matter much.
     ESP_ERROR_THROW(ulp_set_wakeup_period(0, 1000));
 #elif defined(CONFIG_ULP_COPROC_TYPE_LP_CORE)
     ESP_ERROR_THROW(ulp_lp_core_load_binary(ulp_pulse_counter_bin_start, size));

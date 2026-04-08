@@ -22,9 +22,9 @@ entirely by the RTC/LP domain. It keeps running during light sleep (and deep sle
 - **ESP32-C6**: LP Core coprocessor, LP domain, ~16 MHz
 
 The design:
-- Coprocessor firmware polls configured GPIO pins, detecting falling edges on up to `MAX_CHANNELS`
-  channels and incrementing a per-channel counter in RTC/LP slow memory. On ESP32-C6 this is a
-  continuous tight loop; on ESP32-S3 the ULP halts after each pass and is restarted by a 1 ms timer.
+- Coprocessor firmware polls configured GPIO pins in a continuous tight loop, detecting falling
+  edges on up to `MAX_CHANNELS` channels and incrementing a per-channel counter in RTC/LP slow
+  memory. Both ESP32-S3 and ESP32-C6 use the same loop structure with cycle-counting debounce.
 - The main CPU wakes only for WiFi DTIM beacons (every 20 beacons ≈ 2 s) and reads the accumulated
   counts from RTC/LP memory at that point. No GPIO-triggered wakeups for pulse counting at all.
 
@@ -48,9 +48,9 @@ oscillator to ~16 MHz (`LP_CORE_CPU_FREQUENCY_HZ = 16000000` in ESP-IDF). At 16 
 - Polling loop throughput: well above Nyquist for 1000 Hz signals.
 - 1 ms debounce window = 16 000 cycles at nominal frequency.
 
-The debounce conversion happens in the coprocessor firmware during init. On ESP32-C6, the firmware
-converts `debounce_us` to LP Core CPU cycles using `DEBOUNCE_CYCLES(us) = us * 16` (16 cycles/μs).
-On ESP32-S3, debounce is based on timer period counts (see [Debounce](#debounce) below).
+The debounce conversion happens in the coprocessor firmware during init. Both platforms convert
+`debounce_us` to CPU cycles: ESP32-C6 uses `us * 16` (16 cycles/μs at ~16 MHz) and ESP32-S3
+uses `us * 17` (17 cycles/μs at ~17.5 MHz).
 
 ## Concurrency
 
@@ -76,30 +76,14 @@ as long as the readout interval is much shorter than the overflow period — whi
 ## Debounce
 
 The main CPU passes a debounce time in microseconds (`ulp_debounce_us`); the coprocessor converts it
-to a platform-specific unit during its init phase. After counting a falling edge, subsequent edges are
-ignored until the debounce window has elapsed.
-
-### ESP32-C6
-
-Debounce uses the RISC-V `mcycle` counter (ticks at the LP Core CPU clock). The firmware converts
-microseconds to cycles during init:
+to CPU cycles during its init phase using the platform's clock rate. After counting a falling edge,
+subsequent edges are ignored until the debounce window has elapsed.
 
 ```
-debounce_cycles = debounce_us * 16    // 16 MHz LP Core clock
+debounce_cycles = debounce_us * CYCLES_PER_US
 ```
 
-### ESP32-S3
-
-Debounce counts ULP timer wakeup periods. The ULP halts after each polling pass and the timer restarts
-it every `ULP_TIMER_PERIOD_US` (1000 µs). The firmware converts microseconds to period counts:
-
-```
-debounce_count = debounce_us / ULP_TIMER_PERIOD_US    // e.g. 1000 µs → 1 period
-```
-
-Each wakeup decrements the counter; edges are ignored while the counter is non-zero.
-
-### Accuracy
+Where `CYCLES_PER_US` is 16 (ESP32-C6, ~16 MHz) or 17 (ESP32-S3, ~17.5 MHz).
 
 The RC oscillators are not trimmed to better than ~10%, but for a Hall-effect sensor — which produces
 clean, bounce-free transitions — this is entirely sufficient.
@@ -126,17 +110,25 @@ explicitly after all channels are registered. It zeroes the RTC/LP memory counte
 carrying over stale values from previous runs), writes the channel configuration, loads the
 coprocessor binary, and starts it.
 
+On both platforms the coprocessor runs a continuous polling loop that never returns from `main()`.
+
 ### ESP32-S3 startup
 
 ```cpp
+ulp_riscv_timer_stop();               // stop timer surviving from a previous boot
+ulp_riscv_reset();                     // clear any stale trap/done state
 ulp_riscv_load_binary(bin_start, size);
-ulp_set_wakeup_period(0, 1000);  // 1000 µs = ULP_TIMER_PERIOD_US
+ulp_set_wakeup_period(0, 1000);
 ulp_riscv_run();
 ```
 
-The ULP executes in a halt-based cycle: it polls all GPIOs once, then calls `ulp_riscv_halt()`.
-The ULP timer restarts it every 1000 µs. State survives across halt/restart cycles because
-ESP-IDF's `start.S` does not zero `.bss`.
+The RTC domain survives software resets, so the ULP timer from a previous boot may still be
+running. If it fires while `load_binary()` is zeroing RTC memory, the ULP executes illegal
+instructions and traps. `ulp_riscv_timer_stop()` + `ulp_riscv_reset()` prevent this.
+
+The ULP timer triggers the first start. Once running, `start.S` calls
+`ulp_riscv_rescue_from_monitor()` which clears `DONE` and `SHUT_RESET_EN`, so subsequent
+timer ticks are harmlessly ignored. The ULP then enters a continuous polling loop.
 
 ### ESP32-C6 startup
 
