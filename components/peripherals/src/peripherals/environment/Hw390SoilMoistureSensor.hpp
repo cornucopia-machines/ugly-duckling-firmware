@@ -13,7 +13,7 @@ using namespace farmhub::peripherals;
 
 namespace farmhub::peripherals::environment {
 
-class SoilMoistureSensorSettings
+class Hw390SoilMoistureSensorSettings
     : public ConfigurationSection {
 public:
     Property<InternalPinPtr> pin { this, "pin" };
@@ -25,11 +25,11 @@ public:
     Property<double> alpha { this, "alpha", 1.0 };
 };
 
-class SoilMoistureSensor final
+class Hw390SoilMoistureSensor final
     : public api::ISoilMoistureSensor,
       public Peripheral {
 public:
-    SoilMoistureSensor(
+    Hw390SoilMoistureSensor(
         const std::string& name,
         int airValue,
         int waterValue,
@@ -81,12 +81,12 @@ private:
     };
 };
 
-inline PeripheralFactory makeFactoryForSoilMoisture() {
-    return makePeripheralFactory<ISoilMoistureSensor, SoilMoistureSensor, SoilMoistureSensorSettings>(
-        "environment:soil-moisture",
+inline PeripheralFactory makeFactoryForHw390SoilMoisture(const std::string& factoryType = "soil:hw390") {
+    return makePeripheralFactory<ISoilMoistureSensor, Hw390SoilMoistureSensor, Hw390SoilMoistureSensorSettings>(
+        factoryType,
         "environment",
-        [](PeripheralInitParameters& params, const std::shared_ptr<SoilMoistureSensorSettings>& settings) {
-            auto sensor = std::make_shared<SoilMoistureSensor>(
+        [](PeripheralInitParameters& params, const std::shared_ptr<Hw390SoilMoistureSensorSettings>& settings) {
+            auto sensor = std::make_shared<Hw390SoilMoistureSensor>(
                 params.name,
                 settings->air.get(),
                 settings->water.get(),

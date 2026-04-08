@@ -27,7 +27,8 @@
 #include <peripherals/environment/NtcTemperatureSensor.hpp>
 #include <peripherals/environment/Sht2xSensor.hpp>
 #include <peripherals/environment/Sht3xSensor.hpp>
-#include <peripherals/environment/SoilMoistureSensor.hpp>
+#include <peripherals/environment/ChirpSoilSensor.hpp>
+#include <peripherals/environment/Hw390SoilMoistureSensor.hpp>
 #include <peripherals/fence/ElectricFenceMonitor.hpp>
 #include <peripherals/flow_meter/FlowMeter.hpp>
 #include <peripherals/light_sensor/AnalogLightSensor.hpp>
@@ -77,7 +78,10 @@ public:
         peripheralManager->registerFactory(environment::makeFactoryForSht2x("htu2x"));
         peripheralManager->registerFactory(environment::makeFactoryForNtcTemperatureSensor());
 
-        peripheralManager->registerFactory(environment::makeFactoryForSoilMoisture());
+        peripheralManager->registerFactory(environment::makeFactoryForHw390SoilMoisture());
+        // For backward compatibility with existing configs; can be removed after a while
+        peripheralManager->registerFactory(environment::makeFactoryForHw390SoilMoisture("environment:soil-moisture"));
+        peripheralManager->registerFactory(environment::makeFactoryForChirpSoilSensor());
         peripheralManager->registerFactory(environment::makeFactoryForDs18b20());
         peripheralManager->registerFactory(environment::makeFactoryForKalmanSoilMoisture());
 

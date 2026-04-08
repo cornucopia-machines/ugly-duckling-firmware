@@ -23,7 +23,7 @@
     },
     {
       "name": "raw-soil-moisture",
-      "type": "environment:soil-moisture",
+      "type": "soil:hw390",
       "params": {
         "air": 3017,
         "pin": "A1",
