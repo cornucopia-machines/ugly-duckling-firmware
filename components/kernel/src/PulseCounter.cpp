@@ -142,6 +142,11 @@ void PulseCounterManager::start() {
     size_t size = ulp_pulse_counter_bin_end - ulp_pulse_counter_bin_start;
     LOGTD(PULSE, "Loading ULP binary (%zu bytes from %p to %p)", size, ulp_pulse_counter_bin_start, ulp_pulse_counter_bin_end);
 #if defined(CONFIG_ULP_COPROC_TYPE_RISCV)
+    // Stop any ULP timer still running from a previous boot (the RTC domain
+    // survives software resets).  If the timer fires while load_binary() is
+    // zeroing/copying RTC memory the ULP executes illegal instructions and traps.
+    ulp_riscv_timer_stop();
+    ulp_riscv_reset();
     ESP_ERROR_THROW(ulp_riscv_load_binary(ulp_pulse_counter_bin_start, size));
     // Restart the ULP every 1000 µs after each ulp_riscv_halt() call.
     // Must be set before ulp_riscv_run(); matches ULP_TIMER_PERIOD_US in pulse_counter.c.
