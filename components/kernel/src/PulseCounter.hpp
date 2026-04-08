@@ -6,13 +6,12 @@
 #include <vector>
 
 #include <driver/gpio.h>
-#include <driver/rtc_io.h>
 #include <esp_sleep.h>
 
 #include <Concurrent.hpp>
+#include <EspException.hpp>
 #include <Log.hpp>
 #include <Pin.hpp>
-#include <PowerManager.hpp>
 
 using namespace std::chrono;
 
@@ -21,7 +20,6 @@ namespace farmhub::kernel {
 LOGGING_TAG(PULSE, "pulse")
 
 class PulseCounterManager;
-static void handlePulseCounterInterrupt(void* arg);
 
 struct PulseCounterConfig {
     InternalPinPtr pin;
@@ -32,6 +30,32 @@ struct PulseCounterConfig {
 };
 
 /**
+ * @brief Abstract interface for pulse counters.
+ *
+ * Created via PulseCounterManager::create(), which selects the appropriate implementation:
+ * - UlpPulseCounter for RTC-capable GPIOs (GPIO 0–21 on ESP32-S3): counts via the ULP-RISC-V
+ *   coprocessor, requiring no CPU wakeups during light sleep.
+ * - GpioPulseCounter for all other GPIOs: counts via GPIO interrupts, light-sleep aware.
+ */
+class PulseCounter {
+public:
+    virtual uint32_t getCount() const = 0;
+    virtual uint32_t reset() = 0;
+    virtual PinPtr getPin() const = 0;
+    virtual ~PulseCounter() = default;
+
+protected:
+    PulseCounter() = default;
+};
+
+// ============================================================================
+// GpioPulseCounter — GPIO interrupt path, light-sleep aware
+// ============================================================================
+
+class GpioPulseCounter;
+static void handleGpioPulseCounterInterrupt(void* arg);
+
+/**
  * @brief Counts pulses on a GPIO pin using interrupts.
  *
  * Note: This counter is safe to use with the device entering and exiting light sleep.
@@ -39,10 +63,13 @@ struct PulseCounterConfig {
  * When the device is awake, it watches for edges, and counts falling edges.
  * When the device enters light sleep, we set up an interrupt to wake on level change.
  * This is necessary because in light sleep the device cannot detect edges, only levels.
+ *
+ * Use this for GPIOs that are not RTC-capable. For RTC-capable GPIOs, prefer
+ * UlpPulseCounter (selected automatically by PulseCounterManager).
  */
-class PulseCounter {
+class GpioPulseCounter final : public PulseCounter {
 public:
-    PulseCounter(const InternalPinPtr& pin, microseconds debounceTime)
+    GpioPulseCounter(const InternalPinPtr& pin, microseconds debounceTime)
         : pin(pin)
         , debounceTime(debounceTime)
         , lastEdge(pin->digitalRead())
@@ -65,25 +92,25 @@ public:
         // TODO Where should this be called?
         ESP_ERROR_THROW(esp_sleep_enable_gpio_wakeup());
 
-        LOGTD(PULSE, "Registered interrupt-based pulse counter unit on pin %s",
+        LOGTD(PULSE, "Registered interrupt-based pulse counter on pin %s",
             pin->getName().c_str());
     }
 
-    uint32_t getCount() const {
+    uint32_t getCount() const override {
         uint32_t count = edgeCount.load();
         LOGTV(PULSE, "Counted %" PRIu32 " pulses on pin %s",
             count, pin->getName().c_str());
         return count;
     }
 
-    uint32_t reset() {
+    uint32_t reset() override {
         uint32_t count = edgeCount.exchange(0);
         LOGTV(PULSE, "Counted %" PRIu32 " pulses and cleared on pin %s",
             count, pin->getName().c_str());
         return count;
     }
 
-    PinPtr getPin() const {
+    PinPtr getPin() const override {
         return pin;
     }
 
@@ -102,8 +129,7 @@ private:
         // Switch back to edge detection when we are awake
         ESP_ERROR_CHECK(gpio_wakeup_disable(pin->getGpio()));
         ESP_ERROR_CHECK(gpio_set_intr_type(pin->getGpio(), GPIO_INTR_ANYEDGE));
-
-        handlePulseCounterInterrupt(this);
+        handleGpioPulseCounterInterrupt(this);
     }
 
     const InternalPinPtr pin;
@@ -112,12 +138,12 @@ private:
     int lastEdge;
     steady_clock::time_point lastCountedEdgeTime;
 
-    friend void handlePulseCounterInterrupt(void* arg);
+    friend void handleGpioPulseCounterInterrupt(void* arg);
     friend class PulseCounterManager;
 };
 
-static void IRAM_ATTR handlePulseCounterInterrupt(void* arg) {
-    auto* counter = static_cast<PulseCounter*>(arg);
+static void IRAM_ATTR handleGpioPulseCounterInterrupt(void* arg) {
+    auto* counter = static_cast<GpioPulseCounter*>(arg);
     auto currentState = counter->pin->digitalReadFromISR();
     if (currentState != counter->lastEdge) {
         counter->lastEdge = currentState;
@@ -138,47 +164,58 @@ static void IRAM_ATTR handlePulseCounterInterrupt(void* arg) {
     }
 }
 
+// ============================================================================
+// PulseCounterManager
+// ============================================================================
+
+/**
+ * @brief Creates and manages pulse counters, automatically selecting the implementation.
+ *
+ * For RTC/LP-capable GPIOs: creates a UlpPulseCounter (coprocessor-based, zero CPU wakeups).
+ *   - ESP32-S3: GPIO 0–21 (ULP-RISC-V, ~17.5 MHz)
+ *   - ESP32-C6: GPIO 0–7  (LP Core, ~16 MHz)
+ * For all other GPIOs: creates a GpioPulseCounter (interrupt-based, light-sleep aware).
+ *
+ * Call start() after all counters have been created to load and start the coprocessor firmware.
+ * start() is a no-op if no ULP counters were created.
+ */
 class PulseCounterManager {
 public:
-    std::shared_ptr<PulseCounter> create(const PulseCounterConfig& config) {
-        if (!initialized) {
-            initialized = true;
+    std::shared_ptr<PulseCounter> create(const PulseCounterConfig& config);
 
-            // Make sure we handle any state changes when the device wakes up due to a GPIO interrupt
-            esp_pm_sleep_cbs_register_config_t sleepCallbackConfig = {
-                .enter_cb = [](int64_t _timeToSleepInUs, void* arg) {
-                    auto* self = static_cast<PulseCounterManager*>(arg);
-                    for (auto& counter : self->counters) {
-                        counter->handleGoingToLightSleep();
-                    }
-                    return ESP_OK; },
-                .exit_cb = [](int64_t _timeSleptInUs, void* arg) {
-                    auto* self = static_cast<PulseCounterManager*>(arg);
-                    for (auto& counter : self->counters) {
-                        counter->handleWakingUpFromLightSleep();
-                    }
-                    return ESP_OK; },
-                .enter_cb_user_arg = this,
-                .exit_cb_user_arg = this,
-                .enter_cb_prior = 0,
-                .exit_cb_prior = 0,
-            };
-            ESP_ERROR_THROW(esp_pm_light_sleep_register_cbs(&sleepCallbackConfig));
-        }
-
-        auto counter = std::make_shared<PulseCounter>(config.pin, config.debounceTime);
-
-        // Attach the ISR handler to the GPIO pin
-        ESP_ERROR_THROW(gpio_isr_handler_add(config.pin->getGpio(), handlePulseCounterInterrupt, counter.get()));
-
-        // Keep the counter alive in the manager
-        counters.push_back(counter);
-        return counter;
-    }
+    /**
+     * @brief Load and start the ULP/LP-core firmware.
+     *
+     * Must be called after all ULP channels are registered (i.e., after all create() calls
+     * for RTC/LP-capable GPIOs). Safe to call even if no ULP channels were created (no-op).
+     * Calling more than once is also a no-op.
+     */
+    void start();
 
 private:
-    bool initialized = false;
-    std::vector<std::shared_ptr<PulseCounter>> counters;
+    // GPIO interrupt path
+    bool gpioInitialized = false;
+    std::vector<GpioPulseCounter*> gpioCounters;
+
+    std::vector<std::shared_ptr<PulseCounter>> ulpCounters;
+
+#ifdef CONFIG_ULP_COPROC_ENABLED
+    static constexpr uint32_t ULP_MAX_CHANNELS = 4;
+
+    // ULP/LP-core path
+    bool ulpStarted = false;
+    uint32_t ulpNextChannel = 0;
+
+    struct UlpChannelConfig {
+        uint32_t gpioNum;
+        uint32_t debounceUs;
+    };
+    UlpChannelConfig ulpChannelConfigs[ULP_MAX_CHANNELS] = {};
+
+    std::shared_ptr<PulseCounter> createUlp(const PulseCounterConfig& config);
+#endif    // CONFIG_ULP_COPROC_ENABLED
+
+    std::shared_ptr<PulseCounter> createGpio(const PulseCounterConfig& config);
 };
 
 }    // namespace farmhub::kernel

@@ -521,6 +521,9 @@ static void startDevice() {
         }
     }
 
+    // Start ULP pulse counter after all channels have been registered by peripherals above.
+    pulseCounterManager->start();
+
     JsonDocument functionsInitDoc;
     auto functionsInitJson = functionsInitDoc.to<JsonArray>();
     auto& functionsSettings = settings->functions.get();

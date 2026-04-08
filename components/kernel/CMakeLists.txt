@@ -1,7 +1,7 @@
+file(GLOB_RECURSE KERNEL_SRCS "${CMAKE_CURRENT_LIST_DIR}/src/*.cpp")
+
 idf_component_register(
-    SRCS
-        src/drivers/MotorDriver.cpp
-        src/State.cpp
+    SRCS ${KERNEL_SRCS}
     INCLUDE_DIRS
         src
     REQUIRES
@@ -24,6 +24,7 @@ idf_component_register(
         mqtt
         network_provisioning
         nvs_flash
+        ulp
 
         # ESP-IDF-lib components
         bh1750
@@ -40,3 +41,17 @@ idf_component_register(
         # ArduinoJSON
         bblanchon__arduinojson
 )
+
+set_target_properties(${COMPONENT_LIB} PROPERTIES WHOLE_ARCHIVE 1)
+
+set(ulp_app_name ulp_pulse_counter)
+set(ulp_sources "${CMAKE_CURRENT_LIST_DIR}/ulp/pulse_counter.c")
+# PulseCounter.cpp includes the generated ulp_pulse_counter.h, so it must not
+# be compiled until the ULP binary (and its generated header) are ready.
+set(ulp_exp_dep_srcs "src/PulseCounter.cpp")
+
+ulp_embed_binary(${ulp_app_name} "${ulp_sources}" "${ulp_exp_dep_srcs}")
+
+# Make the generated ULP header (ulp_kernel.h) visible to components that depend on kernel.
+# ulp_embed_binary() uses directory-scoped include_directories(), which doesn't propagate.
+target_include_directories(${COMPONENT_LIB} PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/${ulp_app_name})

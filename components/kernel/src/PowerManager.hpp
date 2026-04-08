@@ -6,6 +6,7 @@
 
 #include <Concurrent.hpp>
 #include <EspException.hpp>
+#include <Log.hpp>
 #include <Telemetry.hpp>
 
 #if defined(CONFIG_IDF_TARGET_ESP32S2)
@@ -157,6 +158,5 @@ private:
 #endif
 };
 
-PowerManagementLock PowerManager::noLightSleep("no-light-sleep", ESP_PM_NO_LIGHT_SLEEP);
 
 }    // namespace farmhub::kernel

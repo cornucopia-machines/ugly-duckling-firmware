@@ -52,8 +52,8 @@ inline bool loggingTagInList(const char* tag, const char* list) {
 }
 
 // LOGGING_TAG(varName, "tagname")
-#define LOGGING_TAG(varName, name)                             \
-    static constexpr const char* varName = "farmhub:" name;    \
+#define LOGGING_TAG(varName, name)                              \
+    inline constexpr const char* varName = "farmhub:" name;    \
     struct varName##_LoggerInit {                              \
         varName##_LoggerInit() {                               \
             esp_log_level_t lvl = FARMHUB_LOG_LEVEL;           \
@@ -63,7 +63,7 @@ inline bool loggingTagInList(const char* tag, const char* list) {
             esp_log_level_set(varName, lvl);                   \
         }                                                      \
     };                                                         \
-    static const varName##_LoggerInit varName##_logger_init;
+    inline const varName##_LoggerInit varName##_logger_init;
 
 LOGGING_TAG(GLOBAL, "global")
 
