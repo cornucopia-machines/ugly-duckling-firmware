@@ -1,5 +1,17 @@
 include(${CMAKE_CURRENT_LIST_DIR}/Common.cmake)
 
+# Do not fail on warnings in ESP-IDF
+idf_build_set_property(COMPILE_OPTIONS "-Wno-error" APPEND)
+
+# Fail on warnings
+add_compile_options(-Wall)
+add_compile_options(-Wextra)
+add_compile_options(-Wunused)
+add_compile_options(-Wreturn-local-addr)
+add_compile_options(-Werror)
+
+# UD_GEN
+
 if(NOT DEFINED UD_GEN)
     set(UD_GEN "$ENV{UD_GEN}")
 endif()
@@ -7,6 +19,10 @@ string(TOLOWER "${UD_GEN}" UD_GEN_LOWER)
 
 # Make sure we reconfigure if UD_GEN changes
 set_property(GLOBAL PROPERTY UD_GEN_TRACKER "${UD_GEN}")
+
+if(UD_GEN)
+    add_compile_definitions("${UD_GEN}")
+endif()
 
 # Determine the expected IDF target for this generation
 set(ESP32_S3_GENS MK5 MK6 MK6_REV1 MK6_REV2 MK6_REV3 MK7 MK8 MK8_REV1 MK8_REV2)
@@ -36,9 +52,17 @@ else()
     message(FATAL_ERROR "Error: Unrecognized Ugly Duckling generation '${UD_GEN}'")
 endif()
 
+# IDF_TARGET checks
+
 if(NOT "$ENV{IDF_TARGET}" STREQUAL "${_ud_target}")
     message(FATAL_ERROR "Error: IDF_TARGET='$ENV{IDF_TARGET}' does not match expected target '${_ud_target}'")
 endif()
+
+if(IDF_TARGET STREQUAL "esp32s3")
+    add_compile_options(-mtext-section-literals) # To fix 'literal target out of range' errors
+endif()
+
+# UD_DEBUG
 
 if(NOT DEFINED UD_DEBUG)
     set(UD_DEBUG "$ENV{UD_DEBUG}")
@@ -46,6 +70,36 @@ endif()
 if(UD_DEBUG STREQUAL "")
     message("UD_DEBUG is not set, assuming 0.")
     set(UD_DEBUG 0)
+endif()
+
+if(NOT DEFINED FARMHUB_LOG_VERBOSE)
+    set(FARMHUB_LOG_VERBOSE "$ENV{FARMHUB_LOG_VERBOSE}")
+endif()
+
+if(UD_DEBUG)
+    add_compile_definitions(FARMHUB_DEBUG)
+    add_compile_definitions(FARMHUB_LOG_VERBOSE="${FARMHUB_LOG_VERBOSE}")
+    add_compile_definitions(DUMP_MQTT)
+endif()
+
+# WOKWI
+
+if(NOT DEFINED WOKWI)
+    set(WOKWI "$ENV{WOKWI}")
+endif()
+
+if(NOT DEFINED WOKWI_MQTT_HOST)
+    set(WOKWI_MQTT_HOST "$ENV{WOKWI_MQTT_HOST}")
+endif()
+
+# Make sure we reconfigure if parameters change
+set_property(DIRECTORY PROPERTY WOKWI_TRACKER "${WOKWI} ${WOKWI_MQTT_HOST}")
+
+if(WOKWI)
+    add_compile_definitions(WOKWI)
+    if (WOKWI_MQTT_HOST)
+        add_compile_definitions(WOKWI_MQTT_HOST="${WOKWI_MQTT_HOST}")
+    endif()
 endif()
 
 # Make sure we reconfigure if UD_DEBUG changes
