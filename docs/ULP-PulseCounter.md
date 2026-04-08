@@ -18,12 +18,13 @@ but does not solve the sleep/wake problem at all.
 Both supported SoCs include a low-power coprocessor that runs independently of the main CPU, powered
 entirely by the RTC/LP domain. It keeps running during light sleep (and deep sleep).
 
-- **ESP32-S3**: ULP-RISC-V coprocessor, RTC domain, ~8 MHz
+- **ESP32-S3**: ULP-RISC-V coprocessor, RTC domain, ~17.5 MHz
 - **ESP32-C6**: LP Core coprocessor, LP domain, ~16 MHz
 
 The design:
-- Coprocessor firmware runs a tight polling loop, detecting falling edges on up to `MAX_CHANNELS`
-  configured GPIO pins and incrementing a per-channel counter in RTC/LP slow memory.
+- Coprocessor firmware polls configured GPIO pins, detecting falling edges on up to `MAX_CHANNELS`
+  channels and incrementing a per-channel counter in RTC/LP slow memory. On ESP32-C6 this is a
+  continuous tight loop; on ESP32-S3 the ULP halts after each pass and is restarted by a 1 ms timer.
 - The main CPU wakes only for WiFi DTIM beacons (every 20 beacons ≈ 2 s) and reads the accumulated
   counts from RTC/LP memory at that point. No GPIO-triggered wakeups for pulse counting at all.
 
@@ -47,9 +48,9 @@ oscillator to ~16 MHz (`LP_CORE_CPU_FREQUENCY_HZ = 16000000` in ESP-IDF). At 16 
 - Polling loop throughput: well above Nyquist for 1000 Hz signals.
 - 1 ms debounce window = 16 000 cycles at nominal frequency.
 
-The debounce conversion (`debounce_us → cycles`) happens in the coprocessor firmware during init,
-using `DEBOUNCE_CYCLES(us)` — defined as `us * 35 / 2` for S3 (17.5 cycles/μs) and `us * 16` for
-C6 (16 cycles/μs).
+The debounce conversion happens in the coprocessor firmware during init. On ESP32-C6, the firmware
+converts `debounce_us` to LP Core CPU cycles using `DEBOUNCE_CYCLES(us) = us * 16` (16 cycles/μs).
+On ESP32-S3, debounce is based on timer period counts (see [Debounce](#debounce) below).
 
 ## Concurrency
 
@@ -74,17 +75,32 @@ as long as the readout interval is much shorter than the overflow period — whi
 
 ## Debounce
 
-Debounce is implemented in the coprocessor using the RISC-V `mcycle` counter (ticks at the coprocessor
-CPU clock). After counting a falling edge, subsequent edges are ignored until `debounce_cycles` cycles
-have elapsed. The main CPU passes a debounce time in microseconds (`ulp_debounce_us`); the coprocessor
-converts it to cycles during its init phase:
+The main CPU passes a debounce time in microseconds (`ulp_debounce_us`); the coprocessor converts it
+to a platform-specific unit during its init phase. After counting a falling edge, subsequent edges are
+ignored until the debounce window has elapsed.
+
+### ESP32-C6
+
+Debounce uses the RISC-V `mcycle` counter (ticks at the LP Core CPU clock). The firmware converts
+microseconds to cycles during init:
 
 ```
-debounce_cycles = debounce_us * CYCLES_PER_US
+debounce_cycles = debounce_us * 16    // 16 MHz LP Core clock
 ```
 
-where `DEBOUNCE_CYCLES(us)` expands to `us * 35 / 2` on ESP32-S3 (17.5 MHz) and `us * 16` on
-ESP32-C6 (16 MHz), defined in the firmware.
+### ESP32-S3
+
+Debounce counts ULP timer wakeup periods. The ULP halts after each polling pass and the timer restarts
+it every `ULP_TIMER_PERIOD_US` (1000 µs). The firmware converts microseconds to period counts:
+
+```
+debounce_count = debounce_us / ULP_TIMER_PERIOD_US    // e.g. 1000 µs → 1 period
+```
+
+Each wakeup decrements the counter; edges are ignored while the counter is non-zero.
+
+### Accuracy
+
 The RC oscillators are not trimmed to better than ~10%, but for a Hall-effect sensor — which produces
 clean, bounce-free transitions — this is entirely sufficient.
 
@@ -110,15 +126,17 @@ explicitly after all channels are registered. It zeroes the RTC/LP memory counte
 carrying over stale values from previous runs), writes the channel configuration, loads the
 coprocessor binary, and starts it.
 
-The coprocessor then runs indefinitely. No timer-based periodic execution — just a continuous tight
-loop.
-
 ### ESP32-S3 startup
 
 ```cpp
 ulp_riscv_load_binary(bin_start, size);
+ulp_set_wakeup_period(0, 1000);  // 1000 µs = ULP_TIMER_PERIOD_US
 ulp_riscv_run();
 ```
+
+The ULP executes in a halt-based cycle: it polls all GPIOs once, then calls `ulp_riscv_halt()`.
+The ULP timer restarts it every 1000 µs. State survives across halt/restart cycles because
+ESP-IDF's `start.S` does not zero `.bss`.
 
 ### ESP32-C6 startup
 
@@ -129,7 +147,7 @@ ulp_lp_core_run(&cfg);
 ```
 
 `ULP_LP_CORE_WAKEUP_SOURCE_HP_CPU` means the LP Core is started once by the main CPU and then
-runs continuously until power is removed, mirroring the ULP-RISC-V behaviour on S3.
+runs a continuous tight polling loop until power is removed.
 
 ## Public API Changes
 

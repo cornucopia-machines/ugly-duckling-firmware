@@ -24,6 +24,7 @@
 #ifdef FARMHUB_DEBUG
 #include <bits/chrono.h>
 #include <soc/rtc_cntl_reg.h>
+#include <soc/sens_reg.h>
 #include <soc/soc.h>
 
 #include <Task.hpp>
@@ -139,7 +140,7 @@ void PulseCounterManager::start() {
 
     // NOLINTNEXTLINE(clang-analyzer-security.PointerSub) -- linker-emitted symbols, not a real array
     size_t size = ulp_pulse_counter_bin_end - ulp_pulse_counter_bin_start;
-    LOGTD(PULSE, "Loading ULP binary (%zu bytes)", size);
+    LOGTD(PULSE, "Loading ULP binary (%zu bytes from %p to %p)", size, ulp_pulse_counter_bin_start, ulp_pulse_counter_bin_end);
 #if defined(CONFIG_ULP_COPROC_TYPE_RISCV)
     ESP_ERROR_THROW(ulp_riscv_load_binary(ulp_pulse_counter_bin_start, size));
     // Restart the ULP every 1000 µs after each ulp_riscv_halt() call.
@@ -159,13 +160,19 @@ void PulseCounterManager::start() {
 #if defined(CONFIG_ULP_COPROC_TYPE_RISCV)
     ESP_ERROR_THROW(ulp_riscv_run());
 #ifdef FARMHUB_DEBUG
-    // Give the ULP a moment to run and halt; then check COCPU_CTRL to see if it actually executed.
+    // Give the ULP a moment to run and halt; then check registers to see if it actually executed.
     Task::delay(100ms);
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-cstyle-cast,performance-no-int-to-ptr) -- ESP-IDF REG_READ macro
+    // NOLINTBEGIN(cppcoreguidelines-pro-type-cstyle-cast,performance-no-int-to-ptr) -- ESP-IDF REG_READ macro
     uint32_t cocpuCtrl = REG_READ(RTC_CNTL_COCPU_CTRL_REG);
-    LOGTD(PULSE, "COCPU_CTRL=0x%" PRIx32 " DONE=%d running=%" PRIu32,
+    uint32_t sensState = REG_READ(SENS_SAR_COCPU_STATE_REG);
+    uint32_t intRaw = REG_READ(RTC_CNTL_INT_RAW_REG);
+    // NOLINTEND(cppcoreguidelines-pro-type-cstyle-cast,performance-no-int-to-ptr)
+    LOGTD(PULSE, "COCPU_CTRL=0x%" PRIx32 " SENSE=0x%" PRIx32 " DONE=%d TRAP=%d TRAP_INT_RAW=%d running=%" PRIu32,
         cocpuCtrl,
+        sensState,
         static_cast<int>((cocpuCtrl & RTC_CNTL_COCPU_DONE_M) != 0),
+        static_cast<int>((sensState & SENS_COCPU_TRAP_M) != 0),
+        static_cast<int>((intRaw & RTC_CNTL_COCPU_TRAP_INT_RAW_M) != 0),
         ulp_running);
 #endif
 #elif defined(CONFIG_ULP_COPROC_TYPE_LP_CORE)
