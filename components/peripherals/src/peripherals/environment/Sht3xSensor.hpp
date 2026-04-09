@@ -15,10 +15,10 @@
 #include "Environment.hpp"
 
 using namespace std::chrono;
-using namespace farmhub::kernel;
-using namespace farmhub::peripherals;
+using namespace cornucopia::ugly_duckling::kernel;
+using namespace cornucopia::ugly_duckling::peripherals;
 
-namespace farmhub::peripherals::environment {
+namespace cornucopia::ugly_duckling::peripherals::environment {
 
 class Sht3xSensor final
     : public EnvironmentSensor,
@@ -108,4 +108,4 @@ inline PeripheralFactory makeFactoryForSht3x() {
         });
 }
 
-}    // namespace farmhub::peripherals::environment
+}    // namespace cornucopia::ugly_duckling::peripherals::environment

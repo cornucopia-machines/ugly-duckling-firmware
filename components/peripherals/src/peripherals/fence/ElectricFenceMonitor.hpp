@@ -11,10 +11,10 @@
 #include <utility>
 
 using namespace std::chrono_literals;
-using namespace farmhub::kernel;
-using namespace farmhub::peripherals;
+using namespace cornucopia::ugly_duckling::kernel;
+using namespace cornucopia::ugly_duckling::peripherals;
 
-namespace farmhub::peripherals::fence {
+namespace cornucopia::ugly_duckling::peripherals::fence {
 
 struct FencePinConfig {
     InternalPinPtr pin;
@@ -103,11 +103,11 @@ inline PeripheralFactory makeFactory() {
         });
 }
 
-}    // namespace farmhub::peripherals::fence
+}    // namespace cornucopia::ugly_duckling::peripherals::fence
 
 namespace ArduinoJson {
 
-using farmhub::peripherals::fence::FencePinConfig;
+using cornucopia::ugly_duckling::peripherals::fence::FencePinConfig;
 
 template <>
 struct Converter<FencePinConfig> {

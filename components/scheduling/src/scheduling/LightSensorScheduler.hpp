@@ -12,9 +12,9 @@
 using namespace std::chrono;
 using namespace std::chrono_literals;
 
-using namespace farmhub::peripherals::api;
+using namespace cornucopia::ugly_duckling::peripherals::api;
 
-namespace farmhub::utils::scheduling {
+namespace cornucopia::ugly_duckling::utils::scheduling {
 
 struct LightSensorSchedule {
     Lux open;
@@ -73,4 +73,4 @@ private:
     std::optional<LightSensorSchedule> target;
 };
 
-}    // namespace farmhub::utils::scheduling
+}    // namespace cornucopia::ugly_duckling::utils::scheduling

@@ -6,7 +6,7 @@
 
 #include <scheduling/IScheduler.hpp>
 
-namespace farmhub::utils::scheduling {
+namespace cornucopia::ugly_duckling::utils::scheduling {
 
 using namespace std::chrono;
 
@@ -64,4 +64,4 @@ private:
     std::optional<OverrideSchedule> schedule;
 };
 
-}    // namespace farmhub::utils::scheduling
+}    // namespace cornucopia::ugly_duckling::utils::scheduling

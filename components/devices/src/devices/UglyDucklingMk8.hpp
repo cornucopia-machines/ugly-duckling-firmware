@@ -15,12 +15,12 @@
 
 #include <devices/DeviceDefinition.hpp>
 
-using namespace farmhub::kernel;
-using namespace farmhub::kernel::drivers;
-using namespace farmhub::peripherals::door;
-using namespace farmhub::peripherals::valve;
+using namespace cornucopia::ugly_duckling::kernel;
+using namespace cornucopia::ugly_duckling::kernel::drivers;
+using namespace cornucopia::ugly_duckling::peripherals::door;
+using namespace cornucopia::ugly_duckling::peripherals::valve;
 
-namespace farmhub::devices {
+namespace cornucopia::ugly_duckling::devices {
 
 class UglyDucklingMk8Base : public DeviceDefinition {
 public:
@@ -149,4 +149,4 @@ private:
     std::shared_ptr<Ina219Driver> ina219;
 };
 
-}    // namespace farmhub::devices
+}    // namespace cornucopia::ugly_duckling::devices

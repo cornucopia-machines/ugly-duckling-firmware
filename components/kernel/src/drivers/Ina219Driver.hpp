@@ -4,9 +4,9 @@
 
 #include <I2CManager.hpp>
 
-using namespace farmhub::kernel;
+using namespace cornucopia::ugly_duckling::kernel;
 
-namespace farmhub::kernel::drivers {
+namespace cornucopia::ugly_duckling::kernel::drivers {
 
 struct Ina219Parameters {
     ina219_bus_voltage_range_t uRange;
@@ -103,4 +103,4 @@ private:
     bool enabled;
 };
 
-}    // namespace farmhub::kernel::drivers
+}    // namespace cornucopia::ugly_duckling::kernel::drivers

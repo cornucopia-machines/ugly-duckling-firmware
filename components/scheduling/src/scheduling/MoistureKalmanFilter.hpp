@@ -3,7 +3,7 @@
 #include <array>
 #include <cmath>
 
-namespace farmhub::utils::scheduling {
+namespace cornucopia::ugly_duckling::utils::scheduling {
 /**
  * @brief Kalman filter to estimate true soil moisture and temperature sensitivity.
  *
@@ -128,4 +128,4 @@ private:
     std::array<std::array<double, 2>, 2> P {};
 };
 
-}    // namespace farmhub::utils::scheduling
+}    // namespace cornucopia::ugly_duckling::utils::scheduling

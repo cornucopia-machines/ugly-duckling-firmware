@@ -6,7 +6,7 @@
 
 #include <Watchdog.hpp>
 
-using namespace farmhub::kernel;
+using namespace cornucopia::ugly_duckling::kernel;
 
 TEST_CASE("can start and stop watchdog") {
     std::optional<WatchdogState> watchdogState;

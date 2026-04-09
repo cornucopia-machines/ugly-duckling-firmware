@@ -9,7 +9,7 @@
 #include <Concurrent.hpp>
 #include <Log.hpp>
 
-namespace farmhub::kernel {
+namespace cornucopia::ugly_duckling::kernel {
 
 class TelemetryCollector {
 public:
@@ -57,4 +57,4 @@ private:
     std::shared_ptr<CopyQueue<bool>> telemetryPublishQueue;
 };
 
-}    // namespace farmhub::kernel
+}    // namespace cornucopia::ugly_duckling::kernel

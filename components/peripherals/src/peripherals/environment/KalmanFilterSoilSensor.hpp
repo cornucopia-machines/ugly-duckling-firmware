@@ -13,9 +13,9 @@
 #include "Environment.hpp"
 
 using namespace std::chrono;
-using namespace farmhub::utils::scheduling;
+using namespace cornucopia::ugly_duckling::utils::scheduling;
 
-namespace farmhub::peripherals::environment {
+namespace cornucopia::ugly_duckling::peripherals::environment {
 
 /**
  * @brief Reports real soil moisture levels calculated from raw moisture and temperature data using a Kalman filter.
@@ -152,4 +152,4 @@ inline PeripheralFactory makeFactoryForKalmanSoilMoisture() {
         });
 }
 
-}    // namespace farmhub::peripherals::environment
+}    // namespace cornucopia::ugly_duckling::peripherals::environment

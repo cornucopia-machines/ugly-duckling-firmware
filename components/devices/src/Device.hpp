@@ -17,7 +17,7 @@
 #include <driver/gpio.h>
 #include <esp_app_desc.h>
 
-static const char* const farmhubVersion = reinterpret_cast<const char*>(esp_app_get_description()->version);
+static const char* const firmwareVersion = reinterpret_cast<const char*>(esp_app_get_description()->version);
 
 #include <BatteryManager.hpp>
 #include <Console.hpp>
@@ -39,10 +39,10 @@ static const char* const farmhubVersion = reinterpret_cast<const char*>(esp_app_
 #include <peripherals/Peripheral.hpp>
 
 using namespace std::chrono;
-using namespace farmhub::devices;
-using namespace farmhub::functions;
-using namespace farmhub::kernel;
-using namespace farmhub::peripherals;
+using namespace cornucopia::ugly_duckling::devices;
+using namespace cornucopia::ugly_duckling::functions;
+using namespace cornucopia::ugly_duckling::kernel;
+using namespace cornucopia::ugly_duckling::peripherals;
 
 #ifdef CONFIG_HEAP_TRACING
 #include <esp_heap_trace.h>
@@ -371,7 +371,7 @@ static void startDevice() {
     auto powerManager = std::make_shared<PowerManager>(settings->sleepWhenIdle.get());
 
     auto logRecords = std::make_shared<Queue<LogRecord>>("logs",
-#ifdef FARMHUB_DEBUG
+#ifdef UD_DEBUG
         128
 #else
         32
@@ -380,15 +380,15 @@ static void startDevice() {
     ConsoleProvider::init(logRecords, settings->publishLogs.get());
 
     LOGD("\n"
-         "   ______                   _    _       _\n"
-         "  |  ____|                 | |  | |     | |\n"
-         "  | |__ __ _ _ __ _ __ ___ | |__| |_   _| |__\n"
-         "  |  __/ _` | '__| '_ ` _ \\|  __  | | | | '_ \\\n"
-         "  | | | (_| | |  | | | | | | |  | | |_| | |_) |\n"
-         "  |_|  \\__,_|_|  |_| |_| |_|_|  |_|\\__,_|_.__/ %s\n",
-        farmhubVersion);
-    LOGI("Initializing FarmHub kernel version %s on %s instance '%s' with hostname '%s' and MAC address %s",
-        farmhubVersion,
+         "   _   _       _         ____             _    _ _\n"
+         "  | | | | __ _| |_   _  |  _ \\ _   _  ___| | _| (_)_ __   __ _\n"
+         "  | | | |/ _` | | | | | | | | | | | |/ __| |/ / | | '_ \\ / _` |\n"
+         "  | |_| | (_| | | |_| | | |_| | |_| | (__|   <| | | | | | (_| |\n"
+         "   \\___/ \\__, |_|\\__, | |____/ \\__,_|\\___|_|\\_\\_|_|_| |_|\\__, |\n"
+         "         |___/   |___/                                    |___/ %s\n",
+        firmwareVersion);
+    LOGI("Initializing ugly duckling firmware version %s on %s instance '%s' with hostname '%s' and MAC address %s",
+        firmwareVersion,
         modelWithRevision.c_str(),
         networkConfig->instance.get().c_str(),
         networkConfig->getHostname().c_str(),
@@ -437,7 +437,7 @@ static void startDevice() {
         LOGD("No battery configured");
     }
 
-#ifdef FARMHUB_DEBUG
+#ifdef UD_DEBUG
     new DebugConsole(batteryManager, wifi);
 #endif
 
@@ -550,8 +550,8 @@ static void startDevice() {
             json["mac"] = getMacAddress();
             auto device = json["settings"].to<JsonObject>();
             settings->store(device);
-            json["version"] = farmhubVersion;
-#ifdef FARMHUB_DEBUG
+            json["version"] = firmwareVersion;
+#ifdef UD_DEBUG
             json["debug"] = true;
 #else
             json["debug"] = false;
@@ -573,7 +573,7 @@ static void startDevice() {
 
     LOGI("Device ready in %.2f s (kernel version %s on %s instance '%s' with hostname '%s' and IP '%s', SSID '%s', current time is %lld)",
         duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count() / 1000.0,
-        farmhubVersion,
+        firmwareVersion,
         modelWithRevision.c_str(),
         networkConfig->instance.get().c_str(),
         networkConfig->getHostname().c_str(),

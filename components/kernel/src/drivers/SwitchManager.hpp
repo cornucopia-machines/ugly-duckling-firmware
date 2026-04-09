@@ -13,9 +13,9 @@
 
 using namespace std::chrono;
 
-using farmhub::kernel::PinPtr;
+using cornucopia::ugly_duckling::kernel::PinPtr;
 
-namespace farmhub::kernel::drivers {
+namespace cornucopia::ugly_duckling::kernel::drivers {
 
 LOGGING_TAG(SWITCH, "switch")
 
@@ -213,4 +213,4 @@ static void IRAM_ATTR handleSwitchInterrupt(void* arg) {
     });
 }
 
-}    // namespace farmhub::kernel::drivers
+}    // namespace cornucopia::ugly_duckling::kernel::drivers

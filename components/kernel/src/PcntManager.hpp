@@ -7,7 +7,7 @@
 #include <EspException.hpp>
 #include <utility>
 
-namespace farmhub::kernel {
+namespace cornucopia::ugly_duckling::kernel {
 
 LOGGING_TAG(PCNT, "pcnt")
 
@@ -93,4 +93,4 @@ public:
     }
 };
 
-}    // namespace farmhub::kernel
+}    // namespace cornucopia::ugly_duckling::kernel

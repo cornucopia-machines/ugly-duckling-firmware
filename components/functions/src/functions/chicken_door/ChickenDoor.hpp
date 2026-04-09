@@ -15,10 +15,10 @@
 #include <scheduling/LightSensorScheduler.hpp>
 #include <scheduling/OverrideScheduler.hpp>
 
-using namespace farmhub::peripherals::api;
-using namespace farmhub::utils::scheduling;
+using namespace cornucopia::ugly_duckling::peripherals::api;
+using namespace cornucopia::ugly_duckling::utils::scheduling;
 
-namespace farmhub::functions::chicken_door {
+namespace cornucopia::ugly_duckling::functions::chicken_door {
 
 LOGGING_TAG(CHICKEN_DOOR, "chicken-door")
 
@@ -166,4 +166,4 @@ inline FunctionFactory makeFactory() {
         });
 }
 
-}    // namespace farmhub::functions::chicken_door
+}    // namespace cornucopia::ugly_duckling::functions::chicken_door

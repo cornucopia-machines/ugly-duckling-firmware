@@ -4,7 +4,7 @@
 #include <Task.hpp>
 #include <mqtt/MqttRoot.hpp>
 
-namespace farmhub::kernel::mqtt {
+namespace cornucopia::ugly_duckling::kernel::mqtt {
 
 class MqttLog {
 public:
@@ -34,4 +34,4 @@ public:
     }
 };
 
-}    // namespace farmhub::kernel::mqtt
+}    // namespace cornucopia::ugly_duckling::kernel::mqtt

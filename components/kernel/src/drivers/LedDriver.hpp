@@ -10,9 +10,9 @@
 
 using namespace std::chrono;
 
-using farmhub::kernel::PinPtr;
+using cornucopia::ugly_duckling::kernel::PinPtr;
 
-namespace farmhub::kernel::drivers {
+namespace cornucopia::ugly_duckling::kernel::drivers {
 
 class LedDriver {
 public:
@@ -93,4 +93,4 @@ private:
     std::atomic<bool> ledState;
 };
 
-}    // namespace farmhub::kernel::drivers
+}    // namespace cornucopia::ugly_duckling::kernel::drivers

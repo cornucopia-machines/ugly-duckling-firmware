@@ -3,9 +3,9 @@
 #include <Configuration.hpp>
 #include <Pin.hpp>
 
-using namespace farmhub::kernel;
+using namespace cornucopia::ugly_duckling::kernel;
 
-namespace farmhub::devices {
+namespace cornucopia::ugly_duckling::devices {
 
 struct DeviceSettings : ConfigurationSection {
     ArrayProperty<JsonAsString> peripherals { this, "peripherals" };
@@ -18,7 +18,7 @@ struct DeviceSettings : ConfigurationSection {
      */
     Property<seconds> publishInterval { this, "publishInterval", 5min };
     Property<Level> publishLogs { this, "publishLogs",
-#ifdef FARMHUB_DEBUG
+#ifdef UD_DEBUG
         Level::Verbose
 #else
         Level::Info
@@ -39,4 +39,4 @@ struct DeviceSettings : ConfigurationSection {
     Property<PinPtr> motorNSleepPin { this, "motorNSleepPin" };
 };
 
-}    // namespace farmhub::devices
+}    // namespace cornucopia::ugly_duckling::devices

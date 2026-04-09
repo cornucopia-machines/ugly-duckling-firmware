@@ -10,7 +10,7 @@
 using namespace std::chrono;
 using namespace std::chrono_literals;
 
-namespace farmhub::utils::scheduling {
+namespace cornucopia::ugly_duckling::utils::scheduling {
 
 struct DelaySchedule {
     seconds open;
@@ -145,4 +145,4 @@ private:
     std::optional<time_point<steady_clock>> transitionStartTime;
 };
 
-}    // namespace farmhub::utils::scheduling
+}    // namespace cornucopia::ugly_duckling::utils::scheduling

@@ -11,7 +11,7 @@
 #include <Concurrent.hpp>
 #include <Configuration.hpp>
 
-namespace farmhub::kernel {
+namespace cornucopia::ugly_duckling::kernel {
 
 // Forward declarations and common types
 struct ShutdownParameters {
@@ -212,4 +212,4 @@ private:
     };
 };
 
-}    // namespace farmhub::kernel
+}    // namespace cornucopia::ugly_duckling::kernel

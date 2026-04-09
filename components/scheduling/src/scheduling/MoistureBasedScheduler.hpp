@@ -16,9 +16,9 @@
 #include <scheduling/IScheduler.hpp>
 
 using namespace std::chrono_literals;
-using namespace farmhub::peripherals::api;
+using namespace cornucopia::ugly_duckling::peripherals::api;
 
-namespace farmhub::utils::scheduling {
+namespace cornucopia::ugly_duckling::utils::scheduling {
 
 // ---------- Strong-ish units ----------
 using ms = std::chrono::milliseconds;
@@ -426,4 +426,4 @@ private:
     }
 };
 
-}    // namespace farmhub::utils::scheduling
+}    // namespace cornucopia::ugly_duckling::utils::scheduling

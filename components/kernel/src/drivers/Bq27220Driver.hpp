@@ -10,9 +10,9 @@
 #include <I2CManager.hpp>
 #include <drivers/BatteryDriver.hpp>
 
-using namespace farmhub::kernel;
+using namespace cornucopia::ugly_duckling::kernel;
 
-namespace farmhub::kernel::drivers {
+namespace cornucopia::ugly_duckling::kernel::drivers {
 
 // Default Gauging Parameter
 static const parameter_cedv_t default_cedv = {
@@ -127,4 +127,4 @@ private:
     bq27220_handle_t gauge = nullptr;
 };
 
-}    // namespace farmhub::kernel::drivers
+}    // namespace cornucopia::ugly_duckling::kernel::drivers

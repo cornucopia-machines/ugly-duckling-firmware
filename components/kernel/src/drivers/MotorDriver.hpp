@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-namespace farmhub::kernel::drivers {
+namespace cornucopia::ugly_duckling::kernel::drivers {
 
 enum class MotorPhase : int8_t {
     Forward = 1,
@@ -22,4 +22,4 @@ public:
     virtual void drive(MotorPhase phase, double duty) = 0;
 };
 
-}    // namespace farmhub::kernel::drivers
+}    // namespace cornucopia::ugly_duckling::kernel::drivers

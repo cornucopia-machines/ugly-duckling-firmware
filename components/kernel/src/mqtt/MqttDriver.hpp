@@ -20,10 +20,10 @@
 
 using namespace std::chrono;
 using namespace std::chrono_literals;
-using namespace farmhub::kernel;
-using namespace farmhub::kernel::drivers;
+using namespace cornucopia::ugly_duckling::kernel;
+using namespace cornucopia::ugly_duckling::kernel::drivers;
 
-namespace farmhub::kernel::mqtt {
+namespace cornucopia::ugly_duckling::kernel::mqtt {
 
 LOGGING_TAG(MQTT, "mqtt")
 
@@ -719,4 +719,4 @@ private:
     friend class MqttRoot;
 };
 
-}    // namespace farmhub::kernel::mqtt
+}    // namespace cornucopia::ugly_duckling::kernel::mqtt

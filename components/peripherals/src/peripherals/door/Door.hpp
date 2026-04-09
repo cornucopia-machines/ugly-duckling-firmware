@@ -21,14 +21,14 @@
 #include <peripherals/Peripheral.hpp>
 #include <peripherals/api/IDoor.hpp>
 
-using namespace farmhub::kernel;
-using namespace farmhub::kernel::drivers;
-using namespace farmhub::peripherals;
-using namespace farmhub::peripherals::api;
+using namespace cornucopia::ugly_duckling::kernel;
+using namespace cornucopia::ugly_duckling::kernel::drivers;
+using namespace cornucopia::ugly_duckling::peripherals;
+using namespace cornucopia::ugly_duckling::peripherals::api;
 using namespace std::chrono;
 using namespace std::chrono_literals;
 
-namespace farmhub::peripherals::door {
+namespace cornucopia::ugly_duckling::peripherals::door {
 
 LOGGING_TAG(DOOR, "door")
 
@@ -401,11 +401,11 @@ inline PeripheralFactory makeFactory(const std::map<std::string, std::shared_ptr
         });
 }
 
-}    // namespace farmhub::peripherals::door
+}    // namespace cornucopia::ugly_duckling::peripherals::door
 
 namespace ArduinoJson {
 
-using farmhub::peripherals::door::OperationState;
+using cornucopia::ugly_duckling::peripherals::door::OperationState;
 
 template <>
 struct Converter<OperationState> {

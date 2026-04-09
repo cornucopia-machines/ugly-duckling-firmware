@@ -13,7 +13,7 @@
 using std::ref;
 using std::reference_wrapper;
 
-namespace farmhub::kernel {
+namespace cornucopia::ugly_duckling::kernel {
 
 class ConfigurationException
     : public std::exception {
@@ -280,7 +280,7 @@ private:
     std::vector<T> entries;
 };
 
-}    // namespace farmhub::kernel
+}    // namespace cornucopia::ugly_duckling::kernel
 
 namespace ArduinoJson {
 
@@ -306,7 +306,7 @@ struct Converter<D> {
     }
 };
 
-using farmhub::kernel::JsonAsString;
+using cornucopia::ugly_duckling::kernel::JsonAsString;
 
 template <>
 struct Converter<JsonAsString> {

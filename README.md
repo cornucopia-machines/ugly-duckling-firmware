@@ -2,10 +2,10 @@
 
 ![Build badge](https://github.com/cornucopia-machines/ugly-duckling/actions/workflows/build.yml/badge.svg)
 
-Ugly Duckling is a firmware for IoT devices participating in the FarmHub ecosystem.
+Ugly Duckling is a firmware for IoT devices participating in the Cornucopia ecosystem like the GrowMachine.
 
 The devices are built around the Espressif ESP32 micro-controller using the ESP-IDF framework and FreeRTOS.
-The devices can report telemetry to, and receive configuration and commands from the FarmHub server via MQTT over WiFi.
+The devices can report telemetry to, and receive configuration and commands from the Cornucopia server via MQTT over WiFi.
 They can also receive firmware updates via HTTP(S).
 
 Devices are identified by a location (denoting the installation site) and a unique instance name.
@@ -46,7 +46,7 @@ It includes both the device identity and the MQTT broker settings:
 ```jsonc
 {
   "instance": "chicken-door", // the instance name, defaults to MAC address
-  "location": "my-farm", // the name of the location the device is installed at
+  "location": "my-garden", // the name of the location the device is installed at
   "host": "...", // broker host name
   "port": 1883, // broker port, defaults to 1883
   "clientId": "chicken-door", // client ID, defaults to "ugly-duckling-$instance" if omitted
@@ -121,7 +121,7 @@ Once the device receives such configuration, it stores it under the `$FUNCTION_N
 
 ## Remote commands
 
-FarmHub devices and their peripherals both support receiving commands via MQTT.
+Ugly duckling devices and their peripherals both support receiving commands via MQTT.
 Commands are triggered via retained MQTT messages sent to `$DEVICE_ROOT/commands/$COMMAND` for devices, and `$DEVICE_`.
 They typically respond under `$DEVICE_ROOT/responses/$COMMAND`.
 

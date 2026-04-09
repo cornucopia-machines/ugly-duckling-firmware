@@ -15,9 +15,9 @@
 
 using namespace std::chrono;
 using namespace std::chrono_literals;
-using namespace farmhub::kernel;
+using namespace cornucopia::ugly_duckling::kernel;
 
-namespace farmhub::kernel::drivers {
+namespace cornucopia::ugly_duckling::kernel::drivers {
 
 LOGGING_TAG(WIFI, "wifi")
 
@@ -424,4 +424,4 @@ private:
     std::atomic<int> disconnectCount { 0 };
 };
 
-}    // namespace farmhub::kernel::drivers
+}    // namespace cornucopia::ugly_duckling::kernel::drivers

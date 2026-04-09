@@ -1,6 +1,6 @@
 #include "MotorDriver.hpp"
 
-namespace farmhub::kernel::drivers {
+namespace cornucopia::ugly_duckling::kernel::drivers {
 
 MotorPhase operator-(MotorPhase phase) {
     return phase == MotorPhase::Forward
@@ -8,4 +8,4 @@ MotorPhase operator-(MotorPhase phase) {
         : MotorPhase::Forward;
 }
 
-}    // namespace farmhub::kernel::drivers
+}    // namespace cornucopia::ugly_duckling::kernel::drivers

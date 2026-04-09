@@ -13,9 +13,9 @@
 #include <Strings.hpp>
 #include <utility>
 
-namespace farmhub::kernel {
+namespace cornucopia::ugly_duckling::kernel {
 
-using farmhub::kernel::PinPtr;
+using cornucopia::ugly_duckling::kernel::PinPtr;
 
 using GpioPair = std::pair<PinPtr, PinPtr>;
 
@@ -186,4 +186,4 @@ private:
     std::vector<std::shared_ptr<I2CBus>> buses;
 };
 
-}    // namespace farmhub::kernel
+}    // namespace cornucopia::ugly_duckling::kernel

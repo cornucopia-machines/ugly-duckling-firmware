@@ -14,11 +14,11 @@
 
 #include <devices/DeviceDefinition.hpp>
 
-using namespace farmhub::kernel;
-using namespace farmhub::peripherals::door;
-using namespace farmhub::peripherals::valve;
+using namespace cornucopia::ugly_duckling::kernel;
+using namespace cornucopia::ugly_duckling::peripherals::door;
+using namespace cornucopia::ugly_duckling::peripherals::valve;
 
-namespace farmhub::devices {
+namespace cornucopia::ugly_duckling::devices {
 
 class UglyDucklingMk6Base : public DeviceDefinition {
 public:
@@ -132,4 +132,4 @@ protected:
     }
 };
 
-}    // namespace farmhub::devices
+}    // namespace cornucopia::ugly_duckling::devices

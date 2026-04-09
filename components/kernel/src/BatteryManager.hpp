@@ -11,9 +11,9 @@
 #include <drivers/BatteryDriver.hpp>
 #include <utility>
 
-using namespace farmhub::kernel::drivers;
+using namespace cornucopia::ugly_duckling::kernel::drivers;
 
-namespace farmhub::kernel {
+namespace cornucopia::ugly_duckling::kernel {
 
 /**
  * @brief Time to wait between battery checks.
@@ -99,4 +99,4 @@ private:
     static constexpr auto LOW_BATTERY_SHUTDOWN_TIMEOUT = 10s;
 };
 
-}    // namespace farmhub::kernel
+}    // namespace cornucopia::ugly_duckling::kernel

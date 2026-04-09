@@ -11,10 +11,10 @@
 
 #include <utils/DebouncedMeasurement.hpp>
 
-using namespace farmhub::kernel;
-using namespace farmhub::peripherals::api;
+using namespace cornucopia::ugly_duckling::kernel;
+using namespace cornucopia::ugly_duckling::peripherals::api;
 
-namespace farmhub::peripherals::environment {
+namespace cornucopia::ugly_duckling::peripherals::environment {
 
 class NtcTemperatureSensor final
     : virtual public ITemperatureSensor,
@@ -76,4 +76,4 @@ inline PeripheralFactory makeFactoryForNtcTemperatureSensor() {
         });
 }
 
-}    // namespace farmhub::peripherals::environment
+}    // namespace cornucopia::ugly_duckling::peripherals::environment

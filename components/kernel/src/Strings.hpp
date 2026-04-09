@@ -3,7 +3,7 @@
 #include <stdint.h>
 #include <string>
 
-namespace farmhub::kernel {
+namespace cornucopia::ugly_duckling::kernel {
 
 static constexpr const char* DIGITS = "0123456789abcdef";
 
@@ -29,4 +29,4 @@ std::string toStringWithPrecision(double value, int precision) {
     return { buffer };
 }
 
-}    // namespace farmhub::kernel
+}    // namespace cornucopia::ugly_duckling::kernel

@@ -4,7 +4,7 @@
 
 #include <State.hpp>
 
-namespace farmhub::kernel {
+namespace cornucopia::ugly_duckling::kernel {
 
 /**
  * @brief Handles a group of states and allows waiting for the next state to change.
@@ -61,4 +61,4 @@ private:
     int nextEventBit = 1;
 };
 
-}    // namespace farmhub::kernel
+}    // namespace cornucopia::ugly_duckling::kernel

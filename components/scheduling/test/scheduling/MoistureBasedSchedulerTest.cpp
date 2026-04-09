@@ -10,7 +10,7 @@
 
 #include <utils/Chrono.hpp>
 
-namespace farmhub::utils::scheduling {
+namespace cornucopia::ugly_duckling::utils::scheduling {
 
 static constexpr SoilSimulator::Config BASIC_SOIL = {
     .gainPercentPerLiter = 1.0,
@@ -197,11 +197,11 @@ TEST_CASE("starts watering after evaporation reduces moisture") {
     REQUIRE(result.moisture > 59.0);
 }
 
-}    // namespace farmhub::utils::scheduling
+}    // namespace cornucopia::ugly_duckling::utils::scheduling
 
 namespace Catch {
 
-using farmhub::utils::scheduling::SimulationResult;
+using cornucopia::ugly_duckling::utils::scheduling::SimulationResult;
 
 template <>
 struct StringMaker<SimulationResult> {

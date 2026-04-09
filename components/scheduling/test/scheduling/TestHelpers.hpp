@@ -10,14 +10,14 @@
 
 #include <scheduling/IScheduler.hpp>
 
-using namespace farmhub::utils::scheduling;
+using namespace cornucopia::ugly_duckling::utils::scheduling;
 
 namespace Catch {
 
 template <>
 struct StringMaker<ScheduleResult> {
     static std::string convert(ScheduleResult const& r) {
-        using farmhub::peripherals::api::toString;
+        using cornucopia::ugly_duckling::peripherals::api::toString;
         std::ostringstream oss;
         oss << "ScheduleResult{";
         oss << "target=" << toString(r.targetState) << ", ";

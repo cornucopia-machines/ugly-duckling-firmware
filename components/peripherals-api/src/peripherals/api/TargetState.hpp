@@ -4,7 +4,7 @@
 
 #include <ArduinoJson.h>
 
-namespace farmhub::peripherals::api {
+namespace cornucopia::ugly_duckling::peripherals::api {
 
 enum class TargetState : int8_t {
     Closed = -1,
@@ -25,11 +25,11 @@ inline static const char* toString(std::optional<TargetState> state) {
     }
 }
 
-}    // namespace farmhub::peripherals::api
+}    // namespace cornucopia::ugly_duckling::peripherals::api
 
 namespace ArduinoJson {
 
-using farmhub::peripherals::api::TargetState;
+using cornucopia::ugly_duckling::peripherals::api::TargetState;
 
 template <>
 struct Converter<TargetState> {
@@ -44,12 +44,12 @@ struct Converter<TargetState> {
         }
     }
 
-    static farmhub::peripherals::api::TargetState fromJson(JsonVariantConst src) {
+    static cornucopia::ugly_duckling::peripherals::api::TargetState fromJson(JsonVariantConst src) {
         auto* str = src.as<const char*>();
         if (strcmp(str, "Closed") == 0) {
-            return farmhub::peripherals::api::TargetState::Closed;
+            return cornucopia::ugly_duckling::peripherals::api::TargetState::Closed;
         } else {
-            return farmhub::peripherals::api::TargetState::Open;
+            return cornucopia::ugly_duckling::peripherals::api::TargetState::Open;
         }
     }
 

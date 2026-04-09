@@ -15,10 +15,10 @@
 #include <peripherals/api/IFlowMeter.hpp>
 
 using namespace std::chrono;
-using namespace farmhub::kernel::mqtt;
-using namespace farmhub::peripherals::api;
+using namespace cornucopia::ugly_duckling::kernel::mqtt;
+using namespace cornucopia::ugly_duckling::peripherals::api;
 
-namespace farmhub::peripherals::flow_meter {
+namespace cornucopia::ugly_duckling::peripherals::flow_meter {
 
 class FlowMeterSettings
     : public ConfigurationSection {
@@ -139,4 +139,4 @@ inline PeripheralFactory makeFactory() {
         });
 }
 
-}    // namespace farmhub::peripherals::flow_meter
+}    // namespace cornucopia::ugly_duckling::peripherals::flow_meter

@@ -19,12 +19,12 @@
 using namespace std::chrono;
 using namespace std::chrono_literals;
 
-using namespace farmhub::kernel;
-using namespace farmhub::kernel::drivers;
-using namespace farmhub::peripherals;
-using namespace farmhub::peripherals::api;
+using namespace cornucopia::ugly_duckling::kernel;
+using namespace cornucopia::ugly_duckling::kernel::drivers;
+using namespace cornucopia::ugly_duckling::peripherals;
+using namespace cornucopia::ugly_duckling::peripherals::api;
 
-namespace farmhub::peripherals::valve {
+namespace cornucopia::ugly_duckling::peripherals::valve {
 
 inline PeripheralFactory makeFactory(
     const std::map<std::string, std::shared_ptr<PwmMotorDriver>>& motors,
@@ -49,4 +49,4 @@ inline PeripheralFactory makeFactory(
         defaultStrategy);
 }
 
-}    // namespace farmhub::peripherals::valve
+}    // namespace cornucopia::ugly_duckling::peripherals::valve

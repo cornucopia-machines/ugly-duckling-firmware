@@ -2,7 +2,7 @@
 
 #include "Drv8833Driver.hpp"
 
-namespace farmhub::kernel::drivers {
+namespace cornucopia::ugly_duckling::kernel::drivers {
 
 /**
  * @brief Texas Instruments DRV8848 dual motor driver.
@@ -13,4 +13,4 @@ namespace farmhub::kernel::drivers {
  */
 using Drv8848Driver = Drv8833Driver;
 
-} // namespace farmhub::kernel::drivers
+} // namespace cornucopia::ugly_duckling::kernel::drivers

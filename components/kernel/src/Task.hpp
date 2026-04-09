@@ -12,7 +12,7 @@
 
 using namespace std::chrono;
 
-namespace farmhub::kernel {
+namespace cornucopia::ugly_duckling::kernel {
 
 static const unsigned int DEFAULT_PRIORITY = 1;
 
@@ -174,4 +174,4 @@ private:
     TickType_t lastWakeTime { xTaskGetTickCount() };
 };
 
-}    // namespace farmhub::kernel
+}    // namespace cornucopia::ugly_duckling::kernel

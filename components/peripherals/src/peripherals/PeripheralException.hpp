@@ -2,7 +2,7 @@
 
 #include <stdexcept>
 
-namespace farmhub::peripherals {
+namespace cornucopia::ugly_duckling::peripherals {
 
 class PeripheralCreationException
     : public std::runtime_error {
@@ -12,4 +12,4 @@ public:
     }
 };
 
-}    // namespace farmhub::peripherals
+}    // namespace cornucopia::ugly_duckling::peripherals

@@ -16,11 +16,11 @@
 using namespace std::chrono;
 using namespace std::chrono_literals;
 
-using namespace farmhub::kernel;
-using namespace farmhub::peripherals;
-using namespace farmhub::peripherals::api;
+using namespace cornucopia::ugly_duckling::kernel;
+using namespace cornucopia::ugly_duckling::peripherals;
+using namespace cornucopia::ugly_duckling::peripherals::api;
 
-namespace farmhub::peripherals::light_sensor {
+namespace cornucopia::ugly_duckling::peripherals::light_sensor {
 
 class LightSensor
     : public api::ILightSensor,
@@ -64,4 +64,4 @@ private:
     MovingAverage<double> level;
 };
 
-}    // namespace farmhub::peripherals::light_sensor
+}    // namespace cornucopia::ugly_duckling::peripherals::light_sensor

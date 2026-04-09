@@ -8,7 +8,7 @@
 #include "Configuration.hpp"
 #include "NvsStore.hpp"
 
-namespace farmhub::kernel {
+namespace cornucopia::ugly_duckling::kernel {
 
 /**
  * @brief Loads a ConfigurationSection from NVS, and persists updates back to NVS.
@@ -67,4 +67,4 @@ std::shared_ptr<TConfiguration> loadConfigFromNvs(const std::shared_ptr<NvsStore
     return config;
 }
 
-}    // namespace farmhub::kernel
+}    // namespace cornucopia::ugly_duckling::kernel

@@ -72,13 +72,13 @@ if(UD_DEBUG STREQUAL "")
     set(UD_DEBUG 0)
 endif()
 
-if(NOT DEFINED FARMHUB_LOG_VERBOSE)
-    set(FARMHUB_LOG_VERBOSE "$ENV{FARMHUB_LOG_VERBOSE}")
+if(NOT DEFINED UD_LOG_VERBOSE)
+    set(UD_LOG_VERBOSE "$ENV{UD_LOG_VERBOSE}")
 endif()
 
 if(UD_DEBUG)
-    add_compile_definitions(FARMHUB_DEBUG)
-    add_compile_definitions(FARMHUB_LOG_VERBOSE="${FARMHUB_LOG_VERBOSE}")
+    add_compile_definitions(UD_DEBUG)
+    add_compile_definitions(UD_LOG_VERBOSE="${UD_LOG_VERBOSE}")
     add_compile_definitions(DUMP_MQTT)
 endif()
 

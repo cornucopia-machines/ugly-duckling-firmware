@@ -9,7 +9,7 @@
 
 using namespace std::chrono;
 using namespace std::chrono_literals;
-using namespace farmhub::kernel;
+using namespace cornucopia::ugly_duckling::kernel;
 
 struct TestNestedConfig : ConfigurationSection {
     Property<int> intValue { this, "intValue" };

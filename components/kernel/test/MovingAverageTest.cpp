@@ -2,7 +2,7 @@
 
 #include <MovingAverage.hpp>
 
-using namespace farmhub::kernel;
+using namespace cornucopia::ugly_duckling::kernel;
 
 TEST_CASE("empty instance returns zero") {
     MovingAverage<double> ma(3);

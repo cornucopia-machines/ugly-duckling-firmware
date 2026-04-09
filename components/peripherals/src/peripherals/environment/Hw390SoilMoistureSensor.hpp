@@ -8,10 +8,10 @@
 
 #include <utils/DebouncedMeasurement.hpp>
 
-using namespace farmhub::kernel;
-using namespace farmhub::peripherals;
+using namespace cornucopia::ugly_duckling::kernel;
+using namespace cornucopia::ugly_duckling::peripherals;
 
-namespace farmhub::peripherals::environment {
+namespace cornucopia::ugly_duckling::peripherals::environment {
 
 class Hw390SoilMoistureSensorSettings
     : public ConfigurationSection {
@@ -99,4 +99,4 @@ inline PeripheralFactory makeFactoryForHw390SoilMoisture(const std::string& fact
         });
 }
 
-}    // namespace farmhub::peripherals::environment
+}    // namespace cornucopia::ugly_duckling::peripherals::environment

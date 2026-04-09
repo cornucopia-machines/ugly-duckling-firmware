@@ -17,7 +17,7 @@
 #include <EspException.hpp>
 #include <Log.hpp>
 
-namespace farmhub::kernel {
+namespace cornucopia::ugly_duckling::kernel {
 
 class Pin;
 using PinPtr = std::shared_ptr<Pin>;
@@ -282,14 +282,14 @@ private:
 };
 
 
-}    // namespace farmhub::kernel
+}    // namespace cornucopia::ugly_duckling::kernel
 
 namespace ArduinoJson {
 
-using farmhub::kernel::InternalPin;
-using farmhub::kernel::InternalPinPtr;
-using farmhub::kernel::Pin;
-using farmhub::kernel::PinPtr;
+using cornucopia::ugly_duckling::kernel::InternalPin;
+using cornucopia::ugly_duckling::kernel::InternalPinPtr;
+using cornucopia::ugly_duckling::kernel::Pin;
+using cornucopia::ugly_duckling::kernel::PinPtr;
 
 template <>
 struct Converter<PinPtr> {

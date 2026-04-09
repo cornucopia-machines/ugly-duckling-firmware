@@ -6,12 +6,12 @@
 
 #include <drivers/MotorDriver.hpp>
 
-using namespace farmhub::kernel::drivers;
+using namespace cornucopia::ugly_duckling::kernel::drivers;
 
-namespace farmhub::peripherals {
+namespace cornucopia::ugly_duckling::peripherals {
 
 std::shared_ptr<PwmMotorDriver> findMotor(
     const std::map<std::string, std::shared_ptr<PwmMotorDriver>>& motors,
     const std::string& motorName);
 
-}    // namespace farmhub::peripherals
+}    // namespace cornucopia::ugly_duckling::peripherals

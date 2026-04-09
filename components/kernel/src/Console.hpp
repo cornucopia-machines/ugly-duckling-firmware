@@ -4,18 +4,18 @@
 #include <Log.hpp>
 #include <utility>
 
-namespace farmhub::kernel {
+namespace cornucopia::ugly_duckling::kernel {
 
-#define FARMHUB_LOG_COLOR_BLACK "30"
-#define FARMHUB_LOG_COLOR_RED "31"
-#define FARMHUB_LOG_COLOR_GREEN "32"
-#define FARMHUB_LOG_COLOR_BROWN "33"
-#define FARMHUB_LOG_COLOR_BLUE "34"
-#define FARMHUB_LOG_COLOR_PURPLE "35"
-#define FARMHUB_LOG_COLOR_CYAN "36"
-#define FARMHUB_LOG_COLOR(COLOR) "\033[0;" COLOR "m"
-#define FARMHUB_LOG_BOLD(COLOR) "\033[1;" COLOR "m"
-#define FARMHUB_LOG_RESET_COLOR "\033[0m"
+#define UD_LOG_COLOR_BLACK "30"
+#define UD_LOG_COLOR_RED "31"
+#define UD_LOG_COLOR_GREEN "32"
+#define UD_LOG_COLOR_BROWN "33"
+#define UD_LOG_COLOR_BLUE "34"
+#define UD_LOG_COLOR_PURPLE "35"
+#define UD_LOG_COLOR_CYAN "36"
+#define UD_LOG_COLOR(COLOR) "\033[0;" COLOR "m"
+#define UD_LOG_BOLD(COLOR) "\033[1;" COLOR "m"
+#define UD_LOG_RESET_COLOR "\033[0m"
 
 class ConsoleProvider {
 public:
@@ -61,24 +61,24 @@ private:
         }
 
         int count = 0;
-#ifdef FARMHUB_DEBUG
+#ifdef UD_DEBUG
         // Erase the current line
         count += printf("\033[1G\033[0K");
         switch (level) {
             case Level::Error:
-                count += printf(FARMHUB_LOG_COLOR(FARMHUB_LOG_COLOR_RED));
+                count += printf(UD_LOG_COLOR(UD_LOG_COLOR_RED));
                 break;
             case Level::Warning:
-                count += printf(FARMHUB_LOG_COLOR(FARMHUB_LOG_COLOR_BROWN));
+                count += printf(UD_LOG_COLOR(UD_LOG_COLOR_BROWN));
                 break;
             case Level::Info:
-                count += printf(FARMHUB_LOG_COLOR(FARMHUB_LOG_COLOR_GREEN));
+                count += printf(UD_LOG_COLOR(UD_LOG_COLOR_GREEN));
                 break;
             case Level::Debug:
-                count += printf(FARMHUB_LOG_COLOR(FARMHUB_LOG_COLOR_CYAN));
+                count += printf(UD_LOG_COLOR(UD_LOG_COLOR_CYAN));
                 break;
             case Level::Verbose:
-                count += printf(FARMHUB_LOG_COLOR(FARMHUB_LOG_COLOR_BLUE));
+                count += printf(UD_LOG_COLOR(UD_LOG_COLOR_BLUE));
                 break;
             default:
                 break;
@@ -87,12 +87,12 @@ private:
 
         count += printf("%s", message.c_str());
 
-#ifdef FARMHUB_DEBUG
+#ifdef UD_DEBUG
         switch (level) {
             case Level::Error:
             case Level::Warning:
             case Level::Info:
-                count += printf(FARMHUB_LOG_RESET_COLOR);
+                count += printf(UD_LOG_RESET_COLOR);
                 break;
             default:
                 break;
@@ -164,4 +164,4 @@ char ConsoleProvider::buffer[BUFFER_SIZE];
 std::mutex ConsoleProvider::partialMessageMutex;
 std::string ConsoleProvider::partialMessage;
 
-}    // namespace farmhub::kernel
+}    // namespace cornucopia::ugly_duckling::kernel

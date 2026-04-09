@@ -14,11 +14,11 @@
 
 #include "Environment.hpp"
 
-using namespace farmhub::kernel;
-using namespace farmhub::kernel::mqtt;
-using namespace farmhub::peripherals;
+using namespace cornucopia::ugly_duckling::kernel;
+using namespace cornucopia::ugly_duckling::kernel::mqtt;
+using namespace cornucopia::ugly_duckling::peripherals;
 
-namespace farmhub::peripherals::environment {
+namespace cornucopia::ugly_duckling::peripherals::environment {
 
 struct Ds18B20Settings : ConfigurationSection {
     Property<InternalPinPtr> pin { this, "pin" };
@@ -114,4 +114,4 @@ inline PeripheralFactory makeFactoryForDs18b20() {
         });
 }
 
-}    // namespace farmhub::peripherals::environment
+}    // namespace cornucopia::ugly_duckling::peripherals::environment

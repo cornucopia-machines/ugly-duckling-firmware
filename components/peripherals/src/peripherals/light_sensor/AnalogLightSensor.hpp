@@ -17,10 +17,10 @@
 using namespace std::chrono;
 using namespace std::chrono_literals;
 
-using namespace farmhub::kernel;
-using namespace farmhub::peripherals;
+using namespace cornucopia::ugly_duckling::kernel;
+using namespace cornucopia::ugly_duckling::peripherals;
 
-namespace farmhub::peripherals::light_sensor {
+namespace cornucopia::ugly_duckling::peripherals::light_sensor {
 
 class AnalogLightSensorSettings
     : public I2CSettings {
@@ -91,4 +91,4 @@ inline PeripheralFactory makeFactoryForAnalogLightSensor() {
         });
 }
 
-}    // namespace farmhub::peripherals::light_sensor
+}    // namespace cornucopia::ugly_duckling::peripherals::light_sensor

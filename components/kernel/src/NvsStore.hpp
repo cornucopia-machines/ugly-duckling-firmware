@@ -9,7 +9,7 @@
 
 #include <ArduinoJson.h>
 
-namespace farmhub::kernel {
+namespace cornucopia::ugly_duckling::kernel {
 
 LOGGING_TAG(NVS, "nvs")
 
@@ -196,4 +196,4 @@ private:
     const std::string ns;
 };
 
-}    // namespace farmhub::kernel
+}    // namespace cornucopia::ugly_duckling::kernel

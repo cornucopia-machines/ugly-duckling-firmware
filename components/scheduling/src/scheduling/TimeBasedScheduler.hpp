@@ -8,7 +8,7 @@
 #include <scheduling/IScheduler.hpp>
 #include <utils/Chrono.hpp>
 
-namespace farmhub::utils::scheduling {
+namespace cornucopia::ugly_duckling::utils::scheduling {
 
 using namespace std::chrono;
 
@@ -108,11 +108,11 @@ private:
     std::vector<TimeBasedSchedule> schedules;
 };
 
-}    // namespace farmhub::utils::scheduling
+}    // namespace cornucopia::ugly_duckling::utils::scheduling
 
 namespace ArduinoJson {
 
-using farmhub::utils::scheduling::TimeBasedSchedule;
+using cornucopia::ugly_duckling::utils::scheduling::TimeBasedSchedule;
 
 template <>
 struct Converter<TimeBasedSchedule> {

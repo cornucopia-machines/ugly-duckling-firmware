@@ -7,9 +7,9 @@
 #include <Telemetry.hpp>
 #include <utility>
 
-using farmhub::kernel::PinPtr;
+using cornucopia::ugly_duckling::kernel::PinPtr;
 
-namespace farmhub::kernel::drivers {
+namespace cornucopia::ugly_duckling::kernel::drivers {
 
 struct BatteryParameters {
     /**
@@ -104,4 +104,4 @@ private:
     const double voltageDividerRatio;
 };
 
-}    // namespace farmhub::kernel::drivers
+}    // namespace cornucopia::ugly_duckling::kernel::drivers

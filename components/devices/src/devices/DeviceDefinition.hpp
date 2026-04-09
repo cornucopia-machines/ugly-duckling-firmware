@@ -36,12 +36,12 @@
 #include <peripherals/light_sensor/Tsl2591.hpp>
 #include <peripherals/multiplexer/Xl9535.hpp>
 
-using namespace farmhub::functions;
-using namespace farmhub::kernel;
-using namespace farmhub::kernel::drivers;
-using namespace farmhub::peripherals;
+using namespace cornucopia::ugly_duckling::functions;
+using namespace cornucopia::ugly_duckling::kernel;
+using namespace cornucopia::ugly_duckling::kernel::drivers;
+using namespace cornucopia::ugly_duckling::peripherals;
 
-namespace farmhub::devices {
+namespace cornucopia::ugly_duckling::devices {
 
 #define UD_DEFINE_PIN3(GPIO, VAR, STR) \
     const InternalPinPtr VAR = InternalPin::registerPin(STR, GPIO);
@@ -125,4 +125,4 @@ protected:
     }
 };
 
-}    // namespace farmhub::devices
+}    // namespace cornucopia::ugly_duckling::devices

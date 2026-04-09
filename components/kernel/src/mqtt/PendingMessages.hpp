@@ -5,7 +5,7 @@
 #include <Concurrent.hpp>
 #include <Task.hpp>
 
-namespace farmhub::kernel::mqtt {
+namespace cornucopia::ugly_duckling::kernel::mqtt {
 
 enum class PublishStatus : uint8_t {
     TimeOut = 0,
@@ -91,4 +91,4 @@ private:
     std::unordered_map<int, TaskHandle_t> messages;
 };
 
-}    // namespace farmhub::kernel::mqtt
+}    // namespace cornucopia::ugly_duckling::kernel::mqtt

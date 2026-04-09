@@ -1,6 +1,6 @@
 #pragma once
 
-namespace farmhub::kernel {
+namespace cornucopia::ugly_duckling::kernel {
 
 class Named {
 protected:
@@ -12,4 +12,4 @@ public:
     const std::string name;
 };
 
-}    // namespace farmhub::kernel
+}    // namespace cornucopia::ugly_duckling::kernel

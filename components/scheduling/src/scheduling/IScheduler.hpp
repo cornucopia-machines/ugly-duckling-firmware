@@ -8,7 +8,7 @@
 
 #include <peripherals/api/TargetState.hpp>
 
-namespace farmhub::utils::scheduling {
+namespace cornucopia::ugly_duckling::utils::scheduling {
 
 LOGGING_TAG(SCHEDULING, "scheduling")
 
@@ -35,7 +35,7 @@ struct IScheduler {
     virtual const char* getName() const = 0;
 };
 
-}    // namespace farmhub::utils::scheduling
+}    // namespace cornucopia::ugly_duckling::utils::scheduling
 
 namespace ArduinoJson {
 

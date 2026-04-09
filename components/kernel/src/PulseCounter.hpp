@@ -15,7 +15,7 @@
 
 using namespace std::chrono;
 
-namespace farmhub::kernel {
+namespace cornucopia::ugly_duckling::kernel {
 
 LOGGING_TAG(PULSE, "pulse")
 
@@ -218,4 +218,4 @@ private:
     std::shared_ptr<PulseCounter> createGpio(const PulseCounterConfig& config);
 };
 
-}    // namespace farmhub::kernel
+}    // namespace cornucopia::ugly_duckling::kernel

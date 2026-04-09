@@ -13,7 +13,7 @@ See [README.md](README.md) for configuration storage layout, build, flash, and d
 
 - Follow `.editorconfig`: LF endings, 4-space indent (2 for JSON/YAML/Markdown). C++ is formatted with WebKit-flavored `.clang-format` (attached braces, left-aligned pointers, no single-line functions).
 - Static analysis via `.clang-tidy` (warnings-as-errors). Regenerate the compile DB with `python ./generate-clang-tidy-compile-db.py` and run `clang-tidy -p build/clang-tidy ...`.
-- Naming: types in PascalCase (`UglyDucklingMk6`), functions/methods camelCase, constants/macros UPPER_SNAKE (`UD_GEN`, `FARMHUB_DEBUG`); keep namespaces compact per config.
+- Naming: types in PascalCase (`UglyDucklingMk6`), functions/methods camelCase, constants/macros UPPER_SNAKE (`UD_GEN`, `UD_DEBUG`); keep namespaces compact per config.
 - Markdown: keep headings sequential, lists properly indented, and wrap code blocks in fences; follow markdownlint defaults (no trailing spaces, blank line before lists and headings).
 
 ## Testing Guidelines

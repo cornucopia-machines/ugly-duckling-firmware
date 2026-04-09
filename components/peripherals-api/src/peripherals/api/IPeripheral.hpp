@@ -2,7 +2,7 @@
 
 #include <string>
 
-namespace farmhub::peripherals::api {
+namespace cornucopia::ugly_duckling::peripherals::api {
 
 struct IPeripheral {
     virtual ~IPeripheral() = default;
@@ -10,4 +10,4 @@ struct IPeripheral {
     virtual const std::string& getName() const = 0;
 };
 
-} // namespace farmhub::peripherals::api
+} // namespace cornucopia::ugly_duckling::peripherals::api

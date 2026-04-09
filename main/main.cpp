@@ -1,4 +1,4 @@
-#ifdef FARMHUB_DEBUG
+#ifdef UD_DEBUG
 #include <cstdio>
 #endif
 
@@ -21,8 +21,8 @@
 
 #include <devices/GenericDevice.hpp>
 
-using namespace farmhub::devices;
-using namespace farmhub::kernel;
+using namespace cornucopia::ugly_duckling::devices;
+using namespace cornucopia::ugly_duckling::kernel;
 
 namespace {
 void startDeviceBasedOnMac() {
@@ -73,7 +73,7 @@ void startDeviceBasedOnMac() {
 }    // namespace
 
 extern "C" void app_main() {
-#ifdef FARMHUB_DEBUG
+#ifdef UD_DEBUG
     // Reset ANSI colors
     printf("\033[0m");
 #endif

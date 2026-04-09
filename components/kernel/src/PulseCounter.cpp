@@ -21,7 +21,7 @@
 #if defined(CONFIG_ULP_COPROC_TYPE_RISCV)
 #include <ulp_common.h>
 #include <ulp_riscv.h>
-#ifdef FARMHUB_DEBUG
+#ifdef UD_DEBUG
 #include <bits/chrono.h>
 #include <soc/rtc_cntl_reg.h>
 #include <soc/sens_reg.h>
@@ -48,7 +48,7 @@ extern const uint8_t ulp_pulse_counter_bin_end[]   asm("_binary_ulp_pulse_counte
 
 using namespace std::chrono;
 
-namespace farmhub::kernel {
+namespace cornucopia::ugly_duckling::kernel {
 
 // ============================================================================
 // UlpPulseCounter — RTC/LP GPIO path, no per-pulse CPU wakeups
@@ -164,7 +164,7 @@ void PulseCounterManager::start() {
 
 #if defined(CONFIG_ULP_COPROC_TYPE_RISCV)
     ESP_ERROR_THROW(ulp_riscv_run());
-#ifdef FARMHUB_DEBUG
+#ifdef UD_DEBUG
     // Give the ULP a moment to run and halt; then check registers to see if it actually executed.
     Task::delay(100ms);
     // NOLINTBEGIN(cppcoreguidelines-pro-type-cstyle-cast,performance-no-int-to-ptr) -- ESP-IDF REG_READ macro
@@ -263,4 +263,4 @@ std::shared_ptr<PulseCounter> PulseCounterManager::createGpio(const PulseCounter
     return counter;
 }
 
-}    // namespace farmhub::kernel
+}    // namespace cornucopia::ugly_duckling::kernel
