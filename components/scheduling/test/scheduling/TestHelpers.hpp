@@ -12,12 +12,13 @@
 
 using namespace cornucopia::ugly_duckling::utils::scheduling;
 
+using cornucopia::ugly_duckling::peripherals::api::toString;
+
 namespace Catch {
 
 template <>
 struct StringMaker<ScheduleResult> {
     static std::string convert(ScheduleResult const& r) {
-        using cornucopia::ugly_duckling::peripherals::api::toString;
         std::ostringstream oss;
         oss << "ScheduleResult{";
         oss << "target=" << toString(r.targetState) << ", ";

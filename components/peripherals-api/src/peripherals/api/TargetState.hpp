@@ -44,12 +44,12 @@ struct Converter<TargetState> {
         }
     }
 
-    static cornucopia::ugly_duckling::peripherals::api::TargetState fromJson(JsonVariantConst src) {
+    static TargetState fromJson(JsonVariantConst src) {
         auto* str = src.as<const char*>();
         if (strcmp(str, "Closed") == 0) {
-            return cornucopia::ugly_duckling::peripherals::api::TargetState::Closed;
+            return TargetState::Closed;
         } else {
-            return cornucopia::ugly_duckling::peripherals::api::TargetState::Open;
+            return TargetState::Open;
         }
     }
 

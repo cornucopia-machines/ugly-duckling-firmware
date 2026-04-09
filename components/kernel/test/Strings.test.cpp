@@ -2,9 +2,11 @@
 
 #include <Strings.hpp>
 
+using namespace cornucopia::ugly_duckling::kernel;
+
 TEST_CASE("toHexString") {
-    REQUIRE(cornucopia::ugly_duckling::kernel::toHexString(0) == "0x0");
-    REQUIRE(cornucopia::ugly_duckling::kernel::toHexString(1) == "0x1");
-    REQUIRE(cornucopia::ugly_duckling::kernel::toHexString(15) == "0xf");
-    REQUIRE(cornucopia::ugly_duckling::kernel::toHexString(0x123456ab) == "0x123456ab");
+    REQUIRE(toHexString(0) == "0x0");
+    REQUIRE(toHexString(1) == "0x1");
+    REQUIRE(toHexString(15) == "0xf");
+    REQUIRE(toHexString(0x123456ab) == "0x123456ab");
 }

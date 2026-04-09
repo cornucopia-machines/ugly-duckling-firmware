@@ -63,12 +63,12 @@ struct Converter<ValveState> {
         }
     }
 
-    static cornucopia::ugly_duckling::peripherals::api::ValveState fromJson(JsonVariantConst src) {
+    static ValveState fromJson(JsonVariantConst src) {
         auto* str = src.as<const char*>();
         if (strcmp(str, "Closed") == 0) {
-            return cornucopia::ugly_duckling::peripherals::api::ValveState::Closed;
+            return ValveState::Closed;
         } else {
-            return cornucopia::ugly_duckling::peripherals::api::ValveState::Open;
+            return ValveState::Open;
         }
     }
 
