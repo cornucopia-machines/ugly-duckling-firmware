@@ -12,9 +12,9 @@
 using namespace std::chrono;
 using namespace std::chrono_literals;
 
-using namespace farmhub::kernel;
+using namespace cornucopia::ugly_duckling::kernel;
 
-namespace farmhub::peripherals::valve {
+namespace cornucopia::ugly_duckling::peripherals::valve {
 
 class ValveSettings
     : public ConfigurationSection {
@@ -81,11 +81,11 @@ public:
     }
 };
 
-}    // namespace farmhub::peripherals::valve
+}    // namespace cornucopia::ugly_duckling::peripherals::valve
 
 namespace ArduinoJson {
 
-using farmhub::peripherals::valve::ValveControlStrategyType;
+using cornucopia::ugly_duckling::peripherals::valve::ValveControlStrategyType;
 
 template <>
 struct Converter<ValveControlStrategyType> {

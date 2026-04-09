@@ -7,7 +7,7 @@
 
 #include "IScheduler.hpp"
 
-namespace farmhub::utils::scheduling {
+namespace cornucopia::ugly_duckling::utils::scheduling {
 
 struct CompositeScheduler : IScheduler {
     template <std::derived_from<IScheduler>... Schedulers>
@@ -45,4 +45,4 @@ private:
     std::vector<std::shared_ptr<IScheduler>> schedulers;
 };
 
-}    // namespace farmhub::utils::scheduling
+}    // namespace cornucopia::ugly_duckling::utils::scheduling

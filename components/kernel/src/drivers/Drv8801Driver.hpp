@@ -11,7 +11,7 @@
 
 using namespace std::chrono;
 
-namespace farmhub::kernel::drivers {
+namespace cornucopia::ugly_duckling::kernel::drivers {
 
 /**
  * @brief Texas Instruments DRV8801 motor driver.
@@ -108,4 +108,4 @@ private:
     std::atomic<bool> sleeping { false };
 };
 
-}    // namespace farmhub::kernel::drivers
+}    // namespace cornucopia::ugly_duckling::kernel::drivers

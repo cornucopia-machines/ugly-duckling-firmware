@@ -14,10 +14,10 @@
 
 #include "Environment.hpp"
 
-using namespace farmhub::kernel;
-using namespace farmhub::peripherals;
+using namespace cornucopia::ugly_duckling::kernel;
+using namespace cornucopia::ugly_duckling::peripherals;
 
-namespace farmhub::peripherals::environment {
+namespace cornucopia::ugly_duckling::peripherals::environment {
 
 class ChirpSoilSensorSettings
     : public I2CSettings {
@@ -125,4 +125,4 @@ inline PeripheralFactory makeFactoryForChirpSoilSensor() {
         });
 }
 
-}    // namespace farmhub::peripherals::environment
+}    // namespace cornucopia::ugly_duckling::peripherals::environment

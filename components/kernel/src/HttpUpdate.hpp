@@ -14,7 +14,7 @@
 #include <drivers/WiFiDriver.hpp>
 #include <utility>
 
-namespace farmhub::kernel {
+namespace cornucopia::ugly_duckling::kernel {
 
 LOGGING_TAG(UPDATE, "update")
 
@@ -61,7 +61,7 @@ private:
 
     void performPendingHttpUpdate(const std::string& url, const std::shared_ptr<WiFiDriver>& wifi) {
         LOGTI(UPDATE, "Updating from version %s via URL %s",
-            farmhubVersion, url.c_str());
+            firmwareVersion, url.c_str());
 
         LOGTD(UPDATE, "Waiting for network...");
         if (!wifi->getNetworkReady().awaitSet(15s)) {
@@ -146,4 +146,4 @@ private:
     static constexpr const size_t DOWNLOAD_NOTIFICATION_BATCH = 128 * 1024;
 };
 
-}    // namespace farmhub::kernel
+}    // namespace cornucopia::ugly_duckling::kernel

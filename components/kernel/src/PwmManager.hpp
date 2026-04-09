@@ -4,7 +4,7 @@
 
 #include <driver/ledc.h>
 
-namespace farmhub::kernel {
+namespace cornucopia::ugly_duckling::kernel {
 
 // TODO Figure out what to do with low/high speed modes
 //      See https://docs.espressif.com/projects/esp-idf/en/release-v4.2/esp32/api-reference/peripherals/ledc.html#ledc-high-and-low-speed-mode
@@ -131,4 +131,4 @@ private:
     std::list<PwmPin> pins;
 };
 
-}    // namespace farmhub::kernel
+}    // namespace cornucopia::ugly_duckling::kernel

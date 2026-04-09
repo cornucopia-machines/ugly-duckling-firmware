@@ -9,10 +9,10 @@
 #include <peripherals/api/IValve.hpp>
 
 using namespace std::chrono;
-using namespace farmhub::kernel::drivers;
-using namespace farmhub::peripherals::api;
+using namespace cornucopia::ugly_duckling::kernel::drivers;
+using namespace cornucopia::ugly_duckling::peripherals::api;
 
-namespace farmhub::peripherals::valve {
+namespace cornucopia::ugly_duckling::peripherals::valve {
 
 enum class ValveControlStrategyType : uint8_t {
     NormallyOpen,
@@ -188,4 +188,4 @@ private:
     PinPtr pin;
 };
 
-}    // namespace farmhub::peripherals::valve
+}    // namespace cornucopia::ugly_duckling::peripherals::valve

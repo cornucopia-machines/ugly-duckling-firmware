@@ -5,7 +5,7 @@
 #include "IPeripheral.hpp"
 #include "TargetState.hpp"
 
-namespace farmhub::peripherals::api {
+namespace cornucopia::ugly_duckling::peripherals::api {
 
 enum class ValveState : int8_t {
     Closed = -1,
@@ -44,11 +44,11 @@ struct IValve : virtual IPeripheral {
     virtual std::optional<ValveState> getState() const = 0;
 };
 
-}    // namespace farmhub::peripherals::api
+}    // namespace cornucopia::ugly_duckling::peripherals::api
 
 namespace ArduinoJson {
 
-using farmhub::peripherals::api::ValveState;
+using cornucopia::ugly_duckling::peripherals::api::ValveState;
 
 template <>
 struct Converter<ValveState> {
@@ -63,12 +63,12 @@ struct Converter<ValveState> {
         }
     }
 
-    static farmhub::peripherals::api::ValveState fromJson(JsonVariantConst src) {
+    static ValveState fromJson(JsonVariantConst src) {
         auto* str = src.as<const char*>();
         if (strcmp(str, "Closed") == 0) {
-            return farmhub::peripherals::api::ValveState::Closed;
+            return ValveState::Closed;
         } else {
-            return farmhub::peripherals::api::ValveState::Open;
+            return ValveState::Open;
         }
     }
 

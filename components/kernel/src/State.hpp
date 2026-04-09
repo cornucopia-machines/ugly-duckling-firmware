@@ -9,7 +9,7 @@
 
 using namespace std::chrono;
 
-namespace farmhub::kernel {
+namespace cornucopia::ugly_duckling::kernel {
 
 // 0th bit reserved to indicate that a state has changed
 static constexpr int STATE_CHANGE_BIT_MASK = (1 << 0);
@@ -104,4 +104,4 @@ private:
     }
 };
 
-}    // namespace farmhub::kernel
+}    // namespace cornucopia::ugly_duckling::kernel

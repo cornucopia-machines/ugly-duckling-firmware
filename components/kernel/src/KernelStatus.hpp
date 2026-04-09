@@ -23,10 +23,10 @@
 
 using namespace std::chrono;
 using namespace std::chrono_literals;
-using namespace farmhub::kernel::drivers;
-using namespace farmhub::kernel::mqtt;
+using namespace cornucopia::ugly_duckling::kernel::drivers;
+using namespace cornucopia::ugly_duckling::kernel::mqtt;
 
-namespace farmhub::kernel {
+namespace cornucopia::ugly_duckling::kernel {
 
 // NOLINTBEGIN(cppcoreguidelines-avoid-non-const-global-variables)
 static RTC_DATA_ATTR int bootCount = 0;
@@ -126,4 +126,4 @@ private:
     }
 };
 
-}    // namespace farmhub::kernel
+}    // namespace cornucopia::ugly_duckling::kernel

@@ -19,11 +19,11 @@
 #include <peripherals/valve/ValveControlStrategy.hpp>
 
 using namespace std::chrono;
-using namespace farmhub::kernel::drivers;
-using namespace farmhub::peripherals;
-using namespace farmhub::peripherals::api;
+using namespace cornucopia::ugly_duckling::kernel::drivers;
+using namespace cornucopia::ugly_duckling::peripherals;
+using namespace cornucopia::ugly_duckling::peripherals::api;
 
-namespace farmhub::peripherals::valve {
+namespace cornucopia::ugly_duckling::peripherals::valve {
 
 class Valve final
     : public api::IValve,
@@ -152,4 +152,4 @@ private:
     std::optional<ValveState> state;
 };
 
-}    // namespace farmhub::peripherals::valve
+}    // namespace cornucopia::ugly_duckling::peripherals::valve

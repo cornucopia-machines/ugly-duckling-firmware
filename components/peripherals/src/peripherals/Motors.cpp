@@ -5,7 +5,7 @@
 #include <memory>
 #include <string>
 
-namespace farmhub::peripherals {
+namespace cornucopia::ugly_duckling::peripherals {
 
 std::shared_ptr<PwmMotorDriver> findMotor(
     const std::map<std::string, std::shared_ptr<PwmMotorDriver>>& motors,
@@ -22,4 +22,4 @@ std::shared_ptr<PwmMotorDriver> findMotor(
     throw PeripheralCreationException("failed to find motor: " + motorName);
 }
 
-}    // namespace farmhub::peripherals
+}    // namespace cornucopia::ugly_duckling::peripherals

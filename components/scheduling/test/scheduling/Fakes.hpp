@@ -9,9 +9,9 @@
 
 #include <scheduling/MoistureBasedScheduler.hpp>
 
-using namespace farmhub::peripherals::api;
+using namespace cornucopia::ugly_duckling::peripherals::api;
 
-namespace farmhub::utils::scheduling {
+namespace cornucopia::ugly_duckling::utils::scheduling {
 
 struct FakeClock {
     ms time { 0 };
@@ -127,4 +127,4 @@ struct SoilSimulator {
     Config config;
 };
 
-}    // namespace farmhub::utils::scheduling
+}    // namespace cornucopia::ugly_duckling::utils::scheduling

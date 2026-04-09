@@ -5,7 +5,7 @@
 
 namespace ArduinoJson {
 
-using farmhub::kernel::Level;
+using cornucopia::ugly_duckling::kernel::Level;
 
 template <>
 struct Converter<Level> {

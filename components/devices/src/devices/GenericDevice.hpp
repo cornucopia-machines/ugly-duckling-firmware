@@ -7,9 +7,9 @@
 
 #include <devices/DeviceDefinition.hpp>
 
-using namespace farmhub::kernel;
+using namespace cornucopia::ugly_duckling::kernel;
 
-namespace farmhub::devices {
+namespace cornucopia::ugly_duckling::devices {
 
 class GenericDevice : public DeviceDefinition {
 public:
@@ -34,4 +34,4 @@ protected:
     }
 };
 
-}    // namespace farmhub::devices
+}    // namespace cornucopia::ugly_duckling::devices

@@ -1,10 +1,10 @@
 #pragma once
 
-namespace farmhub::kernel {
+namespace cornucopia::ugly_duckling::kernel {
 
 template <typename... Ts>
 struct overloaded : Ts... {
     using Ts::operator()...;
 };
 
-}    // namespace farmhub::kernel
+}    // namespace cornucopia::ugly_duckling::kernel

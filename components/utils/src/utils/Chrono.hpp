@@ -5,7 +5,7 @@
 #include <concepts>
 #include <optional>
 
-namespace farmhub::utils {
+namespace cornucopia::ugly_duckling::utils {
 
 template <class Rep1, class Period1, class Rep2, class Period2>
 double chrono_ratio(
@@ -60,4 +60,4 @@ std::optional<std::chrono::duration<Rep, Period>> maxDuration(
     return std::max(*a, b);
 }
 
-}    // namespace farmhub::utils
+}    // namespace cornucopia::ugly_duckling::utils

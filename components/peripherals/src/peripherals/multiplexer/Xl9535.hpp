@@ -4,7 +4,7 @@
 #include <Pin.hpp>
 #include <utility>
 
-namespace farmhub::peripherals::multiplexer {
+namespace cornucopia::ugly_duckling::peripherals::multiplexer {
 
 class Xl9535Settings
     : public I2CSettings {
@@ -125,4 +125,4 @@ inline PeripheralFactory makeFactoryForXl9535() {
         });
 }
 
-}    // namespace farmhub::peripherals::multiplexer
+}    // namespace cornucopia::ugly_duckling::peripherals::multiplexer

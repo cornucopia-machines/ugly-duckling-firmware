@@ -15,11 +15,11 @@
 #include <scheduling/IScheduler.hpp>
 
 using namespace std::chrono_literals;
-using namespace farmhub::kernel;
-using namespace farmhub::peripherals::api;
-using namespace farmhub::utils::scheduling;
+using namespace cornucopia::ugly_duckling::kernel;
+using namespace cornucopia::ugly_duckling::peripherals::api;
+using namespace cornucopia::ugly_duckling::utils::scheduling;
 
-namespace farmhub::functions {
+namespace cornucopia::ugly_duckling::functions {
 
 /**
  * @brief Common run loop for scheduled transitions of peripherals.
@@ -86,4 +86,4 @@ void runScheduledTransitionLoop(
     });
 }
 
-}    // namespace farmhub::functions
+}    // namespace cornucopia::ugly_duckling::functions

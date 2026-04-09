@@ -12,10 +12,10 @@
 
 #include "Environment.hpp"
 
-using namespace farmhub::kernel;
-using namespace farmhub::peripherals;
+using namespace cornucopia::ugly_duckling::kernel;
+using namespace cornucopia::ugly_duckling::peripherals;
 
-namespace farmhub::peripherals::environment {
+namespace cornucopia::ugly_duckling::peripherals::environment {
 
 /**
  * @brief Works with SHT2x or HTU2x.
@@ -90,4 +90,4 @@ inline PeripheralFactory makeFactoryForSht2x(const std::string& sensorKey) {
         });
 }
 
-}    // namespace farmhub::peripherals::environment
+}    // namespace cornucopia::ugly_duckling::peripherals::environment

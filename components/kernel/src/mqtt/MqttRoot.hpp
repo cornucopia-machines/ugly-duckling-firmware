@@ -7,7 +7,7 @@
 #include <mqtt/MqttDriver.hpp>
 #include <utility>
 
-namespace farmhub::kernel::mqtt {
+namespace cornucopia::ugly_duckling::kernel::mqtt {
 
 class MqttRoot {
 public:
@@ -79,4 +79,4 @@ private:
     std::unordered_map<std::string, CommandHandler> commandHandlers;
 };
 
-}    // namespace farmhub::kernel::mqtt
+}    // namespace cornucopia::ugly_duckling::kernel::mqtt

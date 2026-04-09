@@ -13,7 +13,7 @@
 
 using namespace std::chrono;
 using namespace std::chrono_literals;
-using namespace farmhub::utils::scheduling;
+using namespace cornucopia::ugly_duckling::utils::scheduling;
 
 namespace Catch {
 

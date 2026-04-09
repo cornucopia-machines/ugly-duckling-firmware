@@ -15,7 +15,7 @@
 using namespace std::chrono;
 using namespace std::chrono_literals;
 
-namespace farmhub::kernel::drivers {
+namespace cornucopia::ugly_duckling::kernel::drivers {
 
 LOGGING_TAG(RTC, "rtc")
 
@@ -116,4 +116,4 @@ private:
     StateSource& rtcInSync;
 };
 
-}    // namespace farmhub::kernel::drivers
+}    // namespace cornucopia::ugly_duckling::kernel::drivers

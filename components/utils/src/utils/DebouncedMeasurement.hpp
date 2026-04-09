@@ -8,9 +8,9 @@
 
 using namespace std::chrono;
 using namespace std::chrono_literals;
-using namespace farmhub::kernel;
+using namespace cornucopia::ugly_duckling::kernel;
 
-namespace farmhub::utils {
+namespace cornucopia::ugly_duckling::utils {
 
 template <typename T>
 struct DebouncedParams {
@@ -61,4 +61,4 @@ private:
     Mutex mutex;
 };
 
-}    // namespace farmhub::utils
+}    // namespace cornucopia::ugly_duckling::utils

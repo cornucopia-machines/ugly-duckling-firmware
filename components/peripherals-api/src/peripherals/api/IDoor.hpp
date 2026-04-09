@@ -8,7 +8,7 @@
 #include "IPeripheral.hpp"
 #include "TargetState.hpp"
 
-namespace farmhub::peripherals::api {
+namespace cornucopia::ugly_duckling::peripherals::api {
 
 enum class DoorState : int8_t {
     Closed = -1,
@@ -48,11 +48,11 @@ struct IDoor : virtual IPeripheral {
     virtual std::optional<DoorState> getState() = 0;
 };
 
-}    // namespace farmhub::peripherals::api
+}    // namespace cornucopia::ugly_duckling::peripherals::api
 
 namespace ArduinoJson {
 
-using farmhub::peripherals::api::DoorState;
+using cornucopia::ugly_duckling::peripherals::api::DoorState;
 
 template <>
 struct Converter<DoorState> {

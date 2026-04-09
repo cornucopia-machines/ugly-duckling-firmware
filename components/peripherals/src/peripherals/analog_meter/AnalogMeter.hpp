@@ -15,10 +15,10 @@
 
 using namespace std::chrono;
 using namespace std::chrono_literals;
-using namespace farmhub::kernel;
-using namespace farmhub::kernel::mqtt;
+using namespace cornucopia::ugly_duckling::kernel;
+using namespace cornucopia::ugly_duckling::kernel::mqtt;
 
-namespace farmhub::peripherals::analog_meter {
+namespace cornucopia::ugly_duckling::peripherals::analog_meter {
 
 LOGGING_TAG(ANALOG_METER, "analog-meter")
 
@@ -93,4 +93,4 @@ inline PeripheralFactory makeFactory() {
         });
 }
 
-}    // namespace farmhub::peripherals::analog_meter
+}    // namespace cornucopia::ugly_duckling::peripherals::analog_meter

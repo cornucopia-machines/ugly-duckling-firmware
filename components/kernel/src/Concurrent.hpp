@@ -12,7 +12,7 @@
 
 using namespace std::chrono;
 
-namespace farmhub::kernel {
+namespace cornucopia::ugly_duckling::kernel {
 
 class BaseQueue {
 protected:
@@ -306,4 +306,4 @@ private:
     MutexBase& mutex;
 };
 
-}    // namespace farmhub::kernel
+}    // namespace cornucopia::ugly_duckling::kernel

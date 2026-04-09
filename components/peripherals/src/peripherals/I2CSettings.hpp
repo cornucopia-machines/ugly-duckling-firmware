@@ -6,9 +6,9 @@
 #include <I2CManager.hpp>
 
 using namespace std::chrono;
-using namespace farmhub::kernel;
+using namespace cornucopia::ugly_duckling::kernel;
 
-namespace farmhub::peripherals {
+namespace cornucopia::ugly_duckling::peripherals {
 
 class I2CSettings
     : public ConfigurationSection {
@@ -35,4 +35,4 @@ public:
     }
 };
 
-}    // namespace farmhub::peripherals
+}    // namespace cornucopia::ugly_duckling::peripherals

@@ -4,7 +4,7 @@
 
 using namespace std::chrono_literals;
 
-namespace farmhub::kernel {
+namespace cornucopia::ugly_duckling::kernel {
 
 using ticks = std::chrono::duration<uint32_t, std::ratio<1, configTICK_RATE_HZ>>;
 
@@ -18,4 +18,4 @@ inline static ticks clampTicks(std::chrono::milliseconds duration) {
     return std::chrono::duration_cast<ticks>(duration);
 }
 
-} // namespace farmhub::kernel
+} // namespace cornucopia::ugly_duckling::kernel

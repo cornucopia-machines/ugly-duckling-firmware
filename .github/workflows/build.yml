@@ -35,8 +35,8 @@ jobs:
             ud_debug: 1
 
     env:
-      # Enable verbose logging in debug artifacts for farmhub tags
-      FARMHUB_LOG_VERBOSE: ""
+      # Enable verbose logging in debug artifacts for ugly duckling tags
+      UD_LOG_VERBOSE: ""
 
     steps:
       - uses: actions/checkout@v5
@@ -68,7 +68,7 @@ jobs:
             idf.py build \
               -DUD_DEBUG=${{ matrix.ud_debug }} \
               -DFSUPLOAD=1 \
-              -DFARMHUB_LOG_VERBOSE=${{ env.FARMHUB_LOG_VERBOSE }} \
+              -DUD_LOG_VERBOSE=${{ env.UD_LOG_VERBOSE }} \
               && \
             esp-idf-sbom create -o build/ugly-duckling.spdx build/project_description.json && \
             pyspdxtools --novalidation --infile build/ugly-duckling.spdx --outfile build/ugly-duckling.spdx.json && \

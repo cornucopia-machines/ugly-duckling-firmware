@@ -11,11 +11,11 @@
 
 using namespace std::chrono;
 
-using namespace farmhub::kernel::drivers;
+using namespace cornucopia::ugly_duckling::kernel::drivers;
 
-namespace farmhub::kernel {
+namespace cornucopia::ugly_duckling::kernel {
 
-#ifdef FARMHUB_DEBUG
+#ifdef UD_DEBUG
 class DebugConsole {
 public:
     DebugConsole(const std::shared_ptr<BatteryManager>& battery, const std::shared_ptr<WiFiDriver>& wifi)
@@ -37,7 +37,7 @@ private:
         counter = (counter + 1) % spinnerLength;
         status.clear();
         status += "[" + std::string(1, spinner[counter]) + "] ";
-        status += "\033[33m" + std::string(farmhubVersion) + "\033[0m";
+        status += "\033[33m" + std::string(firmwareVersion) + "\033[0m";
         status += ", uptime: \033[33m" + toStringWithPrecision(static_cast<double>(uptime.count()) / 1000.0, 1) + "\033[0m s";
         status += ", WIFI: " + std::string(wifiStatus());
         status += ", RTC \033[33m" + std::string(RtcDriver::isTimeSet() ? "OK" : "UNSYNCED") + "\033[0m";
@@ -108,4 +108,4 @@ private:
 };
 #endif
 
-}    // namespace farmhub::kernel
+}    // namespace cornucopia::ugly_duckling::kernel

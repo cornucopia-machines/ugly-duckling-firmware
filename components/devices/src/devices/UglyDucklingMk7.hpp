@@ -11,11 +11,11 @@
 
 #include <devices/DeviceDefinition.hpp>
 
-using namespace farmhub::kernel;
-using namespace farmhub::peripherals::door;
-using namespace farmhub::peripherals::valve;
+using namespace cornucopia::ugly_duckling::kernel;
+using namespace cornucopia::ugly_duckling::peripherals::door;
+using namespace cornucopia::ugly_duckling::peripherals::valve;
 
-namespace farmhub::devices {
+namespace cornucopia::ugly_duckling::devices {
 
 class UglyDucklingMk7 : public DeviceDefinition {
 public:
@@ -89,4 +89,4 @@ private:
     DEFINE_PIN(GPIO_NUM_48, IOA4, "A4")
 };
 
-}    // namespace farmhub::devices
+}    // namespace cornucopia::ugly_duckling::devices

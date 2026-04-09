@@ -10,7 +10,7 @@
 
 using Catch::Approx;
 
-namespace farmhub::utils::scheduling {
+namespace cornucopia::ugly_duckling::utils::scheduling {
 
 struct SimulationConfig {
     double moistReal0 = 80.0;     // initial real moisture
@@ -166,4 +166,4 @@ TEST_CASE("tempRef usage: consistent estimates around chosen reference", "[kalma
     // so we don't compare beta directly here.
 }
 
-}    // namespace farmhub::utils::scheduling
+}    // namespace cornucopia::ugly_duckling::utils::scheduling

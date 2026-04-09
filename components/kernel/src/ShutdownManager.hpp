@@ -5,7 +5,7 @@
 
 #include <Task.hpp>
 
-namespace farmhub::kernel {
+namespace cornucopia::ugly_duckling::kernel {
 
 class ShutdownManager {
 public:
@@ -28,4 +28,4 @@ private:
     std::vector<std::function<void()>> shutdownListeners;
 };
 
-}    // namespace farmhub::kernel
+}    // namespace cornucopia::ugly_duckling::kernel

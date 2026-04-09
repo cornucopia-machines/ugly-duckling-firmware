@@ -7,9 +7,9 @@
 
 #include <peripherals/Peripheral.hpp>
 
-using farmhub::peripherals::PeripheralManager;
+using cornucopia::ugly_duckling::peripherals::PeripheralManager;
 
-namespace farmhub::functions {
+namespace cornucopia::ugly_duckling::functions {
 
 struct FunctionServices {
     const std::shared_ptr<TelemetryPublisher> telemetryPublisher;
@@ -152,4 +152,4 @@ private:
     SettingsBasedManager<FunctionFactory> manager;
 };
 
-}    // namespace farmhub::functions
+}    // namespace cornucopia::ugly_duckling::functions

@@ -14,7 +14,7 @@
 
 #include "utils/scheduling/MoistureKalmanFilter.hpp"
 
-using farmhub::utils::scheduling::MoistureKalmanFilter;
+using cornucopia::ugly_duckling::utils::scheduling::MoistureKalmanFilter;
 
 struct DataPoint {
     std::string time;

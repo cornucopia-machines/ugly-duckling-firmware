@@ -6,7 +6,7 @@
 
 #include <esp_log.h>
 
-namespace farmhub::kernel {
+namespace cornucopia::ugly_duckling::kernel {
 
 enum class Level : uint8_t {
     None = 0,
@@ -23,16 +23,16 @@ struct LogRecord {
     const std::string message;
 };
 
-#ifndef FARMHUB_LOG_LEVEL
-#ifdef FARMHUB_DEBUG
-#define FARMHUB_LOG_LEVEL ESP_LOG_DEBUG
+#ifndef UD_LOG_LEVEL
+#ifdef UD_DEBUG
+#define UD_LOG_LEVEL ESP_LOG_DEBUG
 #else
-#define FARMHUB_LOG_LEVEL ESP_LOG_INFO
+#define UD_LOG_LEVEL ESP_LOG_INFO
 #endif
 #endif
 
-#ifndef FARMHUB_LOG_VERBOSE
-#define FARMHUB_LOG_VERBOSE ""
+#ifndef UD_LOG_VERBOSE
+#define UD_LOG_VERBOSE ""
 #endif
 
 // helper: check if substring is in comma-separated list
@@ -53,11 +53,11 @@ inline bool loggingTagInList(const char* tag, const char* list) {
 
 // LOGGING_TAG(varName, "tagname")
 #define LOGGING_TAG(varName, name)                              \
-    inline constexpr const char* varName = "farmhub:" name;    \
+    inline constexpr const char* varName = "ud:" name;    \
     struct varName##_LoggerInit {                              \
         varName##_LoggerInit() {                               \
-            esp_log_level_t lvl = FARMHUB_LOG_LEVEL;           \
-            if (loggingTagInList(name, FARMHUB_LOG_VERBOSE)) { \
+            esp_log_level_t lvl = UD_LOG_LEVEL;           \
+            if (loggingTagInList(name, UD_LOG_VERBOSE)) { \
                 lvl = ESP_LOG_VERBOSE;                         \
             }                                                  \
             esp_log_level_set(varName, lvl);                   \
@@ -79,4 +79,4 @@ LOGGING_TAG(GLOBAL, "global")
 #define LOGD(format, ...) LOGTD(GLOBAL, format, ##__VA_ARGS__)
 #define LOGV(format, ...) LOGTV(GLOBAL, format, ##__VA_ARGS__)
 
-}    // namespace farmhub::kernel
+}    // namespace cornucopia::ugly_duckling::kernel

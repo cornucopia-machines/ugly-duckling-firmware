@@ -20,7 +20,7 @@
 
 using namespace std::chrono;
 
-namespace farmhub::kernel {
+namespace cornucopia::ugly_duckling::kernel {
 
 LOGGING_TAG(PM, "pm")
 
@@ -132,7 +132,7 @@ public:
 private:
     static bool shouldSleepWhenIdle(bool requestedSleepWhenIdle) {
         if (requestedSleepWhenIdle) {
-#if FARMHUB_DEBUG
+#if UD_DEBUG
             LOGTI(PM, "Light sleep is disabled in debug mode");
             return false;
 #elif not(CONFIG_PM_ENABLE)
@@ -159,4 +159,4 @@ private:
 };
 
 
-}    // namespace farmhub::kernel
+}    // namespace cornucopia::ugly_duckling::kernel

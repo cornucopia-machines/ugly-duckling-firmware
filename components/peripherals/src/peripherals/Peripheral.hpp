@@ -23,11 +23,11 @@
 
 #include "PeripheralException.hpp"
 
-using namespace farmhub::kernel;
-using namespace farmhub::kernel::drivers;
-using namespace farmhub::peripherals::api;
+using namespace cornucopia::ugly_duckling::kernel;
+using namespace cornucopia::ugly_duckling::kernel::drivers;
+using namespace cornucopia::ugly_duckling::peripherals::api;
 
-namespace farmhub::peripherals {
+namespace cornucopia::ugly_duckling::peripherals {
 
 class Peripheral
     : public virtual IPeripheral,
@@ -171,4 +171,4 @@ private:
     SettingsBasedManager<PeripheralFactory> manager;
 };
 
-}    // namespace farmhub::peripherals
+}    // namespace cornucopia::ugly_duckling::peripherals

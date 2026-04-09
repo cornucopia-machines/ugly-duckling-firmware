@@ -5,7 +5,7 @@
 
 #include <esp_mac.h>
 
-namespace farmhub::kernel {
+namespace cornucopia::ugly_duckling::kernel {
 
 constexpr size_t MAC_ADDRESS_LENGTH = 6;
 
@@ -40,4 +40,4 @@ static bool macAddressHasPrefix(Bytes... bytes) {
     return std::equal(prefix.begin(), prefix.end(), mac.begin());
 }
 
-}    // namespace farmhub::kernel
+}    // namespace cornucopia::ugly_duckling::kernel

@@ -12,7 +12,7 @@
 
 using namespace std::chrono;
 
-namespace farmhub::kernel::drivers {
+namespace cornucopia::ugly_duckling::kernel::drivers {
 
 /**
  * @brief Texas Instruments DRV8833 dual motor driver.
@@ -165,4 +165,4 @@ private:
     std::atomic<bool> sleeping { false };
 };
 
-}    // namespace farmhub::kernel::drivers
+}    // namespace cornucopia::ugly_duckling::kernel::drivers

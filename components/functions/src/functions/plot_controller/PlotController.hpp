@@ -20,12 +20,12 @@
 #include <utils/Chrono.hpp>
 
 using namespace std::chrono;
-using namespace farmhub::kernel::mqtt;
-using namespace farmhub::peripherals;
-using namespace farmhub::peripherals::api;
-using namespace farmhub::utils::scheduling;
+using namespace cornucopia::ugly_duckling::kernel::mqtt;
+using namespace cornucopia::ugly_duckling::peripherals;
+using namespace cornucopia::ugly_duckling::peripherals::api;
+using namespace cornucopia::ugly_duckling::utils::scheduling;
 
-namespace farmhub::functions::plot_controller {
+namespace cornucopia::ugly_duckling::functions::plot_controller {
 
 LOGGING_TAG(PLOT_CTRL, "plot-ctrl")
 
@@ -189,7 +189,7 @@ inline FunctionFactory makeFactory() {
                 std::make_shared<OverrideScheduler>(),
                 std::make_shared<TimeBasedScheduler>(),
                 std::make_shared<MoistureBasedScheduler<SteadyClock>>(
-                    farmhub::utils::scheduling::MoistureBasedSchedulerSettings {
+                    cornucopia::ugly_duckling::utils::scheduling::MoistureBasedSchedulerSettings {
                         .minVolume = moistureBasedSettings->minVolume.get(),
                         .maxVolume = moistureBasedSettings->maxVolume.get(),
                         .minGain = moistureBasedSettings->minGain.get(),
@@ -213,4 +213,4 @@ inline FunctionFactory makeFactory() {
         });
 }
 
-}    // namespace farmhub::functions::plot_controller
+}    // namespace cornucopia::ugly_duckling::functions::plot_controller

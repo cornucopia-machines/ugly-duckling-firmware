@@ -17,10 +17,10 @@
 using namespace std::chrono;
 using namespace std::chrono_literals;
 
-using namespace farmhub::kernel;
-using namespace farmhub::peripherals;
+using namespace cornucopia::ugly_duckling::kernel;
+using namespace cornucopia::ugly_duckling::peripherals;
 
-namespace farmhub::peripherals::light_sensor {
+namespace cornucopia::ugly_duckling::peripherals::light_sensor {
 
 static constexpr uint8_t TSL2591_ADDR = 0x29;
 
@@ -93,4 +93,4 @@ inline PeripheralFactory makeFactoryForTsl2591() {
         });
 }
 
-}    // namespace farmhub::peripherals::light_sensor
+}    // namespace cornucopia::ugly_duckling::peripherals::light_sensor

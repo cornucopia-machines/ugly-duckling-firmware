@@ -2,7 +2,7 @@
 
 #include <vector>
 
-namespace farmhub::kernel {
+namespace cornucopia::ugly_duckling::kernel {
 
 template <typename M, typename T = M>
 requires std::is_arithmetic_v<M> && std::is_arithmetic_v<T>
@@ -42,4 +42,4 @@ private:
     T average;
 };
 
-}    // namespace farmhub::kernel
+}    // namespace cornucopia::ugly_duckling::kernel

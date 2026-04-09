@@ -8,7 +8,7 @@
 #include <NvsStore.hpp>
 #include <Strings.hpp>
 
-namespace farmhub::kernel {
+namespace cornucopia::ugly_duckling::kernel {
 
 LOGGING_TAG(CRASH, "crash")
 
@@ -34,7 +34,7 @@ public:
                 break;
             }
         }
-        nvs.set("version", farmhubVersion);
+        nvs.set("version", firmwareVersion);
     }
 
 private:
@@ -267,4 +267,4 @@ private:
     }
 };
 
-}    // namespace farmhub::kernel
+}    // namespace cornucopia::ugly_duckling::kernel

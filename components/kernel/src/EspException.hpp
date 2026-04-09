@@ -3,7 +3,7 @@
 #include <esp_err.h>
 #include <exception>
 
-namespace farmhub::kernel {
+namespace cornucopia::ugly_duckling::kernel {
 
 class EspException
     : public std::runtime_error {
@@ -21,4 +21,4 @@ public:
         }                              \
     } while (0)
 
-}    // namespace farmhub::kernel
+}    // namespace cornucopia::ugly_duckling::kernel

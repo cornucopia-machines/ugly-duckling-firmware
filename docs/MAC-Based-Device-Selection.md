@@ -20,7 +20,7 @@ to the top level, eliminating the compile-time generation split for same-target 
 ## Technical Challenge: Pin Lifecycle
 
 Each device definition file currently declares its pins as `static const` globals inside a
-shared `namespace farmhub::devices::pins`. Including more than one of these files in the same
+shared `namespace cornucopia::ugly_duckling::devices::pins`. Including more than one of these files in the same
 compilation unit causes two problems:
 
 1. **Name collisions** — all five files use the same namespace and the same pin names

@@ -12,7 +12,7 @@
 using namespace std::chrono;
 using namespace std::chrono_literals;
 
-namespace farmhub::kernel {
+namespace cornucopia::ugly_duckling::kernel {
 
 enum class WatchdogState : uint8_t {
     Started,
@@ -78,4 +78,4 @@ private:
     esp_timer_handle_t timer {};
 };
 
-}    // namespace farmhub::kernel
+}    // namespace cornucopia::ugly_duckling::kernel
