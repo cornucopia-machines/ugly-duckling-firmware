@@ -204,21 +204,24 @@ idf.py build -DUD_GEN=MKX       # Carrot (ESP32-C6)
 idf.py flash
 ```
 
-If you also want to upload the NVS config partition with the firmware, add `-DFSUPLOAD=1` to the command:
+This flashes the full firmware: the bootloader, the partition table, the app, and the NVS config partition (generated from `config/device-config.json` and `config/network-config.json`).
+
+> [!WARNING]
+> Flashing the NVS partition will erase all NVS data on the device, including WiFi credentials.
+> This is intended for initial device setup or reconfiguration.
+
+To flash only the app (leaving the existing NVS partition untouched), use:
 
 ```bash
-idf.py -DFSUPLOAD=1 flash
+idf.py app-flash
 ```
-
-> **Note:** Flashing the NVS partition will erase all NVS data on the device, including WiFi credentials.
-> This is intended for initial device setup or reconfiguration.
 
 #### Uploading just config
 
-To upload only the NVS config partition (generated from `config/device-config.json` and `config/network-config.json`):
+To upload only the NVS config partition:
 
 ```bash
-idf.py -DFSUPLOAD=1 build
+idf.py build
 esptool.py write_flash 0x18000 build/config.bin
 ```
 
@@ -243,7 +246,7 @@ Can use [Wokwi](https://wokwi.com/) to run the firmware in a simulated environme
 For this the firmware must be built with `-DWOKWI=1`.
 
 ```bash
-idf.py -DUD_GEN=MK6 -DUD_DEBUG=0 -DFSUPLOAD=1 -DWOKWI=1 build
+idf.py -DUD_GEN=MK6 -DUD_DEBUG=0 -DWOKWI=1 build
 ```
 
 The opening a diagram in the [`wokwi`](wokwi) directory will start the simulation.

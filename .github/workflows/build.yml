@@ -67,7 +67,6 @@ jobs:
             ccache --max-size=${{ env.CCACHE_MAXSIZE }} && \
             idf.py build \
               -DUD_DEBUG=${{ matrix.ud_debug }} \
-              -DFSUPLOAD=1 \
               -DUD_LOG_VERBOSE=${{ env.UD_LOG_VERBOSE }} \
               && \
             esp-idf-sbom create -o build/ugly-duckling.spdx build/project_description.json && \
@@ -215,7 +214,7 @@ jobs:
           extra_docker_args: -v  ${{ env.CCACHE_DIR }}:/root/.ccache
           command: |
             ccache --max-size=${{ env.CCACHE_MAXSIZE }} && \
-            idf.py -DUD_GEN=MK6 -DUD_DEBUG=1 -DFSUPLOAD=1 -DWOKWI=1 -DWOKWI_MQTT_HOST=${{ env.HOSTNAME }} build && \
+            idf.py -DUD_GEN=MK6 -DUD_DEBUG=1 -DWOKWI=1 -DWOKWI_MQTT_HOST=${{ env.HOSTNAME }} build && \
             ccache -s
 
       - name: Run a Wokwi CI server
