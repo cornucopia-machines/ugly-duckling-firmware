@@ -68,8 +68,7 @@ void startDeviceBasedOnMac() {
     }
 
     // MK9 Rev1
-    // TODO Use actual MAC address once devices ship
-    if (macAddressHasPrefix(0xFF, 0xFF, 0xFF, 0xFF)) {
+     if (macAddressHasPrefix(0x58, 0xE6, 0xC5, 0x42)) {
         startDevice<UglyDucklingMk9Rev1>();
         return;
     }
