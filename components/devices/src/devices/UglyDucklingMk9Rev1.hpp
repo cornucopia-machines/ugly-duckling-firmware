@@ -27,7 +27,6 @@ public:
     explicit UglyDucklingMk9Rev1()
         : DeviceDefinition({ .model = "mk9", .revision = 1, .boot = GPIO_NUM_0, .status = GPIO_NUM_45 }) {
         // Switch off strapping pin
-        // TODO: Add a LED driver instead
         STATUS2->pinMode(Pin::Mode::Output);
         STATUS2->digitalWrite(1);
     }
