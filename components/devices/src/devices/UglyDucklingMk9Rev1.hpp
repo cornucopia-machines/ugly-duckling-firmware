@@ -108,7 +108,7 @@ protected:
     // Legacy soil temperature sensor
     DEFINE_PIN(GPIO_NUM_39, ISOILTL)
 
-    // Enable pin for legacy soil moisture sensor
+    // Disable pin for legacy soil moisture sensor
     DEFINE_PIN(GPIO_NUM_41, NENSOILM)
 
     // Flow meter B

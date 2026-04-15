@@ -17,6 +17,9 @@ class Hw390SoilMoistureSensorSettings
     : public ConfigurationSection {
 public:
     Property<InternalPinPtr> pin { this, "pin" };
+    Property<PinPtr> disablePin { this, "disablePin" };
+    Property<milliseconds> enableDelay { this, "enableDelay", 100ms };
+
     // These values need calibrating for each sensor
     Property<uint16_t> air { this, "air", 3000 };
     Property<uint16_t> water { this, "water", 1000 };
@@ -34,15 +37,24 @@ public:
         int airValue,
         int waterValue,
         double alpha,
-        const InternalPinPtr& pin)
+        const InternalPinPtr& pin,
+        const PinPtr& disablePin,
+        milliseconds enableDelay = 100ms)
         : Peripheral(name)
         , airValue(airValue)
         , waterValue(waterValue)
         , alpha(alpha)
-        , pin(pin) {
+        , pin(pin)
+        , disablePin(disablePin)
+        , enableDelay(enableDelay) {
 
-        LOGTI(ENV, "Initializing soil moisture sensor '%s' on pin %s; air value: %d; water value: %d; EMA alpha: %.2f",
-            name.c_str(), pin->getName().c_str(), airValue, waterValue, alpha);
+        LOGTI(ENV, "Initializing soil moisture sensor '%s' on pin %s; air value: %d; water value: %d; EMA alpha: %.2f; disable pin: %s; enable delay: %dms",
+            name.c_str(), pin->getName().c_str(), airValue, waterValue, alpha, disablePin ? disablePin->getName().c_str() : "none", enableDelay.count());
+
+        if (disablePin) {
+            disablePin->pinMode(Pin::Mode::Output);
+            disablePin->digitalWrite(1);
+        }
     }
 
     Percent getMoisture() override {
@@ -53,28 +65,42 @@ private:
     const int airValue;
     const int waterValue;
     const double alpha;
-    AnalogPin pin;
+    const AnalogPin pin;
+    const PinPtr disablePin;
+    const milliseconds enableDelay;
+
+    std::optional<Percent> measure(const utils::DebouncedParams<Percent> params) {
+        std::optional<uint16_t> soilMoistureValue = pin.tryAnalogRead();
+        if (!soilMoistureValue.has_value()) {
+            LOGTW(ENV, "Failed to read soil moisture value from pin %s",
+                pin.getName().c_str());
+            return std::nullopt;
+        }
+        LOGTV(ENV, "Soil moisture value: %d",
+            soilMoistureValue.value());
+
+        const double run = waterValue - airValue;
+        const double rise = 100;
+        const double delta = soilMoistureValue.value() - airValue;
+        double currentValue = (delta * rise) / run;
+
+        if (std::isnan(params.lastValue)) {
+            return currentValue;
+        }
+        return (alpha * currentValue) + ((1 - alpha) * params.lastValue);
+    }
 
     utils::DebouncedMeasurement<Percent> measurement {
         [this](const utils::DebouncedParams<Percent> params) -> std::optional<Percent> {
-            std::optional<uint16_t> soilMoistureValue = pin.tryAnalogRead();
-            if (!soilMoistureValue.has_value()) {
-                LOGTW(ENV, "Failed to read soil moisture value from pin %s",
-                    pin.getName().c_str());
-                return std::nullopt;
+            if (disablePin) {
+                disablePin->digitalWrite(0);
+                Task::delay(enableDelay);
             }
-            LOGTV(ENV, "Soil moisture value: %d",
-                soilMoistureValue.value());
-
-            const double run = waterValue - airValue;
-            const double rise = 100;
-            const double delta = soilMoistureValue.value() - airValue;
-            double currentValue = (delta * rise) / run;
-
-            if (std::isnan(params.lastValue)) {
-                return currentValue;
+            auto measurement = measure(params);
+            if (disablePin) {
+                disablePin->digitalWrite(1);
             }
-            return (alpha * currentValue) + ((1 - alpha) * params.lastValue);
+            return measurement;
         },
         1s,
         NAN
@@ -91,7 +117,9 @@ inline PeripheralFactory makeFactoryForHw390SoilMoisture(const std::string& fact
                 settings->air.get(),
                 settings->water.get(),
                 settings->alpha.get(),
-                settings->pin.get());
+                settings->pin.get(),
+                settings->disablePin.get(),
+                settings->enableDelay.get());
             params.registerFeature("moisture", [sensor](JsonObject& telemetryJson) {
                 telemetryJson["value"] = sensor->getMoisture();
             });
