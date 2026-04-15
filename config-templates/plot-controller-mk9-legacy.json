@@ -1,0 +1,39 @@
+{
+  "peripherals": [
+    {
+      "name": "flow-meter",
+      "type": "flow-meter",
+      "params": {
+        "pin": "IFLOWB"
+      }
+    },
+    {
+      "name": "valve",
+      "type": "valve",
+      "params": {
+        "motor": "b"
+      }
+    },
+    {
+      "name": "soil-moisture-sensor",
+      "type": "soil:hw390",
+      "params": {
+        "pin": "ISOILML",
+        "disablePin": "NENSOILM",
+        "air": 3017,
+        "water": 1105
+      }
+    }
+  ],
+  "functions": [
+    {
+      "name": "plot",
+      "type": "plot-controller",
+      "params": {
+        "flowMeter": "flow-meter",
+        "valve": "valve",
+        "soilMoistureSensor": "soil-moisture-sensor"
+      }
+    }
+  ]
+}
