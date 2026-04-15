@@ -124,7 +124,7 @@ private:
 };
 
 inline PeripheralFactory makeFactoryForKalmanSoilMoisture() {
-    return makePeripheralFactory<ISoilMoistureSensor, KalmanFilterSoilSensor, KalmanFilterSoilSensorSettings>(
+    return makePeripheralFactory<KalmanFilterSoilSensor, KalmanFilterSoilSensorSettings, ISoilMoistureSensor>(
         "environment:kalman-soil-moisture",
         "environment",
         [](PeripheralInitParameters& params, const std::shared_ptr<KalmanFilterSoilSensorSettings>& settings) {

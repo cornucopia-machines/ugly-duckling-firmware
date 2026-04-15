@@ -105,7 +105,7 @@ private:
 };
 
 inline PeripheralFactory makeFactoryForXl9535() {
-    return makePeripheralFactory<Xl9535, Xl9535, Xl9535Settings>(
+    return makePeripheralFactory<Xl9535, Xl9535Settings>(
         "multiplexer:xl9535",
         "multiplexer",
         [](PeripheralInitParameters& params, const std::shared_ptr<Xl9535Settings>& settings) {

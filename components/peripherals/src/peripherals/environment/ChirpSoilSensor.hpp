@@ -104,7 +104,7 @@ private:
 };
 
 inline PeripheralFactory makeFactoryForChirpSoilSensor() {
-    return makePeripheralFactory<ChirpSoilSensor, ChirpSoilSensor, ChirpSoilSensorSettings>(
+    return makePeripheralFactory<ChirpSoilSensor, ChirpSoilSensorSettings, api::ISoilMoistureSensor, api::ITemperatureSensor>(
         "soil:chirp",
         "environment",
         [](PeripheralInitParameters& params, const std::shared_ptr<ChirpSoilSensorSettings>& settings) {

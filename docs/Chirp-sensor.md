@@ -109,7 +109,7 @@ void updateMeasurement() {
 
 ```cpp
 inline PeripheralFactory makeFactoryForChirpSoilSensor() {
-    return makePeripheralFactory<ChirpSoilSensor, ChirpSoilSensor, ChirpSoilSensorSettings>(
+    return makePeripheralFactory<ChirpSoilSensor, ChirpSoilSensorSettings, ISoilMoistureSensor, ITemperatureSensor>(
         "soil:chirp",
         "environment",
         [](PeripheralInitParameters& params, const std::shared_ptr<ChirpSoilSensorSettings>& settings) {

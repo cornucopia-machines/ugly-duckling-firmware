@@ -30,7 +30,7 @@ inline PeripheralFactory makeFactory(
     const std::map<std::string, std::shared_ptr<PwmMotorDriver>>& motors,
     ValveControlStrategyType defaultStrategy) {
 
-    return makePeripheralFactory<IValve, Valve, ValveSettings>(
+    return makePeripheralFactory<Valve, ValveSettings, IValve>(
         "valve",
         "valve",
         [motors](PeripheralInitParameters& params, const std::shared_ptr<ValveSettings>& settings) {
@@ -46,7 +46,7 @@ inline PeripheralFactory makeFactory(
 
             return valve;
         },
-        defaultStrategy);
+        [defaultStrategy] { return std::make_shared<ValveSettings>(defaultStrategy); });
 }
 
 }    // namespace cornucopia::ugly_duckling::peripherals::valve

@@ -99,7 +99,7 @@ private:
 };
 
 inline PeripheralFactory makeFactoryForDs18b20() {
-    return makePeripheralFactory<ITemperatureSensor, Ds18B20SoilSensor, Ds18B20Settings>(
+    return makePeripheralFactory<Ds18B20SoilSensor, Ds18B20Settings, ITemperatureSensor>(
         "environment:ds18b20",
         "environment",
         [](PeripheralInitParameters& params, const std::shared_ptr<Ds18B20Settings>& settings) {

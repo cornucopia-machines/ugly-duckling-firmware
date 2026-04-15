@@ -73,7 +73,7 @@ private:
 };
 
 inline PeripheralFactory makeFactoryForAnalogLightSensor() {
-    return makePeripheralFactory<ILightSensor, AnalogLightSensor, AnalogLightSensorSettings>(
+    return makePeripheralFactory<AnalogLightSensor, AnalogLightSensorSettings, ILightSensor>(
         "light-sensor:analog",
         "light-sensor",
         [](PeripheralInitParameters& params, const std::shared_ptr<AnalogLightSensorSettings>& settings) {

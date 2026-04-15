@@ -73,7 +73,7 @@ public:
 };
 
 inline PeripheralFactory makeFactory() {
-    return makePeripheralFactory<AnalogMeter, AnalogMeter, AnalogMeterSettings>(
+    return makePeripheralFactory<AnalogMeter, AnalogMeterSettings>(
         "analog-meter",
         "analog-meter",
         [](PeripheralInitParameters& params, const std::shared_ptr<AnalogMeterSettings>& settings) {
