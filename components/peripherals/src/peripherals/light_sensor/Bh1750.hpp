@@ -66,7 +66,7 @@ private:
 };
 
 inline PeripheralFactory makeFactoryForBh1750() {
-    return makePeripheralFactory<ILightSensor, Bh1750, Bh1750Settings>(
+    return makePeripheralFactory<Bh1750, Bh1750Settings, ILightSensor>(
         "light-sensor:bh1750",
         "light-sensor",
         [](PeripheralInitParameters& params, const std::shared_ptr<Bh1750Settings>& settings) {

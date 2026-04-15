@@ -82,7 +82,7 @@ private:
 };
 
 inline PeripheralFactory makeFactoryForHw390SoilMoisture(const std::string& factoryType = "soil:hw390") {
-    return makePeripheralFactory<ISoilMoistureSensor, Hw390SoilMoistureSensor, Hw390SoilMoistureSensorSettings>(
+    return makePeripheralFactory<Hw390SoilMoistureSensor, Hw390SoilMoistureSensorSettings, ISoilMoistureSensor>(
         factoryType,
         "environment",
         [](PeripheralInitParameters& params, const std::shared_ptr<Hw390SoilMoistureSensorSettings>& settings) {

@@ -88,7 +88,7 @@ private:
 };
 
 inline PeripheralFactory makeFactory() {
-    return makePeripheralFactory<ElectricFenceMonitor, ElectricFenceMonitor, ElectricFenceMonitorSettings>(
+    return makePeripheralFactory<ElectricFenceMonitor, ElectricFenceMonitorSettings>(
         "electric-fence",
         "electric-fence",
         [](PeripheralInitParameters& params, const std::shared_ptr<ElectricFenceMonitorSettings>& settings) {

@@ -88,7 +88,7 @@ private:
 };
 
 inline PeripheralFactory makeFactoryForSht3x() {
-    return makePeripheralFactory<Sht3xSensor, Sht3xSensor, I2CSettings>(
+    return makePeripheralFactory<Sht3xSensor, I2CSettings>(
         "environment:sht3x",
         "environment",
         [](PeripheralInitParameters& params, const std::shared_ptr<I2CSettings>& settings) {

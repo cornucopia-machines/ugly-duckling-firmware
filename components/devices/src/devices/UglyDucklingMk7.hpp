@@ -22,7 +22,6 @@ public:
     UglyDucklingMk7()
         : DeviceDefinition({ .model = "mk7", .revision = 1, .boot = GPIO_NUM_0, .status = GPIO_NUM_15 }) {
         // Switch off strapping pin
-        // TODO: Add a LED driver instead
         STATUS2->pinMode(Pin::Mode::Output);
         STATUS2->digitalWrite(1);
     }

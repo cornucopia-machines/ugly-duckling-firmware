@@ -377,7 +377,7 @@ private:
 
 inline PeripheralFactory makeFactory(const std::map<std::string, std::shared_ptr<PwmMotorDriver>>& motors) {
 
-    return makePeripheralFactory<IDoor, Door, DoorSettings>(
+    return makePeripheralFactory<Door, DoorSettings, IDoor>(
         "door",
         "door",
         [motors](PeripheralInitParameters& params, const std::shared_ptr<DoorSettings>& settings) {

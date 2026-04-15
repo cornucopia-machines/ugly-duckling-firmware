@@ -30,49 +30,62 @@ template <typename T>
 inline constexpr char TypeTokenVar = 0;
 
 // A reusable, shutdown-agnostic, type-erased handle that keeps a shared_ptr to an implementation
-// and provides tryGet<T>() via a compile-time type token. Lifecycle operations like shutdown are
+// and provides tryGet<T>() via compile-time type tokens. Lifecycle operations like shutdown are
 // intentionally kept out of this generic type and should be orchestrated by domain managers.
+// A single handle can be registered under multiple interface types to support peripherals that
+// implement several APIs.
 class Handle {
 public:
     Handle() = default;
 
-    template <typename ImplPtr>
-    static Handle wrap(const ImplPtr& impl) {
+    // Register under explicit interface types. Each interface gets its own correctly-adjusted
+    // pointer (important for multiple inheritance). If no Interfaces are given, registers as Impl.
+    template <typename... Interfaces, typename Impl>
+    static Handle wrap(std::shared_ptr<Impl> impl) {
         Handle h;
-        using Impl = std::remove_reference_t<decltype(*impl)>;
-        // Store the impl as void and record a per-type token
-        h._holder = std::static_pointer_cast<void>(impl);
-        h._typeTag = &TypeTokenVar<Impl>;
+
+        if constexpr (sizeof...(Interfaces) == 0) {
+            h.entries.push_back({ &TypeTokenVar<Impl>, std::static_pointer_cast<void>(impl) });
+        } else {
+            (h.entries.push_back({ &TypeTokenVar<Interfaces>,
+                std::static_pointer_cast<void>(std::static_pointer_cast<Interfaces>(impl)) }), ...);
+        }
 
         // If implementation supports shutdown, register it with the manager now
         if constexpr (std::is_base_of_v<HasShutdown, Impl>) {
-            h._shutdown = ([impl](const ShutdownParameters& p) {
+            h.shutdownFn = [impl](const ShutdownParameters& p) {
                 std::static_pointer_cast<HasShutdown>(impl)->shutdown(p);
-            });
+            };
         }
 
         return h;
     }
 
-    // Typed access without RTTI
+    // Typed access without RTTI — linear scan over registered interfaces
     template <typename T>
     std::shared_ptr<T> tryGet() const {
-        if (_typeTag == &TypeTokenVar<T>) {
-            return std::static_pointer_cast<T>(_holder);
+        for (const auto& entry : entries) {
+            if (entry.typeTag == &TypeTokenVar<T>) {
+                return std::static_pointer_cast<T>(entry.holder);
+            }
         }
         return {};
     }
 
     void shutdown(const ShutdownParameters& p) {
-        if (_shutdown) {
-            _shutdown(p);
+        if (shutdownFn) {
+            shutdownFn(p);
         }
     }
 
 private:
-    std::shared_ptr<void> _holder;
-    const void* _typeTag { nullptr };
-    std::function<void(const ShutdownParameters& p)> _shutdown;
+    struct Entry {
+        const void* typeTag;
+        std::shared_ptr<void> holder;
+    };
+
+    std::vector<Entry> entries;
+    std::function<void(const ShutdownParameters& p)> shutdownFn;
 };
 
 // A lightweight, generic factory descriptor. The CreateFn is the concrete callable type

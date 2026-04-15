@@ -69,7 +69,7 @@ private:
 
 inline PeripheralFactory makeFactoryForSht2x(const std::string& sensorKey) {
     // sensorKey: "sht2x" or "htu2x"
-    return makePeripheralFactory<Sht2xSensor, Sht2xSensor, I2CSettings>(
+    return makePeripheralFactory<Sht2xSensor, I2CSettings>(
         "environment:" + sensorKey,
         "environment",
         [sensorKey](PeripheralInitParameters& params, const std::shared_ptr<I2CSettings>& settings) {

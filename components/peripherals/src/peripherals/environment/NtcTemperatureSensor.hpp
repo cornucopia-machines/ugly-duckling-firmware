@@ -60,7 +60,7 @@ struct NtcTemperatureSensorSettings
 };
 
 inline PeripheralFactory makeFactoryForNtcTemperatureSensor() {
-    return makePeripheralFactory<ITemperatureSensor, NtcTemperatureSensor, NtcTemperatureSensorSettings>(
+    return makePeripheralFactory<NtcTemperatureSensor, NtcTemperatureSensorSettings, ITemperatureSensor>(
         "environment:ntc-temperature-sensor",
         "environment",
         [](PeripheralInitParameters& params, const std::shared_ptr<NtcTemperatureSensorSettings>& settings) {

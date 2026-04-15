@@ -1,11 +1,10 @@
 #pragma once
 
+#include <concepts>
 #include <functional>
 #include <map>
 #include <memory>
-#include <tuple>
 #include <type_traits>
-#include <utility>
 #include <vector>
 
 #include <Configuration.hpp>
@@ -80,36 +79,34 @@ struct PeripheralInitParameters {
     Manager<PeripheralFactory>& peripherals;
 };
 
-// Helper to build a PeripheralFactory while keeping strong types for settings/config
+// Helper to build a PeripheralFactory while keeping strong types for settings/config.
+// RegisterAs... lists the interface types to register the peripheral under. If empty,
+// the peripheral is registered under its concrete Impl type.
 template <
-    typename Type,
-    std::derived_from<Type> Impl,
+    typename Impl,
     std::derived_from<ConfigurationSection> TSettings,
-    typename... TSettingsArgs>
+    typename... RegisterAs>
+    requires (sizeof...(RegisterAs) == 0 || (std::derived_from<Impl, RegisterAs> && ...))
 PeripheralFactory makePeripheralFactory(const std::string& factoryType,
     const std::string& peripheralType,
     std::function<std::shared_ptr<Impl>(PeripheralInitParameters&, const std::shared_ptr<TSettings>&)> makeImpl,
-    TSettingsArgs... settingsArgs) {
-    auto settingsTuple = std::make_tuple(std::forward<TSettingsArgs>(settingsArgs)...);
+    std::function<std::shared_ptr<TSettings>()> makeSettings = [] { return std::make_shared<TSettings>(); }) {
 
     // Build the factory using designated initializers (C++20+)
     auto effectiveType = peripheralType.empty() ? factoryType : peripheralType;
     return PeripheralFactory {
         .factoryType = std::move(factoryType),
         .productType = std::move(effectiveType),
-        .create = [settingsTuple, makeImpl = std::move(makeImpl)](
+        .create = [makeImpl = std::move(makeImpl), makeSettings = std::move(makeSettings)](
                       PeripheralInitParameters& params,
                       const std::string& jsonSettings) -> Handle {
             // Construct and load settings
-            auto settings = std::apply([](auto&&... a) {
-                return std::make_shared<TSettings>(std::forward<decltype(a)>(a)...);
-            },
-                settingsTuple);
+            auto settings = makeSettings();
             settings->loadFromString(jsonSettings);
 
             // Create concrete implementation via user-provided callable
             auto impl = makeImpl(params, settings);
-            return Handle::wrap(std::move(std::static_pointer_cast<Type>(impl)));
+            return Handle::wrap<RegisterAs...>(std::move(impl));
         },
     };
 }

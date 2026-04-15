@@ -8,13 +8,17 @@
 #include <MacAddress.hpp>
 
 #if defined(CONFIG_IDF_TARGET_ESP32S3)
+
 #include <devices/UglyDucklingMk5.hpp>
 #include <devices/UglyDucklingMk6.hpp>
 #include <devices/UglyDucklingMk7.hpp>
 #include <devices/UglyDucklingMk8.hpp>
+#include <devices/UglyDucklingMk9Rev1.hpp>
 
 #elif defined(CONFIG_IDF_TARGET_ESP32C6)
-// TODO Add device variants for ESP32C6
+
+#include <devices/UglyDucklingMk9Rev2.hpp>
+
 #else
 #error "Unsupported target"
 #endif
@@ -63,8 +67,20 @@ void startDeviceBasedOnMac() {
         return;
     }
 
+    // MK9 Rev1
+     if (macAddressHasPrefix(0x58, 0xE6, 0xC5, 0x42)) {
+        startDevice<UglyDucklingMk9Rev1>();
+        return;
+    }
+
 #elif defined(CONFIG_IDF_TARGET_ESP32C6)
-    // TODO Add device variants for ESP32C6
+
+    // MK9 Rev2
+    // TODO Use actual MAC address once devices ship
+    if (macAddressHasPrefix(0xFF, 0xFF, 0xFF, 0xFF)) {
+        startDevice<UglyDucklingMk9Rev2>();
+        return;
+    }
 #endif
 
     ESP_LOGW("device", "Unrecognized MAC address %s — falling back to generic device", getMacAddress().c_str());
@@ -92,6 +108,10 @@ extern "C" void app_main() {
     startDevice<UglyDucklingMk8Rev2>();
 #elif defined(MK8_REV1)
     startDevice<UglyDucklingMk8Rev1>();
+#elif defined(MK9)
+    startDevice<UglyDucklingMk9Rev2>();
+#elif defined(MK9_REV1)
+    startDevice<UglyDucklingMk9Rev1>();
 #else
     startDeviceBasedOnMac();
 #endif

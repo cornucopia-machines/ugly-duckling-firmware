@@ -341,6 +341,9 @@ enum class InitState : std::uint8_t {
 
 template <std::derived_from<DeviceDefinition> TDeviceDefinition>
 static void startDevice() {
+    auto resetReason = esp_reset_reason();
+    LOGD("Restarting after reset reason: %d", resetReason);
+
     auto i2c = std::make_shared<I2CManager>();
     auto deviceDefinition = std::make_shared<TDeviceDefinition>();
     auto battery = initBattery(deviceDefinition, i2c);
@@ -356,9 +359,9 @@ static void startDevice() {
 
     auto configNvs = std::make_shared<NvsStore>("config");
 
-    LOGD("NVS configurations:");
+    LOGTV(NVS, "NVS configurations:");
     configNvs->list([](const std::string& key) {
-        LOGD(" - %s", key.c_str());
+        LOGTV(NVS, " - %s", key.c_str());
     });
 
     auto networkConfig = loadConfigFromNvs<NetworkConfig>(configNvs, "network-config");
@@ -542,7 +545,7 @@ static void startDevice() {
 
     mqttRoot->publish(
         "init",
-        [settings, networkConfig, initState, peripheralsInitJson, functionsInitJson, powerManager, deviceDefinition](JsonObject& json) {
+        [resetReason, settings, networkConfig, initState, peripheralsInitJson, functionsInitJson, powerManager, deviceDefinition](JsonObject& json) {
             json["model"] = deviceDefinition->model;
             json["revision"] = deviceDefinition->revision;
             json["platform"] = UD_PLATFORM;
@@ -556,7 +559,7 @@ static void startDevice() {
 #else
             json["debug"] = false;
 #endif
-            json["reset"] = esp_reset_reason();
+            json["reset"] = resetReason;
             json["wakeup"] = esp_sleep_get_wakeup_causes();
             json["bootCount"] = bootCount++;
             json["time"] = duration_cast<seconds>(system_clock::now().time_since_epoch()).count();
