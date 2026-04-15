@@ -1,0 +1,39 @@
+{
+  "peripherals": [
+    {
+      "name": "flow-meter",
+      "type": "flow-meter",
+      "params": {
+        "pin": "IFLOWB"
+      }
+    },
+    {
+      "name": "valve",
+      "type": "valve",
+      "params": {
+        "motor": "b"
+      }
+    },
+    {
+      "name": "soil",
+      "type": "soil:chirp",
+      "params": {
+        "sda": "EXT_SDA",
+        "scl": "EXT_SCL",
+        "air": 250,
+        "water": 550
+      }
+    }
+  ],
+  "functions": [
+    {
+      "name": "plot",
+      "type": "plot-controller",
+      "params": {
+        "flowMeter": "flow-meter",
+        "valve": "valve",
+        "soilMoistureSensor": "soil"
+      }
+    }
+  ]
+}
