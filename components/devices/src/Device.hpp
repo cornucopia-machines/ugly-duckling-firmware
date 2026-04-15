@@ -359,9 +359,9 @@ static void startDevice() {
 
     auto configNvs = std::make_shared<NvsStore>("config");
 
-    LOGD("NVS configurations:");
+    LOGTV(NVS, "NVS configurations:");
     configNvs->list([](const std::string& key) {
-        LOGD(" - %s", key.c_str());
+        LOGTV(NVS, " - %s", key.c_str());
     });
 
     auto networkConfig = loadConfigFromNvs<NetworkConfig>(configNvs, "network-config");
