@@ -68,7 +68,8 @@ void startDeviceBasedOnMac() {
     }
 
     // MK9 Rev1
-     if (macAddressHasPrefix(0x58, 0xE6, 0xC5, 0x42)) {
+    if (macAddressHasPrefix(0x58, 0xE6, 0xC5, 0x41)
+        || macAddressHasPrefix(0x58, 0xE6, 0xC5, 0x42)) {
         startDevice<UglyDucklingMk9Rev1>();
         return;
     }
