@@ -15,6 +15,14 @@
       }
     },
     {
+      "name": "air",
+      "type": "environment:sht3x",
+      "params": {
+        "sda": "SDA",
+        "scl": "SCL"
+      }
+    },
+    {
       "name": "soil-moisture-sensor",
       "type": "soil:hw390",
       "params": {

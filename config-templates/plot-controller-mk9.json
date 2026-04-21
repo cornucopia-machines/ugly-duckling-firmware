@@ -13,6 +13,14 @@
       "params": {
         "motor": "b"
       }
+    },
+    {
+      "name": "air",
+      "type": "environment:sht3x",
+      "params": {
+        "sda": "SDA",
+        "scl": "SCL"
+      }
     }
   ],
   "functions": [
