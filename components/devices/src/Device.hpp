@@ -187,10 +187,10 @@ std::shared_ptr<Watchdog> initWatchdog(seconds timeout) {
     });
 }
 
-std::shared_ptr<MqttRoot> initMqtt(const std::shared_ptr<ModuleStates>& states, const std::shared_ptr<NetworkConfig>& networkConfig, StateSource& mqttReady) {
+std::shared_ptr<MqttRoot> initMqtt(const std::shared_ptr<ModuleStates>& states, const std::string& clientId, const std::shared_ptr<NetworkConfig>& networkConfig, StateSource& mqttReady) {
     // NetworkConfig inherits from MqttDriver::Config, so we can upcast
     auto mqttConfig = std::static_pointer_cast<MqttDriver::Config>(networkConfig);
-    auto mqtt = std::make_shared<MqttDriver>(states->networkReady, mqttConfig, networkConfig->instance.get(), mqttReady);
+    auto mqtt = std::make_shared<MqttDriver>(states->networkReady, mqttConfig, clientId, mqttReady);
     const std::string& location = networkConfig->location.get();
     return std::make_shared<MqttRoot>(mqtt, (location.empty() ? "" : location + "/") + "devices/ugly-duckling/" + networkConfig->instance.get());
 }
@@ -382,6 +382,8 @@ static void startDevice() {
     );
     ConsoleProvider::init(logRecords, settings->publishLogs.get());
 
+    auto macAddress = getMacAddress();
+
     LOGD("\n"
          "   _   _       _         ____             _    _ _\n"
          "  | | | | __ _| |_   _  |  _ \\ _   _  ___| | _| (_)_ __   __ _\n"
@@ -395,7 +397,7 @@ static void startDevice() {
         modelWithRevision.c_str(),
         networkConfig->instance.get().c_str(),
         networkConfig->getHostname().c_str(),
-        getMacAddress().c_str());
+        macAddress.c_str());
 
     auto statusLed = std::make_shared<LedDriver>("status", deviceDefinition->statusPin);
     auto states = std::make_shared<ModuleStates>();
@@ -448,7 +450,8 @@ static void startDevice() {
     auto rtc = std::make_shared<RtcDriver>(wifi->getNetworkReady(), networkConfig->ntp.get(), states->rtcInSync);
 
     // Init MQTT connection
-    auto mqttRoot = initMqtt(states, networkConfig, states->mqttReady);
+    auto clientId = "ugly-duckling-" + macAddress;
+    auto mqttRoot = initMqtt(states, clientId, networkConfig, states->mqttReady);
     MqttLog::init(settings->publishLogs.get(), logRecords, mqttRoot);
     registerBasicCommands(mqttRoot);
     registerNvsCommands(mqttRoot);
@@ -545,12 +548,12 @@ static void startDevice() {
 
     mqttRoot->publish(
         "init",
-        [resetReason, settings, networkConfig, initState, peripheralsInitJson, functionsInitJson, powerManager, deviceDefinition](JsonObject& json) {
+        [resetReason, settings, macAddress, networkConfig, initState, peripheralsInitJson, functionsInitJson, powerManager, deviceDefinition](JsonObject& json) {
             json["model"] = deviceDefinition->model;
             json["revision"] = deviceDefinition->revision;
             json["platform"] = UD_PLATFORM;
             json["instance"] = networkConfig->instance.get();
-            json["mac"] = getMacAddress();
+            json["mac"] = macAddress;
             auto device = json["settings"].to<JsonObject>();
             settings->store(device);
             json["version"] = firmwareVersion;

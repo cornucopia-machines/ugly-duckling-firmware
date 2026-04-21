@@ -55,7 +55,6 @@ public:
     public:
         Property<std::string> host { this, "host", "" };
         Property<unsigned int> port { this, "port", 1883 };
-        Property<std::string> clientId { this, "clientId", "" };
         Property<size_t> queueSize { this, "queueSize", 128 };
         ArrayProperty<std::string> serverCert { this, "serverCert" };
         ArrayProperty<std::string> clientCert { this, "clientCert" };
@@ -65,7 +64,7 @@ public:
     MqttDriver(
         State& networkReady,
         const std::shared_ptr<Config>& config,
-        const std::string& instanceName,
+        const std::string& clientId,
         StateSource& ready)
         : networkReady(networkReady)
         , configHostname(config->host.get())
@@ -73,7 +72,7 @@ public:
         , configServerCert(joinStrings(config->serverCert.get()))
         , configClientCert(joinStrings(config->clientCert.get()))
         , configClientKey(joinStrings(config->clientKey.get()))
-        , clientId(getClientId(config->clientId.get(), instanceName))
+        , clientId(clientId)
         , ready(ready)
         , eventQueue("mqtt-outgoing", config->queueSize.get())
         , incomingQueue("mqtt-incoming", config->queueSize.get()) {
@@ -636,13 +635,6 @@ private:
         }
         LOGTW(MQTT, "No handler for topic '%s'",
             topic.c_str());
-    }
-
-    static std::string getClientId(const std::string& clientId, const std::string& instanceName) {
-        if (!clientId.empty()) {
-            return clientId;
-        }
-        return "ugly-duckling-" + instanceName;
     }
 
     static bool topicMatches(const char* pattern, const char* topic) {
