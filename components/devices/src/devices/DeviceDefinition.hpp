@@ -29,6 +29,7 @@
 #include <peripherals/environment/Sht3xSensor.hpp>
 #include <peripherals/environment/ChirpSoilSensor.hpp>
 #include <peripherals/environment/Hw390SoilMoistureSensor.hpp>
+#include <peripherals/environment/SpadefootToadSensor.hpp>
 #include <peripherals/fence/ElectricFenceMonitor.hpp>
 #include <peripherals/flow_meter/FlowMeter.hpp>
 #include <peripherals/light_sensor/AnalogLightSensor.hpp>
@@ -82,6 +83,7 @@ public:
         // For backward compatibility with existing configs; can be removed after a while
         peripheralManager->registerFactory(environment::makeFactoryForHw390SoilMoisture("environment:soil-moisture"));
         peripheralManager->registerFactory(environment::makeFactoryForChirpSoilSensor());
+        peripheralManager->registerFactory(environment::makeFactoryForSpadefootToadSensor());
         peripheralManager->registerFactory(environment::makeFactoryForDs18b20());
         peripheralManager->registerFactory(environment::makeFactoryForKalmanSoilMoisture());
 
