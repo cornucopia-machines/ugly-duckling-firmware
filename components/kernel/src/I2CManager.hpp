@@ -2,6 +2,7 @@
 
 #include <exception>
 #include <memory>
+#include <vector>
 
 #include <driver/i2c_master.h>
 
@@ -26,9 +27,10 @@ public:
     uint8_t address;
     InternalPinPtr sda;
     InternalPinPtr scl;
+    uint32_t clkSpeed = 400000;
 
     std::string toString() const {
-        return "I2C address: " + toHexString(address) + ", SDA: " + sda->getName() + ", SCL: " + scl->getName();
+        return "I2C address: " + toHexString(address) + ", SDA: " + sda->getName() + ", SCL: " + scl->getName() + ", clk: " + std::to_string(clkSpeed / 1000.0) + " kHz";
     }
 };
 
@@ -47,7 +49,7 @@ struct I2CBus {
 
 class I2CDevice {
 public:
-    I2CDevice(const std::string& name, const std::shared_ptr<I2CBus>& bus, uint8_t address)
+    I2CDevice(const std::string& name, const std::shared_ptr<I2CBus>& bus, uint8_t address, uint32_t clkSpeed = 400000)
         : name(name)
         , bus(bus)
         , device({
@@ -68,9 +70,7 @@ public:
                   .scl_pullup_en = 1,
                   .clk_flags = 0,    // Use default clock flags
                   .master {
-                      // TODO Allow clock speed to be configured
-                      //      And use higher speed for internal I2C
-                      .clk_speed = 200000,
+                      .clk_speed = clkSpeed,
                   },
               },
           }) {
@@ -114,6 +114,16 @@ public:
         ESP_ERROR_THROW(i2c_dev_write(&device, &reg, 1, buffer, length));
     }
 
+    void writeByte(uint8_t cmd) {
+        ESP_ERROR_THROW(i2c_dev_write(&device, &cmd, 1, nullptr, 0));
+    }
+
+    std::vector<uint8_t> readBytes(uint8_t cmd, size_t n) {
+        std::vector<uint8_t> buffer(n);
+        ESP_ERROR_THROW(i2c_dev_read(&device, &cmd, 1, buffer.data(), n));
+        return buffer;
+    }
+
     std::shared_ptr<I2CBus> getBus() const {
         return bus;
     }
@@ -140,7 +150,10 @@ public:
     }
 
     std::shared_ptr<I2CDevice> createDevice(const std::string& name, const I2CConfig& config) {
-        return createDevice(name, config.sda, config.scl, config.address);
+        auto device = std::make_shared<I2CDevice>(name, getBusFor(config.sda, config.scl), config.address, config.clkSpeed);
+        LOGTI(I2C, "Created I2C device %s at address 0x%02x (clk: %.02f kHz)",
+            name.c_str(), config.address, config.clkSpeed / 1000.0);
+        return device;
     }
 
     std::shared_ptr<I2CDevice> createDevice(const std::string& name, const InternalPinPtr& sda, const InternalPinPtr& scl, uint8_t address) {
