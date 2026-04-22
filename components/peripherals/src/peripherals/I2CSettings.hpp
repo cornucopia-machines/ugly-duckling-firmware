@@ -19,6 +19,8 @@ public:
     Property<std::string> address { this, "address" };
     Property<InternalPinPtr> sda { this, "sda" };
     Property<InternalPinPtr> scl { this, "scl" };
+    // Clock speed in kHz (e.g. 100 for Standard Mode, 400 for Fast Mode)
+    Property<uint32_t> clkSpeed { this, "clkSpeed", 400 };
 
     I2CConfig parse(uint8_t defaultAddress = 0xFF, const InternalPinPtr& defaultSda = nullptr, const InternalPinPtr& defaultScl = nullptr) const {
         return {
@@ -30,7 +32,8 @@ public:
                 : sda.get(),
             .scl = scl.get() == nullptr
                 ? defaultScl
-                : scl.get()
+                : scl.get(),
+            .clkSpeed = clkSpeed.get() * 1000
         };
     }
 };
