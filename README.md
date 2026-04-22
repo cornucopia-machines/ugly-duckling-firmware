@@ -12,6 +12,8 @@ Devices are identified by a location (denoting the installation site) and a uniq
 Devices can have multiple peripherals, such as sensors, actuators, and displays.
 Each peripheral is identified by its type and a name that is unique within the device.
 
+See [docs/Architecture.md](docs/Architecture.md) for the system architecture and [docs/Components.md](docs/Components.md) for the peripheral/function model.
+
 ## Hardware platforms and models
 
 Ugly Duckling hardware is organised into two layers:
@@ -26,8 +28,8 @@ There are currently two platforms:
 
 | Platform    | Chip     | Models                                     |
 | ----------- | -------- | ------------------------------------------ |
-| **Spinach** | ESP32-S3 | MK5, MK6 (rev1–rev3), MK7, MK8 (rev1–rev2) |
-| **Carrot**  | ESP32-C6 | MKX                                        |
+| **Spinach** | ESP32-S3 | MK5, MK6 (rev1–rev3), MK7, MK8 (rev1–rev2), MK9 rev1 |
+| **Carrot**  | ESP32-C6 | MK9 rev2                                              |
 
 Each platform produces a single firmware binary that covers all models on that platform.
 The correct model is selected at runtime based on the device's MAC address.
@@ -122,7 +124,7 @@ Once the device receives such configuration, it stores it under the `$FUNCTION_N
 ## Remote commands
 
 Ugly duckling devices and their peripherals both support receiving commands via MQTT.
-Commands are triggered via retained MQTT messages sent to `$DEVICE_ROOT/commands/$COMMAND` for devices, and `$DEVICE_`.
+Commands are triggered via retained MQTT messages sent to `$DEVICE_ROOT/commands/$COMMAND` for devices, and `$PERIPHERAL_ROOT/commands/$COMMAND` for peripherals.
 They typically respond under `$DEVICE_ROOT/responses/$COMMAND`.
 
 Once the device receives a command it deletes the retained message.
@@ -167,9 +169,7 @@ The following commands are available to manage NVS entries on the device:
 
 ### Prerequisites
 
-- ESP-IDF v6.0 (see [installation instructions](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/get-started/index.html))
-
-Actually needs [ESP-IDF-Clang Docker image](https://github.com/lptr/esp-idf-clang-docker).
+- [ESP-IDF-Clang Docker image](https://github.com/lptr/esp-idf-clang-docker) (wraps ESP-IDF v6.0 with Clang toolchain)
 
 ### Building
 
@@ -195,7 +195,8 @@ Make sure `IDF_TARGET` matches the platform the model belongs to:
 
 ```bash
 idf.py build -DUD_GEN=MK7       # Spinach (ESP32-S3)
-idf.py build -DUD_GEN=MKX       # Carrot (ESP32-C6)
+idf.py build -DUD_GEN=MK9       # Carrot (ESP32-C6, MK9 rev2)
+idf.py build -DUD_GEN=MK9_REV1  # Spinach (ESP32-S3, MK9 rev1)
 ```
 
 ### Flashing
@@ -258,21 +259,38 @@ After that from the "Run and Debug" panel select the "Wokwi GDB" configuration a
 
 ### Testing
 
-To run unit tests using Wokwi:
+There are three test suites:
+
+#### Unit tests (native, no hardware required)
 
 ```bash
 cd test/unit-tests
-idf.py build
-pytest --embedded-services idf,wokwi pytest_unit-tests.py
+cmake -B build -G Ninja
+ninja -C build
+./build/unit-tests
 ```
 
-Make sure to set the `WOKWI_CLI_TOKEN` environment variable.
+#### Embedded tests (Wokwi simulator)
 
-If `pytest` is not available, install it by running in the currently used ESP-IDF version home:
+```bash
+cd test/embedded-tests
+idf.py build
+pytest --embedded-services idf,wokwi pytest_embedded-tests.py
+```
+
+#### End-to-end tests (Wokwi + MQTT)
+
+```bash
+cd test/e2e-tests
+idf.py build
+pytest pytest_e2e-tests.py
+```
+
+Set `WOKWI_CLI_TOKEN` (and optionally `WOKWI_CLI_SERVER`) before running Wokwi-based tests.
+
+If `pytest` is not available, install it using the ESP-IDF Python environment:
 
 ```bash
 ./install.sh --enable-pytest
 pip install pytest-embedded-wokwi
 ```
-
-(Make sure to run with the right IDF-installed Python version so `pytest` is installed in the right environment.)

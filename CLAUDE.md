@@ -1,34 +1,60 @@
 # Repository Guidelines
 
-## Project Structure & Module Organization
+## Project Structure
 
-- Firmware entrypoint in `main/` (see `main/main.cpp`); board-specific definitions in `components/devices/src/devices/*.hpp`; shared logic in `components/kernel`, `components/peripherals`, `components/peripherals-api`, `components/utils`, and `components/functions`.
-- Test-support utilities live in `components/test-support`; test suites sit under `test/unit-tests`, `test/embedded-tests`, and `test/e2e-tests`.
-- NVS config files live in `config/` (with templates in `config-templates/`); Wokwi diagrams in `wokwi/`; docs and examples in `docs/`; generated outputs in `build/`.
-- Helper scripts stay at repo root (e.g., `generate-clang-tidy-compile-db.py`, `lookup-backtrace.py`, `idf-docker.py`) and in `scripts/`; CI workflows mirror the local steps.
+```
+main/               # App entry point (main.cpp); MAC-based device selection
+components/
+  kernel/           # WiFi, MQTT, NTP, RTC, telemetry, NVS, power management
+  devices/          # Hardware model definitions (pin assignments, on-board drivers)
+  peripherals/      # Sensor and actuator implementations
+  peripherals-api/  # Peripheral interfaces (IPeripheral, IValve, …)
+  scheduling/       # Scheduling strategies (time, moisture, light, composite)
+  functions/        # High-level device logic (PlotController, ChickenDoor)
+  utils/            # Shared utilities (Chrono, DebouncedMeasurement)
+  test-support/     # Test-only helpers (FakeLog)
+test/
+  unit-tests/       # Native Catch2 tests (no hardware)
+  embedded-tests/   # ESP-IDF Catch2 tests (runs on Wokwi)
+  e2e-tests/        # Full MQTT + Wokwi end-to-end tests
+config/             # Runtime NVS config files (device-config.json, network-config.json)
+config-templates/   # Config templates by device type (never commit real credentials)
+wokwi/              # Wokwi diagrams and local dev-env (docker-compose + Mosquitto)
+docs/               # Architecture, component, coding standards, and spec documents
+scripts/            # Build helpers (gen_config_nvs.py)
+tools/              # Development tools
+```
 
-See [README.md](README.md) for configuration storage layout, build, flash, and development commands.
+See [docs/Architecture.md](docs/Architecture.md) for system-level architecture and the platform/model matrix.
+See [docs/Components.md](docs/Components.md) for the peripheral/function/feature model.
+See [README.md](README.md) for build, flash, and development commands.
 
-## Coding Style & Naming Conventions
+## Coding Style
 
-- Follow `.editorconfig`: LF endings, 4-space indent (2 for JSON/YAML/Markdown). C++ is formatted with WebKit-flavored `.clang-format` (attached braces, left-aligned pointers, no single-line functions).
-- Static analysis via `.clang-tidy` (warnings-as-errors). Regenerate the compile DB with `python ./generate-clang-tidy-compile-db.py` and run `clang-tidy -p build/clang-tidy ...`.
-- Naming: types in PascalCase (`UglyDucklingMk6`), functions/methods camelCase, constants/macros UPPER_SNAKE (`UD_GEN`, `UD_DEBUG`); keep namespaces compact per config.
-- Markdown: keep headings sequential, lists properly indented, and wrap code blocks in fences; follow markdownlint defaults (no trailing spaces, blank line before lists and headings).
+See [docs/CodingStandards.md](docs/CodingStandards.md) for formatting rules, clang-tidy usage, naming conventions, and Markdown style.
+
+Quick reference:
+
+- LF endings, 4-space indent (2 for JSON/YAML/Markdown). WebKit `.clang-format`, warnings-as-errors via `.clang-tidy`.
+- Types: `PascalCase` — functions/methods: `camelCase` — macros/constants: `UPPER_SNAKE`.
 
 ## Testing Guidelines
 
-- Add/extend tests alongside the closest suite: fast logic in `test/unit-tests/main`, IDF-integrated flows in `test/embedded-tests`, MQTT/WiFi behavior in `test/e2e-tests`. Prefer deterministic Wokwi fixtures over hardware.
-- Use clear test names mirroring the behavior under test; keep payload samples under `config-templates/` or dedicated fixtures instead of inline strings.
-- Capture artifacts (`pytest` logs, serial output) when touching connectivity, and document required env vars (`WOKWI_CLI_TOKEN`, `WOKWI_CLI_SERVER` as in CI).
+- Fast logic goes in `test/unit-tests/` (native Catch2, no hardware required).
+- IDF-integrated flows go in `test/embedded-tests/` (runs on Wokwi).
+- MQTT/WiFi behavior goes in `test/e2e-tests/` (full Wokwi + Mosquitto).
+- Prefer deterministic Wokwi fixtures over physical hardware.
+- Use test names that mirror the behavior under test.
+- Keep payload samples in `config-templates/` or dedicated fixtures, not inline strings.
+- Document required env vars: `WOKWI_CLI_TOKEN`, `WOKWI_CLI_SERVER`.
 
 ## Commit & Pull Request Guidelines
 
-- Commit messages follow short, imperative summaries (examples: "Add debug property to init message", "Move all test templates to area-51"); keep scope focused.
-- PRs should state the target generation (`UD_GEN`/`IDF_TARGET`), what was tested (commands run, tokens used), and any artifacts (logs, Wokwi outputs). Link issues and note firmware or NVS config changes to ease OTA packaging.
+- Commit messages: short imperative summaries (e.g. "Add debug property to init message").
+- PRs must state: target platform (`spinach`/`carrot`, `IDF_TARGET`), what was tested (commands run, Wokwi tokens used), and any artifacts (logs, serial output). Link related issues and note NVS config changes.
 
 ## Security & Configuration Tips
 
-- Never commit real MQTT credentials, certificates, or device configs; keep samples under `config-templates/` and load real values into NVS locally or via MQTT NVS commands.
-- Prefer editing defaults (`sdkconfig.defaults`, `sdkconfig.*.defaults`) and regenerating `sdkconfig` rather than hand-editing the tracked file; avoid drifting from the CI matrix.
-- Keep `dependencies.lock` and `managed_components/` in sync with ESP-IDF tooling; avoid manual edits unless vendoring is intentional.
+- Never commit real MQTT credentials, TLS certificates, or device configs. Keep samples in `config-templates/`.
+- Prefer editing `sdkconfig.defaults` / `sdkconfig.*.defaults` and regenerating `sdkconfig` rather than hand-editing the tracked file.
+- Keep `dependencies.lock` and `managed_components/` in sync with ESP-IDF tooling; avoid manual edits unless intentionally vendoring.
