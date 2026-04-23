@@ -1,0 +1,45 @@
+{
+  "peripherals": [
+    {
+      "name": "flow-meter",
+      "type": "flow-meter",
+      "params": {
+        "pin": "IFLOWB"
+      }
+    },
+    {
+      "name": "valve",
+      "type": "valve",
+      "params": {
+        "motor": "b"
+      }
+    },
+    {
+      "name": "air",
+      "type": "environment:sht3x",
+      "params": {
+        "sda": "SDA",
+        "scl": "SCL"
+      }
+    },
+    {
+      "name": "soil",
+      "type": "soil:spadefoot-toad",
+      "params": {
+        "sda": "EXT_SDA",
+        "scl": "EXT_SCL"
+      }
+    }
+  ],
+  "functions": [
+    {
+      "name": "plot",
+      "type": "plot-controller",
+      "params": {
+        "flowMeter": "flow-meter",
+        "valve": "valve",
+        "soilMoistureSensor": "soil"
+      }
+    }
+  ]
+}
