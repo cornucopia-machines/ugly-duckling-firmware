@@ -29,6 +29,15 @@ See [docs/Architecture.md](docs/Architecture.md) for system-level architecture a
 See [docs/Components.md](docs/Components.md) for the peripheral/function/feature model.
 See [README.md](README.md) for build, flash, and development commands.
 
+## Build Environment Setup
+
+Before building, activate the ESP-IDF environment and set the target:
+
+```sh
+. '/Users/lptr/.espressif/tools/activate_idf_v6.0.sh'
+export IDF_TARGET=esp32s3  # or esp32c6, etc.
+```
+
 ## Coding Style
 
 See [docs/CodingStandards.md](docs/CodingStandards.md) for formatting rules, clang-tidy usage, naming conventions, and Markdown style.
