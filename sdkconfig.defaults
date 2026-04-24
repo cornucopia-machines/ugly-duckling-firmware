@@ -101,5 +101,17 @@ CONFIG_MQTT_REPORT_DELETED_MESSAGES=y
 # We don't need TLS server functionality
 CONFIG_MBEDTLS_TLS_CLIENT_ONLY=y
 
+# Some CAs in the trust chain may be cross-signed by another CA (e.g. GTS Root R4
+# cross-signed by GlobalSign). Without this, the bundle only contains self-signed
+# roots and cannot resolve a trust path through a cross-signed intermediate,
+# causing OTA to fail with MBEDTLS_ERR_X509_CERT_VERIFY_FAILED (-0x3000).
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_CROSS_SIGNED_VERIFY=y
+
+# # Enable mbedTLS debug interface
+# CONFIG_MBEDTLS_DEBUG=y
+# # Level 3 = informational (includes X509 verify chain details)
+# # Level 4 = verbose (very noisy, usually not needed)
+# CONFIG_MBEDTLS_DEBUG_LEVEL=3
+
 # Allow outdated network provisioning security protocols
 CONFIG_ESP_PROTOCOMM_SUPPORT_SECURITY_VERSION_1=y
