@@ -23,7 +23,8 @@ namespace cornucopia::ugly_duckling::peripherals::environment {
 
 class SpadefootToadSensorSettings
     : public I2CSettings {
-    // No extra fields; I2C address comes from I2CSettings.
+public:
+    Property<bool> logRawValues { this, "logRawValues", false };
 };
 
 struct SpadefootToadReading {
@@ -39,8 +40,10 @@ public:
     SpadefootToadSensor(
         const std::string& name,
         const std::shared_ptr<I2CManager>& i2c,
-        const I2CConfig& config)
+        const I2CConfig& config,
+        bool logRawValues)
         : Peripheral(name)
+        , logRawValues(logRawValues)
         , device(i2c->createDevice(name, config)) {
 
         LOGTI(ENV, "Initializing Spadefoot Toad soil sensor '%s' with %s",
@@ -62,12 +65,29 @@ public:
             throw std::runtime_error("Spadefoot Toad: device ID mismatch");
         }
 
-        // Log firmware and device revisions
+        // Log firmware and device revisions on a single line
         uint16_t firmwareRev = __builtin_bswap16(device->readRegWord(CMD_GET_FIRMWARE_REV));
-        LOGTI(ENV, "Spadefoot Toad firmware rev: 0x%04X", firmwareRev);
-
         uint16_t deviceRev = __builtin_bswap16(device->readRegWord(CMD_GET_DEVICE_REV));
-        LOGTI(ENV, "Spadefoot Toad device rev: 0x%04X", deviceRev);
+        LOGTI(ENV, "Spadefoot Toad '%s': firmware rev 0x%04X, device rev 0x%04X",
+            name.c_str(), firmwareRev, deviceRev);
+
+        // Read and log calibration values stored in EEPROM
+        auto calibration = device->readBytes(CMD_READ_CALIBRATION, 17);
+        uint8_t calibrationCsum = 0;
+        for (int i = 0; i < 16; i++) {
+            calibrationCsum ^= calibration[i];
+        }
+        if (calibrationCsum != calibration[16]) {
+            LOGTW(ENV, "Spadefoot Toad '%s': calibration checksum mismatch", name.c_str());
+        } else {
+            uint16_t dry[4], wet[4];
+            for (int i = 0; i < 4; i++) {
+                dry[i] = static_cast<uint16_t>((calibration[i * 2] << 8) | calibration[i * 2 + 1]);
+                wet[i] = static_cast<uint16_t>((calibration[8 + i * 2] << 8) | calibration[8 + i * 2 + 1]);
+            }
+            LOGTI(ENV, "Spadefoot Toad '%s': calibration  TF dry=%u wet=%u  TR dry=%u wet=%u  BF dry=%u wet=%u  BR dry=%u wet=%u",
+                name.c_str(), dry[0], wet[0], dry[1], wet[1], dry[2], wet[2], dry[3], wet[3]);
+        }
     }
 
     Percent getMoisture() override {
@@ -81,6 +101,8 @@ public:
 private:
     static constexpr uint8_t CMD_TRIGGER = 0x01;
     static constexpr uint8_t CMD_READ = 0x02;
+    static constexpr uint8_t CMD_READ_RAW = 0x03;
+    static constexpr uint8_t CMD_READ_CALIBRATION = 0x06;
     static constexpr uint8_t CMD_GET_FIRMWARE_REV = 0xFC;
     static constexpr uint8_t CMD_GET_DEVICE_REV = 0xFD;
     static constexpr uint8_t CMD_GET_MFR_ID = 0xFE;
@@ -94,6 +116,7 @@ private:
     static constexpr uint8_t MOISTURE_INVALID = 0xFF;
     static constexpr int16_t TEMP_INVALID = INT16_MIN;
 
+    const bool logRawValues;
     const std::shared_ptr<I2CDevice> device;
 
     utils::DebouncedMeasurement<SpadefootToadReading> measurement {
@@ -103,27 +126,49 @@ private:
 
             // Phase 2: wait 1 s, then read results
             Task::delay(1s);
-            auto raw = device->readBytes(CMD_READ, 10);
+
+            // Log raw ADC ticks for debugging (temporary)
+            if (logRawValues) {
+                auto rawData = device->readBytes(CMD_READ_RAW, 14);
+                uint8_t rawCsum = 0;
+                for (int i = 0; i < 13; i++) {
+                    rawCsum ^= rawData[i];
+                }
+                if (rawCsum == rawData[13]) {
+                    uint16_t ticks[4];
+                    for (int i = 0; i < 4; i++) {
+                        ticks[i] = static_cast<uint16_t>((rawData[i * 2] << 8) | rawData[i * 2 + 1]);
+                    }
+                    uint16_t adcTop = static_cast<uint16_t>((rawData[8] << 8) | rawData[9]);
+                    uint16_t adcBot = static_cast<uint16_t>((rawData[10] << 8) | rawData[11]);
+                    LOGTI(ENV, "Spadefoot Toad '%s': raw ticks TF=%u TR=%u BF=%u BR=%u, ADC top=%u bot=%u, flags=0x%02X",
+                        getName().c_str(), ticks[0], ticks[1], ticks[2], ticks[3], adcTop, adcBot, rawData[12]);
+                } else {
+                    LOGTW(ENV, "Spadefoot Toad '%s': raw read checksum mismatch", getName().c_str());
+                }
+            }
+
+            auto data = device->readBytes(CMD_READ, 10);
 
             // Validate checksum (XOR of bytes [0..8])
             uint8_t csum = 0;
             for (int i = 0; i < 9; i++) {
-                csum ^= raw[i];
+                csum ^= data[i];
             }
-            if (csum != raw[9]) {
+            if (csum != data[9]) {
                 LOGTW(ENV, "Spadefoot Toad '%s': checksum mismatch", getName().c_str());
                 return std::nullopt;
             }
 
             SpadefootToadReading reading;
-            uint8_t flags = raw[8];
+            uint8_t flags = data[8];
 
             // Moisture: average of valid probes (flag bit 0 set and value != 0xFF)
             if (flags & FLAG_MOISTURE_VALID) {
                 int sum = 0, count = 0;
                 for (int i = 0; i < 4; i++) {
-                    if (raw[i] != MOISTURE_INVALID) {
-                        sum += raw[i];
+                    if (data[i] != MOISTURE_INVALID) {
+                        sum += data[i];
                         count++;
                     }
                 }
@@ -131,14 +176,14 @@ private:
                     reading.moisture = static_cast<double>(sum) / count;
                 }
                 LOGTV(ENV, "Spadefoot Toad '%s': moisture TF=%d TR=%d BF=%d BR=%d → avg=%.1f%%",
-                    getName().c_str(), raw[0], raw[1], raw[2], raw[3], reading.moisture);
+                    getName().c_str(), data[0], data[1], data[2], data[3], reading.moisture);
             }
 
             // Temperature: average of top and bottom.
             // Requires the temperature valid flag AND both individual readings to be valid.
             if (flags & FLAG_TEMPERATURE_VALID) {
-                auto temp_top = static_cast<int16_t>((raw[4] << 8) | raw[5]);
-                auto temp_bot = static_cast<int16_t>((raw[6] << 8) | raw[7]);
+                auto temp_top = static_cast<int16_t>((data[4] << 8) | data[5]);
+                auto temp_bot = static_cast<int16_t>((data[6] << 8) | data[7]);
                 if (temp_top != TEMP_INVALID && temp_bot != TEMP_INVALID) {
                     reading.temperature = (temp_top + temp_bot) / 20.0;    // two sensors, 0.1 °C units
                     LOGTV(ENV, "Spadefoot Toad '%s': temp top=%.1f°C bot=%.1f°C → avg=%.1f°C",
@@ -169,7 +214,8 @@ inline PeripheralFactory makeFactoryForSpadefootToadSensor() {
             auto sensor = std::make_shared<SpadefootToadSensor>(
                 params.name,
                 params.services.i2c,
-                i2cConfig);
+                i2cConfig,
+                settings->logRawValues.get());
             params.registerFeature("moisture", [sensor](JsonObject& telemetryJson) {
                 telemetryJson["value"] = sensor->getMoisture();
             });
