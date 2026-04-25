@@ -469,6 +469,7 @@ static void startDevice() {
     // Init peripherals
     auto peripheralServices = PeripheralServices {
         .i2c = i2c,
+        .mqttRoot = mqttRoot,
         .nvs = peripheralsNvs,
         .pcntManager = pcnt,
         .pulseCounterManager = pulseCounterManager,
@@ -484,8 +485,8 @@ static void startDevice() {
 
     // Init functions
     auto functionServices = FunctionServices {
-        .telemetryPublisher = telemetryPublisher,
         .peripherals = peripheralManager,
+        .telemetryPublisher = telemetryPublisher,
     };
     auto functionsConfigNvs = std::make_shared<NvsStore>("function-cfg");
     auto functionManager = std::make_shared<FunctionManager>(functionsConfigNvs, functionServices, mqttRoot);

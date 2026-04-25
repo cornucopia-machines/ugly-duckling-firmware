@@ -11,9 +11,10 @@ using cornucopia::ugly_duckling::peripherals::PeripheralManager;
 
 namespace cornucopia::ugly_duckling::functions {
 
+// Fields are kept in alphabetical order — please maintain this when adding new entries.
 struct FunctionServices {
-    const std::shared_ptr<TelemetryPublisher> telemetryPublisher;
     const std::shared_ptr<PeripheralManager> peripherals;
+    const std::shared_ptr<TelemetryPublisher> telemetryPublisher;
 };
 
 struct FunctionInitParameters {
