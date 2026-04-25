@@ -69,11 +69,11 @@ struct PeripheralInitParameters {
         features.add(type);
     }
 
-    void registerCommand(const std::string& command, const mqtt::CommandHandler& handler) {
-        if (!peripheralMqttRoot) {
-            peripheralMqttRoot = services.mqttRoot->forSuffix("peripherals/" + name);
+    std::shared_ptr<mqtt::MqttRoot> peripheralRoot() {
+        if (!mqttPeripheralRoot) {
+            mqttPeripheralRoot = services.mqttRoot->forSuffix("peripherals/" + name);
         }
-        peripheralMqttRoot->registerCommand(command, handler);
+        return mqttPeripheralRoot;
     }
 
     template <typename T>
@@ -87,7 +87,7 @@ struct PeripheralInitParameters {
     const JsonArray features;
 
     Manager<PeripheralFactory>& peripherals;
-    std::shared_ptr<mqtt::MqttRoot> peripheralMqttRoot;
+    std::shared_ptr<mqtt::MqttRoot> mqttPeripheralRoot;
 };
 
 // Helper to build a PeripheralFactory while keeping strong types for settings/config.

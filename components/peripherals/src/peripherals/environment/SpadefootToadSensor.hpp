@@ -264,14 +264,14 @@ inline PeripheralFactory makeFactoryForSpadefootToadSensor() {
             params.registerFeature("temperature", [sensor](JsonObject& telemetryJson) {
                 telemetryJson["value"] = sensor->getTemperature();
             });
-            params.registerCommand("calibrate", [sensor](const JsonObject& req, JsonObject&) {
+            params.peripheralRoot()->registerCommand("calibrate", [sensor](const JsonObject& req, JsonObject&) {
                 auto ref = req["reference"].as<CalibrationReference>();
                 sensor->calibrate(ref);
             });
-            params.registerCommand("read-calibration", [sensor](const JsonObject&, JsonObject& res) {
+            params.peripheralRoot()->registerCommand("read-calibration", [sensor](const JsonObject&, JsonObject& res) {
                 sensor->readCalibration(res);
             });
-            params.registerCommand("factory-reset", [sensor](const JsonObject&, JsonObject&) {
+            params.peripheralRoot()->registerCommand("factory-reset", [sensor](const JsonObject&, JsonObject&) {
                 sensor->factoryReset();
             });
             return sensor;
