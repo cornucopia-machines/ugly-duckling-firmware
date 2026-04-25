@@ -21,6 +21,11 @@ using namespace cornucopia::ugly_duckling::peripherals;
 
 namespace cornucopia::ugly_duckling::peripherals::environment {
 
+enum class CalibrationReference : uint8_t {
+    Dry,
+    Wet,
+};
+
 class SpadefootToadSensorSettings
     : public I2CSettings {
 public:
@@ -98,11 +103,48 @@ public:
         return measurement.getValue().temperature;
     }
 
+    void calibrate(CalibrationReference ref) {
+        uint8_t cmd = (ref == CalibrationReference::Wet) ? CMD_CALIBRATE_WET : CMD_CALIBRATE_DRY;
+        LOGTI(ENV, "Spadefoot Toad '%s': calibrating %s reference",
+            getName().c_str(), ref == CalibrationReference::Wet ? "wet" : "dry");
+        device->writeByte(cmd);
+    }
+
+    void readCalibration(JsonObject& res) {
+        auto calibration = device->readBytes(CMD_READ_CALIBRATION, 17);
+        uint8_t csum = 0;
+        for (int i = 0; i < 16; i++) {
+            csum ^= calibration[i];
+        }
+        if (csum != calibration[16]) {
+            res["checksumOk"] = false;
+            return;
+        }
+        res["checksumOk"] = true;
+        static constexpr const char* PROBE_NAMES[] = { "top-front", "top-rear", "bottom-front", "bottom-rear" };
+        for (int i = 0; i < 4; i++) {
+            uint16_t dryVal = static_cast<uint16_t>((calibration[i * 2] << 8) | calibration[i * 2 + 1]);
+            uint16_t wetVal = static_cast<uint16_t>((calibration[8 + i * 2] << 8) | calibration[8 + i * 2 + 1]);
+            auto probeObj = res[PROBE_NAMES[i]].to<JsonObject>();
+            probeObj["dry"] = dryVal;
+            probeObj["wet"] = wetVal;
+        }
+    }
+
+    void factoryReset() {
+        LOGTW(ENV, "Spadefoot Toad '%s': factory reset issued", getName().c_str());
+        device->writeByte(CMD_FACTORY_RESET);
+    }
+
 private:
+    // Command bytes are kept in numerical order — please maintain this when adding new entries.
     static constexpr uint8_t CMD_TRIGGER = 0x01;
     static constexpr uint8_t CMD_READ = 0x02;
     static constexpr uint8_t CMD_READ_RAW = 0x03;
+    static constexpr uint8_t CMD_CALIBRATE_DRY = 0x04;
+    static constexpr uint8_t CMD_CALIBRATE_WET = 0x05;
     static constexpr uint8_t CMD_READ_CALIBRATION = 0x06;
+    static constexpr uint8_t CMD_FACTORY_RESET = 0xFB;
     static constexpr uint8_t CMD_GET_FIRMWARE_REV = 0xFC;
     static constexpr uint8_t CMD_GET_DEVICE_REV = 0xFD;
     static constexpr uint8_t CMD_GET_MFR_ID = 0xFE;
@@ -175,7 +217,7 @@ private:
                 if (count > 0) {
                     reading.moisture = static_cast<double>(sum) / count;
                 }
-                LOGTV(ENV, "Spadefoot Toad '%s': moisture TF=%d TR=%d BF=%d BR=%d → avg=%.1f%%",
+                LOGTI(ENV, "Spadefoot Toad '%s': moisture TF=%d TR=%d BF=%d BR=%d → avg=%.1f%%",
                     getName().c_str(), data[0], data[1], data[2], data[3], reading.moisture);
             }
 
@@ -186,7 +228,7 @@ private:
                 auto temp_bot = static_cast<int16_t>((data[6] << 8) | data[7]);
                 if (temp_top != TEMP_INVALID && temp_bot != TEMP_INVALID) {
                     reading.temperature = (temp_top + temp_bot) / 20.0;    // two sensors, 0.1 °C units
-                    LOGTV(ENV, "Spadefoot Toad '%s': temp top=%.1f°C bot=%.1f°C → avg=%.1f°C",
+                    LOGTI(ENV, "Spadefoot Toad '%s': temp top=%.1f°C bot=%.1f°C → avg=%.1f°C",
                         getName().c_str(), temp_top / 10.0, temp_bot / 10.0, reading.temperature);
                 } else {
                     LOGTW(ENV, "Spadefoot Toad '%s': temperature valid flag set but individual reading(s) invalid (top=%d bot=%d)",
@@ -222,8 +264,47 @@ inline PeripheralFactory makeFactoryForSpadefootToadSensor() {
             params.registerFeature("temperature", [sensor](JsonObject& telemetryJson) {
                 telemetryJson["value"] = sensor->getTemperature();
             });
+            params.peripheralRoot()->registerCommand("calibrate", [sensor](const JsonObject& req, JsonObject&) {
+                auto ref = req["reference"].as<CalibrationReference>();
+                sensor->calibrate(ref);
+            });
+            params.peripheralRoot()->registerCommand("read-calibration", [sensor](const JsonObject&, JsonObject& res) {
+                sensor->readCalibration(res);
+            });
+            params.peripheralRoot()->registerCommand("factory-reset", [sensor](const JsonObject&, JsonObject&) {
+                sensor->factoryReset();
+            });
             return sensor;
         });
 }
 
 }    // namespace cornucopia::ugly_duckling::peripherals::environment
+
+namespace ArduinoJson {
+
+using cornucopia::ugly_duckling::peripherals::environment::CalibrationReference;
+
+template <>
+struct Converter<CalibrationReference> {
+    static bool toJson(const CalibrationReference& src, JsonVariant dst) {
+        switch (src) {
+            case CalibrationReference::Dry: return dst.set("dry");
+            case CalibrationReference::Wet: return dst.set("wet");
+        }
+        return false;
+    }
+
+    static CalibrationReference fromJson(JsonVariantConst src) {
+        std::string s = src.as<std::string>();
+        if (s == "wet") return CalibrationReference::Wet;
+        return CalibrationReference::Dry;    // default / unknown → Dry
+    }
+
+    static bool checkJson(JsonVariantConst src) {
+        if (!src.is<const char*>()) return false;
+        std::string s = src.as<std::string>();
+        return s == "dry" || s == "wet";
+    }
+};
+
+}    // namespace ArduinoJson

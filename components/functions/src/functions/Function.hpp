@@ -11,20 +11,29 @@ using cornucopia::ugly_duckling::peripherals::PeripheralManager;
 
 namespace cornucopia::ugly_duckling::functions {
 
+// Fields are kept in alphabetical order — please maintain this when adding new entries.
 struct FunctionServices {
-    const std::shared_ptr<TelemetryPublisher> telemetryPublisher;
     const std::shared_ptr<PeripheralManager> peripherals;
+    const std::shared_ptr<TelemetryPublisher> telemetryPublisher;
 };
 
 struct FunctionInitParameters {
-    const std::string name;
-    const FunctionServices& services;
-    const std::shared_ptr<MqttRoot> mqttRoot;
+    std::shared_ptr<MqttRoot> functionRoot() {
+        if (!mqttFunctionRoot) {
+            mqttFunctionRoot = mqttDeviceRoot->forSuffix("functions/" + name);
+        }
+        return mqttFunctionRoot;
+    }
 
     template <typename T>
     std::shared_ptr<T> peripheral(const std::string& name) const {
         return services.peripherals->getPeripheral<T>(name);
     }
+
+    const std::string name;
+    const FunctionServices& services;
+    const std::shared_ptr<MqttRoot> mqttDeviceRoot;
+    std::shared_ptr<MqttRoot> mqttFunctionRoot;
 };
 
 using FunctionCreateFn = std::function<Handle(
@@ -82,7 +91,7 @@ FunctionFactory makeFunctionFactory(
                 std::static_pointer_cast<HasConfig<TConfig>>(impl)->configure(config);
 
                 // Subscribe for config updates
-                params.mqttRoot->subscribe("config", [name = params.name, nvsConfig, impl](const std::string&, const JsonObject& cfgJson) {
+                params.functionRoot()->subscribe("config", [name = params.name, nvsConfig, impl](const std::string&, const JsonObject& cfgJson) {
                     LOGD("Received configuration update for function: %s", name.c_str());
                     try {
                         nvsConfig->update(cfgJson);
@@ -122,7 +131,7 @@ public:
                     FunctionInitParameters params = {
                         .name = name,
                         .services = services,
-                        .mqttRoot = mqttDeviceRoot->forSuffix("functions/" + name),
+                        .mqttDeviceRoot = mqttDeviceRoot,
                     };
                     JsonObject initConfigJson = initJson["config"].to<JsonObject>();
                     return factory.create(params, nvs, settings, initConfigJson);

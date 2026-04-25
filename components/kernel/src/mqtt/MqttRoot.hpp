@@ -3,6 +3,7 @@
 #include <chrono>
 #include <memory>
 #include <unordered_map>
+#include <vector>
 
 #include <mqtt/MqttDriver.hpp>
 #include <utility>
@@ -27,13 +28,22 @@ public:
                     publish("responses/" + command, responseDoc, Retention::NoRetain, QoS::ExactlyOnce);
                 }
             } else {
-                LOGTE(MQTT, "Unknown command: %s", command.c_str());
+                std::string knownCommands;
+                for (const auto& [name, _] : commandHandlers) {
+                    if (!knownCommands.empty()) {
+                        knownCommands += ", ";
+                    }
+                    knownCommands += name;
+                }
+                LOGTE(MQTT, "Unknown command: %s (known: %s)", command.c_str(), knownCommands.c_str());
             }
         });
     }
 
     std::shared_ptr<MqttRoot> forSuffix(const std::string& suffix) {
-        return std::make_shared<MqttRoot>(mqtt, rootTopic + "/" + suffix);
+        auto child = std::make_shared<MqttRoot>(mqtt, rootTopic + "/" + suffix);
+        children.push_back(child);
+        return child;
     }
 
     PublishStatus publish(const std::string& suffix, const JsonDocument& json, Retention retain = Retention::NoRetain, QoS qos = QoS::AtMostOnce, ticks timeout = MqttDriver::MQTT_NETWORK_TIMEOUT, LogPublish log = LogPublish::Log) {
@@ -77,6 +87,7 @@ private:
 
     const std::string rootTopic;
     std::unordered_map<std::string, CommandHandler> commandHandlers;
+    std::vector<std::shared_ptr<MqttRoot>> children;
 };
 
 }    // namespace cornucopia::ugly_duckling::kernel::mqtt

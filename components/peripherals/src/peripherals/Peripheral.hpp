@@ -17,6 +17,7 @@
 #include <PwmManager.hpp>
 #include <Telemetry.hpp>
 #include <drivers/SwitchManager.hpp>
+#include <mqtt/MqttRoot.hpp>
 
 #include <peripherals/api/IPeripheral.hpp>
 
@@ -43,8 +44,10 @@ public:
 
 // Peripheral factories
 
+// Fields are kept in alphabetical order — please maintain this when adding new entries.
 struct PeripheralServices {
     const std::shared_ptr<I2CManager> i2c;
+    const std::shared_ptr<mqtt::MqttRoot> mqttDeviceRoot;
     const std::shared_ptr<NvsStore> nvs;
     const std::shared_ptr<PcntManager> pcntManager;
     const std::shared_ptr<PulseCounterManager> pulseCounterManager;
@@ -66,6 +69,13 @@ struct PeripheralInitParameters {
         features.add(type);
     }
 
+    std::shared_ptr<mqtt::MqttRoot> peripheralRoot() {
+        if (!mqttPeripheralRoot) {
+            mqttPeripheralRoot = services.mqttDeviceRoot->forSuffix("peripherals/" + name);
+        }
+        return mqttPeripheralRoot;
+    }
+
     template <typename T>
     std::shared_ptr<T> peripheral(const std::string& name) const {
         return peripherals.getInstance<T>(name);
@@ -77,6 +87,7 @@ struct PeripheralInitParameters {
     const JsonArray features;
 
     Manager<PeripheralFactory>& peripherals;
+    std::shared_ptr<mqtt::MqttRoot> mqttPeripheralRoot;
 };
 
 // Helper to build a PeripheralFactory while keeping strong types for settings/config.
