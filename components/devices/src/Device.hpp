@@ -469,7 +469,7 @@ static void startDevice() {
     // Init peripherals
     auto peripheralServices = PeripheralServices {
         .i2c = i2c,
-        .mqttRoot = mqttRoot,
+        .mqttDeviceRoot = mqttRoot,
         .nvs = peripheralsNvs,
         .pcntManager = pcnt,
         .pulseCounterManager = pulseCounterManager,

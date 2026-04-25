@@ -47,7 +47,7 @@ public:
 // Fields are kept in alphabetical order — please maintain this when adding new entries.
 struct PeripheralServices {
     const std::shared_ptr<I2CManager> i2c;
-    const std::shared_ptr<mqtt::MqttRoot> mqttRoot;
+    const std::shared_ptr<mqtt::MqttRoot> mqttDeviceRoot;
     const std::shared_ptr<NvsStore> nvs;
     const std::shared_ptr<PcntManager> pcntManager;
     const std::shared_ptr<PulseCounterManager> pulseCounterManager;
@@ -71,7 +71,7 @@ struct PeripheralInitParameters {
 
     std::shared_ptr<mqtt::MqttRoot> peripheralRoot() {
         if (!mqttPeripheralRoot) {
-            mqttPeripheralRoot = services.mqttRoot->forSuffix("peripherals/" + name);
+            mqttPeripheralRoot = services.mqttDeviceRoot->forSuffix("peripherals/" + name);
         }
         return mqttPeripheralRoot;
     }
