@@ -6,6 +6,7 @@ idf_component_register(
         src
     REQUIRES
         # Core ESP-IDF components
+        bootloader_support
         esp_adc
         esp_app_format
         esp_driver_gpio
