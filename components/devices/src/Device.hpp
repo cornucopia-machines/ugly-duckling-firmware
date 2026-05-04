@@ -460,7 +460,6 @@ static void startDevice() {
     registerHttpUpdateCommand(mqttRoot, configNvs);
     HttpUpdater::performPendingHttpUpdateIfNecessary(configNvs, wifi, watchdog);
 
-    auto pcnt = std::make_shared<PcntManager>();
     auto peripheralsNvs = std::make_shared<NvsStore>("perf-state");
     auto pulseCounterManager = std::make_shared<PulseCounterManager>();
     auto pwm = std::make_shared<PwmManager>();
@@ -471,7 +470,6 @@ static void startDevice() {
         .i2c = i2c,
         .mqttDeviceRoot = mqttRoot,
         .nvs = peripheralsNvs,
-        .pcntManager = pcnt,
         .pulseCounterManager = pulseCounterManager,
         .pwmManager = pwm,
         .switches = switches,
