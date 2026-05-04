@@ -169,7 +169,7 @@ The following commands are available to manage NVS entries on the device:
 
 ### Prerequisites
 
-- [ESP-IDF-Clang Docker image](https://github.com/lptr/esp-idf-clang-docker) (wraps ESP-IDF v6.0 with Clang toolchain)
+- [ESP-IDF-Clang Docker image](https://github.com/lptr/esp-idf-clang-docker) (wraps ESP-IDF v6.0.1 with Clang toolchain)
 
 ### Building
 

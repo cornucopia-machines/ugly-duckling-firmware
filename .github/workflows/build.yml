@@ -8,7 +8,7 @@ env:
   CCACHE_DIR: ${{ github.workspace }}/.ccache
   CCACHE_MAXSIZE: 256M
   CCACHE_COMPRESS: true
-  ESP_IDF_VERSION: v6.0
+  ESP_IDF_VERSION: v6.0.1
 
 jobs:
   build:
