@@ -12,7 +12,6 @@
 #include <I2CManager.hpp>
 #include <Manager.hpp>
 #include <Named.hpp>
-#include <PcntManager.hpp>
 #include <PulseCounter.hpp>
 #include <PwmManager.hpp>
 #include <Telemetry.hpp>
@@ -49,7 +48,6 @@ struct PeripheralServices {
     const std::shared_ptr<I2CManager> i2c;
     const std::shared_ptr<mqtt::MqttRoot> mqttDeviceRoot;
     const std::shared_ptr<NvsStore> nvs;
-    const std::shared_ptr<PcntManager> pcntManager;
     const std::shared_ptr<PulseCounterManager> pulseCounterManager;
     const std::shared_ptr<PwmManager> pwmManager;
     const std::shared_ptr<SwitchManager> switches;

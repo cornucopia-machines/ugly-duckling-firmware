@@ -11,7 +11,6 @@
 #include <devices/DeviceSettings.hpp>
 
 #include <Log.hpp>
-#include <PcntManager.hpp>
 #include <PulseCounter.hpp>
 #include <PwmManager.hpp>
 #include <drivers/BatteryDriver.hpp>
