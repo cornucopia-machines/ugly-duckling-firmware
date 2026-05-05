@@ -102,8 +102,8 @@ private:
             excAJson.add(toHexString(i));
         }
         auto epcxJson = json["epcx"].to<JsonArray>();
-        for (unsigned int i : summary.ex_info.epcx) {
-            epcxJson.add(toHexString(i));
+        for (unsigned int epc : summary.ex_info.epcx) {
+            epcxJson.add(toHexString(epc));
         }
         json["epcx_reg_bits"] = toHexString(summary.ex_info.epcx_reg_bits);
 #else
@@ -114,8 +114,8 @@ private:
         json["ra"] = toHexString(summary.ex_info.ra);
         json["sp"] = toHexString(summary.ex_info.sp);
         auto excAJson = json["exc_a"].to<JsonArray>();
-        for (int i = 0; i < 8; i++) {
-            excAJson.add(toHexString(summary.ex_info.exc_a[i]));
+        for (unsigned int epc : summary.ex_info.exc_a) {
+            excAJson.add(toHexString(epc));
         }
 #endif
 
@@ -238,11 +238,11 @@ private:
             "Store access fault",
             "Environment call from U-mode",
             "Environment call from S-mode",
-            NULL,
+            nullptr,
             "Environment call from M-mode",
             "Instruction page fault",
             "Load page fault",
-            NULL,
+            nullptr,
             "Store page fault",
         };
 
