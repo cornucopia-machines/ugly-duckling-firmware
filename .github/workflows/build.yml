@@ -83,7 +83,7 @@ jobs:
           command: |
             ccache --max-size=${{ env.CCACHE_MAXSIZE }} && \
             ./generate-clang-tidy-compile-db.py && \
-            clang-tidy -p build/clang-tidy --header-filter="$(pwd)/(main|components)/" $(find main components -type f -name '*.cpp' -not -path '*/test/*' -not -path '*/build/*')
+            run-clang-tidy -p build/clang-tidy -header-filter="$(pwd)/(main|components)/" $(find main components -type f -name '*.cpp' -not -path '*/test/*' -not -path '*/build/*')
 
       - name: Collect artifacts
         run: |

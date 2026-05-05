@@ -18,7 +18,7 @@
 - Run tidy manually:
 
   ```bash
-  clang-tidy -p build/clang-tidy --header-filter="$(pwd)/(main|components)/" <file>
+  run-clang-tidy -p build/clang-tidy -header-filter="$(pwd)/(main|components)/" <file>
   ```
 
 - CI runs clang-tidy on every build.
