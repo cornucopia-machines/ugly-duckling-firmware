@@ -45,19 +45,17 @@ struct Converter<TargetState> {
     }
 
     static TargetState fromJson(JsonVariantConst src) {
-        auto* str = src.as<const char*>();
-        if (strcmp(str, "Closed") == 0) {
-            return TargetState::Closed;
-        } else {
-            return TargetState::Open;
-        }
+        const auto* str = src.as<const char*>();
+        return (strcmp(str, "Closed") == 0)
+            ? TargetState::Closed
+            : TargetState::Open;
     }
 
     static bool checkJson(JsonVariantConst src) {
         if (!src.is<const char*>()) {
             return false;
         }
-        auto* str = src.as<const char*>();
+        const auto* str = src.as<const char*>();
         return strcmp(str, "Closed") == 0 || strcmp(str, "Open") == 0;
     }
 };

@@ -64,19 +64,17 @@ struct Converter<ValveState> {
     }
 
     static ValveState fromJson(JsonVariantConst src) {
-        auto* str = src.as<const char*>();
-        if (strcmp(str, "Closed") == 0) {
-            return ValveState::Closed;
-        } else {
-            return ValveState::Open;
-        }
+        const auto* str = src.as<const char*>();
+        return (strcmp(str, "Closed") == 0)
+            ? ValveState::Closed
+            : ValveState::Open;
     }
 
     static bool checkJson(JsonVariantConst src) {
         if (!src.is<const char*>()) {
             return false;
         }
-        auto* value = src.as<const char*>();
+        const auto* value = src.as<const char*>();
         return strcmp(value, "Closed") == 0 || strcmp(value, "Open") == 0;
     }
 };

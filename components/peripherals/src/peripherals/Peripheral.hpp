@@ -85,7 +85,7 @@ struct PeripheralInitParameters {
     const JsonArray features;
 
     Manager<PeripheralFactory>& peripherals;
-    std::shared_ptr<mqtt::MqttRoot> mqttPeripheralRoot;
+    std::shared_ptr<mqtt::MqttRoot> mqttPeripheralRoot = nullptr;
 };
 
 // Helper to build a PeripheralFactory while keeping strong types for settings/config.

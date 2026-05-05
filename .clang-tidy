@@ -42,6 +42,7 @@ Checks:
   - -misc-const-correctness
   - -misc-definitions-in-headers
   - -misc-non-private-member-variables-in-classes
+  - -misc-unused-parameters # Unfortunately this doesn't understand the _name convention
   - modernize-*
   - -modernize-avoid-c-arrays
   - -modernize-pass-by-value
@@ -50,6 +51,7 @@ Checks:
   - -modernize-use-trailing-return-type
   - performance-*
   - portability-*
+  - -portability-template-virtual-member-function
   - readability-*
   - -readability-identifier-length
   - -readability-magic-numbers
@@ -60,6 +62,7 @@ CheckOptions:
   cppcoreguidelines-avoid-do-while.IgnoreMacros: true
   hicpp-signed-bitwise.IgnorePositiveIntegerLiterals: true
 
-HeaderFilterRegex: "/ugly-duckling/(main|components)/"
+# Run with --header-filter="$(pwd)/(main|components)/" instead
+# HeaderFilterRegex: "..."
 
 WarningsAsErrors: "*"

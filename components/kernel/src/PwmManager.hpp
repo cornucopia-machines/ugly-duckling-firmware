@@ -62,12 +62,13 @@ public:
             .gpio_num = pin->getGpio(),
             .speed_mode = timer.speedMode,
             .channel = channel,
-            .intr_type = LEDC_INTR_DISABLE,
+            .intr_type = {}, // NOLINT(clang-diagnostic-deprecated-declarations)
             .timer_sel = timer.timerNum,
             .duty = 0,    // Set duty to 0%
             .hpoint = 0,
             .sleep_mode = LEDC_SLEEP_MODE_NO_ALIVE_NO_PD,
             .flags = {},
+            .deconfigure = false,
         };
         ESP_ERROR_THROW(ledc_channel_config(&config));
     }

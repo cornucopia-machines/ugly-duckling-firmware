@@ -41,7 +41,7 @@ public:
     // Register under explicit interface types. Each interface gets its own correctly-adjusted
     // pointer (important for multiple inheritance). If no Interfaces are given, registers as Impl.
     template <typename... Interfaces, typename Impl>
-    static Handle wrap(std::shared_ptr<Impl> impl) {
+    static Handle wrap(const std::shared_ptr<Impl>& impl) {
         Handle h;
 
         if constexpr (sizeof...(Interfaces) == 0) {

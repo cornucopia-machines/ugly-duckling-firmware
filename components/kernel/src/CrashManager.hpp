@@ -7,6 +7,7 @@
 
 #include <NvsStore.hpp>
 #include <Strings.hpp>
+#include <utility>
 
 namespace cornucopia::ugly_duckling::kernel {
 
@@ -97,12 +98,12 @@ private:
         json["arch"] = "xtensa";
         json["vaddr"] = toHexString(summary.ex_info.exc_vaddr);
         auto excAJson = json["exc_a"].to<JsonArray>();
-        for (int i = 0; i < 16; i++) {
-            excAJson.add(toHexString(summary.ex_info.exc_a[i]));
+        for (unsigned int i : summary.ex_info.exc_a) {
+            excAJson.add(toHexString(i));
         }
         auto epcxJson = json["epcx"].to<JsonArray>();
-        for (int i = 0; i < EPCx_REGISTER_COUNT; i++) {
-            epcxJson.add(toHexString(summary.ex_info.epcx[i]));
+        for (unsigned int epc : summary.ex_info.epcx) {
+            epcxJson.add(toHexString(epc));
         }
         json["epcx_reg_bits"] = toHexString(summary.ex_info.epcx_reg_bits);
 #else
@@ -113,8 +114,8 @@ private:
         json["ra"] = toHexString(summary.ex_info.ra);
         json["sp"] = toHexString(summary.ex_info.sp);
         auto excAJson = json["exc_a"].to<JsonArray>();
-        for (int i = 0; i < 8; i++) {
-            excAJson.add(toHexString(summary.ex_info.exc_a[i]));
+        for (unsigned int epc : summary.ex_info.exc_a) {
+            excAJson.add(toHexString(epc));
         }
 #endif
 
@@ -143,7 +144,7 @@ private:
         }
 
         auto framesJson = backtraceJson["frames"].to<JsonArray>();
-        for (int i = 0; i < summary.exc_bt_info.depth; i++) {
+        for (unsigned int i = 0; i < summary.exc_bt_info.depth; i++) {
             const auto& frame = summary.exc_bt_info.bt[i];
             framesJson.add(toHexString(frame));
         }
@@ -237,11 +238,11 @@ private:
             "Store access fault",
             "Environment call from U-mode",
             "Environment call from S-mode",
-            NULL,
+            nullptr,
             "Environment call from M-mode",
             "Instruction page fault",
             "Load page fault",
-            NULL,
+            nullptr,
             "Store page fault",
         };
 
