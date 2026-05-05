@@ -60,6 +60,7 @@ CheckOptions:
   cppcoreguidelines-avoid-do-while.IgnoreMacros: true
   hicpp-signed-bitwise.IgnorePositiveIntegerLiterals: true
 
-HeaderFilterRegex: "/ugly-duckling/(main|components)/"
+# Run with --header-filter="$(pwd)/(main|components)/" instead
+# HeaderFilterRegex: "..."
 
 WarningsAsErrors: "*"
