@@ -46,15 +46,15 @@ static const parameter_cedv_t default_cedv = {
 
 // Default Gauging Config
 static const gauging_config_t default_config = {
-    .CCT = 1,
-    .CSYNC = 0,
-    .EDV_CMP = 0,
-    .SC = 1,
-    .FIXED_EDV0 = 0,
-    .FCC_LIM = 1,
-    .FC_FOR_VDQ = 1,
-    .IGNORE_SD = 1,
-    .SME0 = 0,
+    .CCT = true,
+    .CSYNC = false,
+    .EDV_CMP = false,
+    .SC = true,
+    .FIXED_EDV0 = false,
+    .FCC_LIM = true,
+    .FC_FOR_VDQ = true,
+    .IGNORE_SD = true,
+    .SME0 = false,
 };
 
 class Bq27220Driver final : public BatteryDriver {
@@ -85,7 +85,12 @@ public:
         auto port = device->getBus()->port;
         i2c_config_t conf = {
             .mode = I2C_MODE_MASTER,
+            .sda_io_num = sda->getGpio(),
+            .scl_io_num = scl->getGpio(),
+            .sda_pullup_en = false,
+            .scl_pullup_en = false,
             .master = { .clk_speed = 100000 },
+            .clk_flags = 0,
         };
         auto* bus = i2c_bus_create(port, &conf);
 
@@ -111,7 +116,7 @@ public:
     }
 
     double getTemperature() {
-        return bq27220_get_temperature(gauge) / 10.0 - 273.15;
+        return (bq27220_get_temperature(gauge) / 10.0) - 273.15;
     }
 
     std::optional<seconds> getTimeToEmpty() override {

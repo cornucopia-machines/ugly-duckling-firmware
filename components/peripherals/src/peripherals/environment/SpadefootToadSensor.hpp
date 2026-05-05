@@ -85,10 +85,11 @@ public:
         if (calibrationCsum != calibration[16]) {
             LOGTW(ENV, "Spadefoot Toad '%s': calibration checksum mismatch", name.c_str());
         } else {
-            uint16_t dry[4], wet[4];
+            uint16_t dry[4];
+            uint16_t wet[4];
             for (int i = 0; i < 4; i++) {
-                dry[i] = static_cast<uint16_t>((calibration[i * 2] << 8) | calibration[i * 2 + 1]);
-                wet[i] = static_cast<uint16_t>((calibration[8 + i * 2] << 8) | calibration[8 + i * 2 + 1]);
+                dry[i] = static_cast<uint16_t>((calibration[i * 2] << 8) | calibration[(i * 2) + 1]);
+                wet[i] = static_cast<uint16_t>((calibration[8 + (i * 2)] << 8) | calibration[8 + (i * 2) + 1]);
             }
             LOGTI(ENV, "Spadefoot Toad '%s': calibration  TF dry=%u wet=%u  TR dry=%u wet=%u  BF dry=%u wet=%u  BR dry=%u wet=%u",
                 name.c_str(), dry[0], wet[0], dry[1], wet[1], dry[2], wet[2], dry[3], wet[3]);
@@ -123,8 +124,8 @@ public:
         res["checksumOk"] = true;
         static constexpr const char* PROBE_NAMES[] = { "top-front", "top-rear", "bottom-front", "bottom-rear" };
         for (int i = 0; i < 4; i++) {
-            uint16_t dryVal = static_cast<uint16_t>((calibration[i * 2] << 8) | calibration[i * 2 + 1]);
-            uint16_t wetVal = static_cast<uint16_t>((calibration[8 + i * 2] << 8) | calibration[8 + i * 2 + 1]);
+            auto dryVal = static_cast<uint16_t>((calibration[i * 2] << 8) | calibration[(i * 2) + 1]);
+            auto wetVal = static_cast<uint16_t>((calibration[8 + (i * 2)] << 8) | calibration[8 + (i * 2) + 1]);
             auto probeObj = res[PROBE_NAMES[i]].to<JsonObject>();
             probeObj["dry"] = dryVal;
             probeObj["wet"] = wetVal;
@@ -179,10 +180,10 @@ private:
                 if (rawCsum == rawData[13]) {
                     uint16_t ticks[4];
                     for (int i = 0; i < 4; i++) {
-                        ticks[i] = static_cast<uint16_t>((rawData[i * 2] << 8) | rawData[i * 2 + 1]);
+                        ticks[i] = static_cast<uint16_t>((rawData[i * 2] << 8) | rawData[(i * 2) + 1]);
                     }
-                    uint16_t adcTop = static_cast<uint16_t>((rawData[8] << 8) | rawData[9]);
-                    uint16_t adcBot = static_cast<uint16_t>((rawData[10] << 8) | rawData[11]);
+                    auto adcTop = static_cast<uint16_t>((rawData[8] << 8) | rawData[9]);
+                    auto adcBot = static_cast<uint16_t>((rawData[10] << 8) | rawData[11]);
                     LOGTI(ENV, "Spadefoot Toad '%s': raw ticks TF=%u TR=%u BF=%u BR=%u, ADC top=%u bot=%u, flags=0x%02X",
                         getName().c_str(), ticks[0], ticks[1], ticks[2], ticks[3], adcTop, adcBot, rawData[12]);
                 } else {
@@ -207,7 +208,8 @@ private:
 
             // Moisture: average of valid probes (flag bit 0 set and value != 0xFF)
             if (flags & FLAG_MOISTURE_VALID) {
-                int sum = 0, count = 0;
+                int sum = 0;
+                int count = 0;
                 for (int i = 0; i < 4; i++) {
                     if (data[i] != MOISTURE_INVALID) {
                         sum += data[i];
@@ -288,21 +290,26 @@ template <>
 struct Converter<CalibrationReference> {
     static bool toJson(const CalibrationReference& src, JsonVariant dst) {
         switch (src) {
-            case CalibrationReference::Dry: return dst.set("dry");
-            case CalibrationReference::Wet: return dst.set("wet");
+            case CalibrationReference::Dry:
+                return dst.set("dry");
+            case CalibrationReference::Wet:
+                return dst.set("wet");
         }
         return false;
     }
 
     static CalibrationReference fromJson(JsonVariantConst src) {
-        std::string s = src.as<std::string>();
-        if (s == "wet") return CalibrationReference::Wet;
-        return CalibrationReference::Dry;    // default / unknown → Dry
+        auto s = src.as<std::string>();
+        return (s == "wet")
+            ? CalibrationReference::Wet
+            : CalibrationReference::Dry;    // default / unknown → Dry
     }
 
     static bool checkJson(JsonVariantConst src) {
-        if (!src.is<const char*>()) return false;
-        std::string s = src.as<std::string>();
+        if (!src.is<const char*>()) {
+            return false;
+        }
+        auto s = src.as<std::string>();
         return s == "dry" || s == "wet";
     }
 };

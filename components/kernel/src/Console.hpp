@@ -109,7 +109,7 @@ private:
             if (length < 0) {
                 return "<Encoding error>";
             }
-            if (length < BUFFER_SIZE) {
+            if (std::cmp_less(length, BUFFER_SIZE)) {
                 return { buffer, static_cast<size_t>(length) };
             }
         }

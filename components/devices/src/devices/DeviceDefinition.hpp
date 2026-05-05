@@ -20,14 +20,14 @@
 #include <functions/plot_controller/PlotController.hpp>
 #include <peripherals/Peripheral.hpp>
 #include <peripherals/analog_meter/AnalogMeter.hpp>
+#include <peripherals/environment/ChirpSoilSensor.hpp>
 #include <peripherals/environment/Ds18B20SoilSensor.hpp>
 #include <peripherals/environment/Environment.hpp>
+#include <peripherals/environment/Hw390SoilMoistureSensor.hpp>
 #include <peripherals/environment/KalmanFilterSoilSensor.hpp>
 #include <peripherals/environment/NtcTemperatureSensor.hpp>
 #include <peripherals/environment/Sht2xSensor.hpp>
 #include <peripherals/environment/Sht3xSensor.hpp>
-#include <peripherals/environment/ChirpSoilSensor.hpp>
-#include <peripherals/environment/Hw390SoilMoistureSensor.hpp>
 #include <peripherals/environment/SpadefootToadSensor.hpp>
 #include <peripherals/fence/ElectricFenceMonitor.hpp>
 #include <peripherals/flow_meter/FlowMeter.hpp>
@@ -100,7 +100,7 @@ public:
         registerDeviceSpecificPeripheralFactories(peripheralManager, services, settings);
     }
 
-    void registerFunctionFactories(const std::shared_ptr<FunctionManager>& functionManager) {
+    static void registerFunctionFactories(const std::shared_ptr<FunctionManager>& functionManager) {
         functionManager->registerFactory(plot_controller::makeFactory());
         functionManager->registerFactory(chicken_door::makeFactory());
     }

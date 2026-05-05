@@ -61,7 +61,7 @@ protected:
         peripheralManager->registerFactory(door::makeFactory(motors));
     }
 
-protected:
+
     DEFINE_PIN(GPIO_NUM_1, BATTERY)
     DEFINE_PIN(GPIO_NUM_4, STATUS2)
     DEFINE_PIN(GPIO_NUM_5, IOB1, "B1")

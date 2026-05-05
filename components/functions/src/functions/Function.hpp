@@ -33,7 +33,7 @@ struct FunctionInitParameters {
     const std::string name;
     const FunctionServices& services;
     const std::shared_ptr<MqttRoot> mqttDeviceRoot;
-    std::shared_ptr<MqttRoot> mqttFunctionRoot;
+    std::shared_ptr<MqttRoot> mqttFunctionRoot = nullptr;
 };
 
 using FunctionCreateFn = std::function<Handle(

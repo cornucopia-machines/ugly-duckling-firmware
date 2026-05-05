@@ -382,7 +382,7 @@ static void startDevice() {
     );
     ConsoleProvider::init(logRecords, settings->publishLogs.get());
 
-    auto macAddress = getMacAddress();
+    const auto& macAddress = getMacAddress();
 
     LOGD("\n"
          "   _   _       _         ____             _    _ _\n"
@@ -517,10 +517,10 @@ static void startDevice() {
         }
     }
 
-    auto& peripheralsSettings = settings->peripherals.get();
+    const auto& peripheralsSettings = settings->peripherals.get();
     LOGI("Loading configuration for %d user-configured peripherals",
         peripheralsSettings.size());
-    for (auto& peripheralSettings : peripheralsSettings) {
+    for (const auto& peripheralSettings : peripheralsSettings) {
         if (!peripheralManager->createPeripheral(peripheralSettings.get(), peripheralsInitJson)) {
             initState = InitState::PeripheralError;
         }
@@ -531,10 +531,10 @@ static void startDevice() {
 
     JsonDocument functionsInitDoc;
     auto functionsInitJson = functionsInitDoc.to<JsonArray>();
-    auto& functionsSettings = settings->functions.get();
+    const auto& functionsSettings = settings->functions.get();
     LOGI("Loading configuration for %d user-configured functions",
         functionsSettings.size());
-    for (auto& functionSettings : functionsSettings) {
+    for (const auto& functionSettings : functionsSettings) {
         if (!functionManager->createFunction(functionSettings.get(), functionsInitJson)) {
             initState = InitState::FunctionError;
         }

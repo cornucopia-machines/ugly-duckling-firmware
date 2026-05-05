@@ -7,6 +7,7 @@
 
 #include <NvsStore.hpp>
 #include <Strings.hpp>
+#include <utility>
 
 namespace cornucopia::ugly_duckling::kernel {
 
@@ -97,12 +98,12 @@ private:
         json["arch"] = "xtensa";
         json["vaddr"] = toHexString(summary.ex_info.exc_vaddr);
         auto excAJson = json["exc_a"].to<JsonArray>();
-        for (int i = 0; i < 16; i++) {
-            excAJson.add(toHexString(summary.ex_info.exc_a[i]));
+        for (unsigned int i : summary.ex_info.exc_a) {
+            excAJson.add(toHexString(i));
         }
         auto epcxJson = json["epcx"].to<JsonArray>();
-        for (int i = 0; i < EPCx_REGISTER_COUNT; i++) {
-            epcxJson.add(toHexString(summary.ex_info.epcx[i]));
+        for (unsigned int i : summary.ex_info.epcx) {
+            epcxJson.add(toHexString(i));
         }
         json["epcx_reg_bits"] = toHexString(summary.ex_info.epcx_reg_bits);
 #else
@@ -143,7 +144,7 @@ private:
         }
 
         auto framesJson = backtraceJson["frames"].to<JsonArray>();
-        for (int i = 0; i < summary.exc_bt_info.depth; i++) {
+        for (unsigned int i = 0; i < summary.exc_bt_info.depth; i++) {
             const auto& frame = summary.exc_bt_info.bt[i];
             framesJson.add(toHexString(frame));
         }
