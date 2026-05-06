@@ -62,7 +62,8 @@ CheckOptions:
   cppcoreguidelines-avoid-do-while.IgnoreMacros: true
   hicpp-signed-bitwise.IgnorePositiveIntegerLiterals: true
 
-# Run with --header-filter="$(pwd)/(main|components)/" instead
-# HeaderFilterRegex: "..."
+# Used by clangd (VS Code). The CLI overrides this with --header-filter="$(pwd)/(main|components)/"
+# to get an absolute path, which avoids matching ESP-IDF's components/ tree.
+HeaderFilterRegex: "/(main|components)/"
 
 WarningsAsErrors: "*"

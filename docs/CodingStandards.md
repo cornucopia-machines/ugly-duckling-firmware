@@ -9,16 +9,11 @@
 ## Static Analysis
 
 - Static analysis is via `.clang-tidy` with warnings-as-errors.
-- Regenerate the compile DB (needed after adding/removing files):
-
-  ```bash
-  python ./generate-clang-tidy-compile-db.py
-  ```
-
+- The clang compile DB (`build/clang/compile_commands.json`) is regenerated automatically at the end of every `idf.py build`.
 - Run tidy manually:
 
   ```bash
-  run-clang-tidy -p build/clang-tidy -header-filter="$(pwd)/(main|components)/" <file>
+  run-clang-tidy -p build/clang -header-filter="$(pwd)/(main|components)/" <file>
   ```
 
 - CI runs clang-tidy on every build.
