@@ -3,3 +3,7 @@ version = 1
 firmware = '../build/flasher_args.json'
 elf = '../build/ugly-duckling.elf'
 gdbServerPort=3333
+
+[[chip]]
+name = 'bq27220'
+binary = 'chips/bq27220.chip.wasm'

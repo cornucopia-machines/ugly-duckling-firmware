@@ -78,7 +78,11 @@ public:
         LOGI("Initializing BQ27220 driver on SDA %s, SCL %s, address 0x%02X",
             sda->getName().c_str(), scl->getName().c_str(), address);
 
-        // Check if we can communicate with the device and initialize bus
+        // Probe the device so i2cdev initializes the I2C master bus first.
+        // i2c_bus_create() (used by espressif__bq27220) calls i2c_master_get_bus_handle()
+        // before trying i2c_new_master_bus(); if i2cdev already owns the bus it reuses the
+        // handle instead of failing with ESP_ERR_INVALID_STATE. Result is ignored because
+        // the BQ27220 may not ACK until fully powered.
         ESP_ERROR_THROW(device->probeRead());
 
         // Get the bus handle

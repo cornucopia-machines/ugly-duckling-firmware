@@ -2,7 +2,7 @@
 
 ## Project Structure
 
-```
+```text
 main/               # App entry point (main.cpp); MAC-based device selection
 components/
   kernel/           # WiFi, MQTT, NTP, RTC, telemetry, NVS, power management
@@ -47,6 +47,28 @@ Quick reference:
 - LF endings, 4-space indent (2 for JSON/YAML/Markdown). WebKit `.clang-format`, warnings-as-errors via `.clang-tidy`.
 - Types: `PascalCase` — functions/methods: `camelCase` — macros/constants: `UPPER_SNAKE`.
 
+## Wokwi Custom Chips
+
+Custom chip simulations live in `wokwi/chips/`. Each chip requires a `.chip.c` implementation and a `.chip.json` pin declaration. The compiled `.chip.wasm` binary is generated and gitignored.
+
+**Build a chip:**
+
+```sh
+wokwi-cli chip compile chips/<name>.chip.c -o chips/<name>.chip.wasm
+```
+
+The `wokwi-api.h` header is auto-downloaded into `chips/` on first compile.
+
+**I2C callback convention** — the `connect` callback signature is:
+
+```c
+bool (*connect)(void *user_data, uint32_t address, bool read);
+```
+
+`read=true` means the master is **reading** from the chip; `read=false` means the master is **writing**. Reset `read_idx` on read, and `byte_idx`/`write_count` on write.
+
+References: [Chip API](https://docs.wokwi.com/chips-api/getting-started) · [Compile to WASM](https://docs.wokwi.com/guides/custom-chips-to-wasm)
+
 ## Testing Guidelines
 
 - Fast logic goes in `test/unit-tests/` (native Catch2, no hardware required).
@@ -67,3 +89,4 @@ Quick reference:
 - Never commit real MQTT credentials, TLS certificates, or device configs. Keep samples in `config-templates/`.
 - Prefer editing `sdkconfig.defaults` / `sdkconfig.*.defaults` and regenerating `sdkconfig` rather than hand-editing the tracked file.
 - Keep `dependencies.lock` and `managed_components/` in sync with ESP-IDF tooling; avoid manual edits unless intentionally vendoring.
+- **Never modify files under `managed_components/`.** Changes there are not committed, not available on CI, and are silently overwritten by `idf.py update-dependencies`. Fix interoperability issues in our own components instead.

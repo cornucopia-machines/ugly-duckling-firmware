@@ -1,0 +1,5 @@
+{
+  "name": "BQ27220",
+  "author": "Lóránt Pintér",
+  "pins": ["VCC", "GND", "SCL", "SDA"]
+}
