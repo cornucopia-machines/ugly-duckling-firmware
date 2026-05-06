@@ -38,8 +38,9 @@
       "id": "bq27220",
       "top": -115,
       "left": -95,
-      "attrs": {}
-    }
+      "attrs": { "voltage": "3800" }
+    },
+    { "type": "chip-ina219", "id": "ina219", "top": -30, "left": -95, "attrs": { "voltage": "3800", "current": "0" } }
   ],
   "connections": [
     [ "esp:TX", "$serialMonitor:RX", "", [] ],
@@ -52,7 +53,11 @@
     [ "bq27220:VCC", "esp:3V3.1", "red", [ "v0" ] ],
     [ "bq27220:GND", "esp:GND.1", "black", [ "v0" ] ],
     [ "bq27220:SCL", "esp:2", "yellow", [ "v0" ] ],
-    [ "bq27220:SDA", "esp:1", "blue", [ "v0" ] ]
+    [ "bq27220:SDA", "esp:1", "blue", [ "v0" ] ],
+    [ "ina219:VCC", "bq27220:VCC", "red", [] ],
+    [ "ina219:GND", "bq27220:GND", "black", [] ],
+    [ "ina219:SCL", "esp:2", "yellow", [] ],
+    [ "ina219:SDA", "esp:1", "blue", [] ]
   ],
   "dependencies": {}
 }

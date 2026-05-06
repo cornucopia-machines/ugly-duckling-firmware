@@ -1,5 +1,32 @@
 {
   "name": "INA219",
   "author": "Lóránt Pintér",
-  "pins": ["VCC", "GND", "SCL", "SDA"]
+  "pins": [
+    "VCC",
+    "GND",
+    "SCL",
+    "SDA"
+  ],
+  "controls": [
+    {
+      "id": "voltage",
+      "label": "Bus Voltage",
+      "description": "Bus voltage in millivolts",
+      "type": "range",
+      "unit": "mV",
+      "min": 1,
+      "max": 32000,
+      "step": 10
+    },
+    {
+      "id": "current",
+      "label": "Current",
+      "description": "Load current in milliamps (assumes 50 mΩ shunt)",
+      "type": "range",
+      "unit": "mA",
+      "min": 0,
+      "max": 6400,
+      "step": 1
+    }
+  ]
 }

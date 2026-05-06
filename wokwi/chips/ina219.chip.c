@@ -7,10 +7,15 @@
 //
 // I2C protocol handled:
 //   - Read/write REG_CONFIG (0x00): tracks config; returns power-on default until written
-//   - Read REG_SHUNT_U (0x01): fixed shunt voltage raw value
-//   - Read REG_BUS_U (0x02): fixed bus voltage raw value (3800 mV)
-//   - Read REG_POWER (0x03) / REG_CURRENT (0x04): zero
-//   - Write REG_CALIBRATION (0x05): stores value (ACKed, ignored for reads)
+//   - Read REG_SHUNT_U (0x01): shunt voltage derived from current attr and SIM_R_SHUNT_MOHM
+//   - Read REG_BUS_U (0x02): bus voltage from voltage attribute (mV, default 3800)
+//   - Read REG_CURRENT (0x04): current via INA219 formula (shunt_raw * cal / 4096)
+//   - Read REG_POWER (0x03): zero
+//   - Write REG_CALIBRATION (0x05): stored and used for current register computation
+//
+// Configurable via Wokwi diagram attrs:
+//   "voltage": bus voltage in mV (e.g. "3800")
+//   "current": load current in mA (e.g. "100"), default 0
 
 #include "wokwi-api.h"
 #include <stdint.h>
@@ -26,13 +31,13 @@
 // INA219 power-on default configuration (from datasheet / driver DEF_CONFIG)
 #define DEFAULT_CONFIG 0x399F
 
-// Bus voltage: 3800 mV
-// ina219_get_bus_voltage: *voltage = (raw >> 3) * 0.004  →  raw = (3800 / 4) << 3 = 7600
-#define SIM_BUS_RAW    7600
+// Default bus voltage in mV; raw register = (mV / 4) << 3
+#define SIM_VOLTAGE_MV    3800
 
-// Shunt voltage: 10 mV (small idle current through shunt)
-// ina219_get_shunt_voltage: *voltage = raw / 100000.0  →  raw = 0.010 * 100000 = 1000
-#define SIM_SHUNT_RAW  1000
+// Assumed shunt resistance in mΩ — matches the commented-out MK10 config.
+// raw_shunt = current_mA * r_shunt_mΩ / 10  (each shunt LSB = 10 µV)
+// raw_current = raw_shunt * calibration / 4096  (INA219 datasheet formula)
+#define SIM_R_SHUNT_MOHM  50
 
 typedef struct {
     uint8_t  reg;
@@ -42,6 +47,8 @@ typedef struct {
     uint8_t  read_idx;
     uint16_t config;
     uint16_t calibration;
+    uint32_t voltage_attr;
+    uint32_t current_attr;
 } chip_state_t;
 
 static chip_state_t chip;
@@ -69,10 +76,13 @@ static bool on_write(void *user_data, uint8_t data) {
 static uint8_t on_read(void *user_data) {
     uint16_t value = 0;
 
+    int32_t raw_shunt = (int32_t)attr_read(chip.current_attr) * SIM_R_SHUNT_MOHM / 10;
+
     switch (chip.reg) {
         case REG_CONFIG:      value = chip.config;      break;
-        case REG_SHUNT_U:     value = SIM_SHUNT_RAW;   break;
-        case REG_BUS_U:       value = SIM_BUS_RAW;     break;
+        case REG_SHUNT_U:     value = (uint16_t)(int16_t)raw_shunt; break;
+        case REG_BUS_U:       value = (uint16_t)((attr_read(chip.voltage_attr) / 4) << 3); break;
+        case REG_CURRENT:     value = (uint16_t)(int16_t)(raw_shunt * (int32_t)chip.calibration / 4096); break;
         case REG_CALIBRATION: value = chip.calibration; break;
         default:              value = 0;                break;
     }
@@ -98,6 +108,8 @@ static void on_disconnect(void *user_data) {
 void chip_init(void) {
     memset(&chip, 0, sizeof(chip));
     chip.config = DEFAULT_CONFIG;
+    chip.voltage_attr = attr_init("voltage", SIM_VOLTAGE_MV);
+    chip.current_attr = attr_init("current", 0);
     i2c_init(&(i2c_config_t){
         .user_data  = NULL,
         .address    = 0x40,
