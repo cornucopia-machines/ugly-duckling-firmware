@@ -14,7 +14,10 @@
 //   - Read from COMMAND_MAC_DATA (0x40): returns BE response for last DM address
 //   - Read from COMMAND_OPERATION_STATUS (0x3A): SEC=UNSEALED, INITCOMP=1
 //   - Read from COMMAND_DESIGN_CAPACITY (0x3C): 2000 mAh
-//   - Read from COMMAND_VOLTAGE (0x08): 3800 mV
+//   - Read from COMMAND_VOLTAGE (0x08): voltage attribute (mV, default 3800)
+//
+// Configurable via Wokwi diagram attrs:
+//   "voltage": battery voltage in mV (e.g. "3800")
 
 #include "wokwi-api.h"
 #include <stdbool.h>
@@ -57,6 +60,7 @@ typedef struct {
     uint16_t   last_control;
     uint16_t   last_subclass;
     mac_mode_t mac_mode;
+    uint32_t   voltage_attr;
 } chip_state_t;
 
 static chip_state_t chip;
@@ -116,7 +120,7 @@ static uint8_t on_read(void *user_data) {
         }
 
     } else if (chip.reg == REG_VOLTAGE) {
-        uint16_t v = SIM_VOLTAGE_MV;
+        uint16_t v = (uint16_t)attr_read(chip.voltage_attr);
         result = (chip.read_idx == 0) ? (uint8_t)v : (uint8_t)(v >> 8);
 
     } else if (chip.reg == REG_OPERATION_STATUS) {
@@ -150,6 +154,7 @@ static void on_disconnect(void *user_data) {
 
 void chip_init(void) {
     memset(&chip, 0, sizeof(chip));
+    chip.voltage_attr = attr_init("voltage", SIM_VOLTAGE_MV);
     i2c_init(&(i2c_config_t){
         .user_data  = NULL,
         .address    = 0x55,

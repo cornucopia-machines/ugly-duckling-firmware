@@ -1,5 +1,22 @@
 {
   "name": "BQ27220",
   "author": "Lóránt Pintér",
-  "pins": ["VCC", "GND", "SCL", "SDA"]
+  "pins": [
+    "VCC",
+    "GND",
+    "SCL",
+    "SDA"
+  ],
+  "controls": [
+    {
+      "id": "voltage",
+      "label": "Voltage",
+      "description": "Battery voltage in millivolts",
+      "type": "range",
+      "unit": "mV",
+      "min": 1,
+      "max": 4300,
+      "step": 10
+    }
+  ]
 }

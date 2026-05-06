@@ -31,8 +31,14 @@
       "left": 153.6,
       "attrs": { "color": "green", "label": "Flash", "bounce": "0" }
     },
-    { "type": "chip-bq27220", "id": "bq27220", "top": 87.42, "left": -168, "attrs": {} },
-    { "type": "chip-ina219", "id": "ina219", "top": 170, "left": -168, "attrs": {} }
+    {
+      "type": "chip-bq27220",
+      "id": "bq27220",
+      "top": 87.42,
+      "left": -168,
+      "attrs": { "voltage": "3800" }
+    },
+    { "type": "chip-ina219", "id": "ina219", "top": 173.82, "left": -168, "attrs": {} }
   ],
   "connections": [
     [ "esp:TX", "$serialMonitor:RX", "", [] ],
