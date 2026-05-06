@@ -47,27 +47,15 @@ Quick reference:
 - LF endings, 4-space indent (2 for JSON/YAML/Markdown). WebKit `.clang-format`, warnings-as-errors via `.clang-tidy`.
 - Types: `PascalCase` — functions/methods: `camelCase` — macros/constants: `UPPER_SNAKE`.
 
-## Wokwi Custom Chips
+## Wokwi Simulation
 
-Custom chip simulations live in `wokwi/chips/`. Each chip requires a `.chip.c` implementation and a `.chip.json` pin declaration. The compiled `.chip.wasm` binary is generated and gitignored.
+See [wokwi/README.md](wokwi/README.md) for diagrams, custom chip authoring (I2C skeleton, callback contract, endianness), build commands, and I2C library interoperability notes.
 
-**Build a chip:**
+Quick reference — build a custom chip after editing its `.c` file:
 
 ```sh
 wokwi-cli chip compile chips/<name>.chip.c -o chips/<name>.chip.wasm
 ```
-
-The `wokwi-api.h` header is auto-downloaded into `chips/` on first compile.
-
-**I2C callback convention** — the `connect` callback signature is:
-
-```c
-bool (*connect)(void *user_data, uint32_t address, bool read);
-```
-
-`read=true` means the master is **reading** from the chip; `read=false` means the master is **writing**. Reset `read_idx` on read, and `byte_idx`/`write_count` on write.
-
-References: [Chip API](https://docs.wokwi.com/chips-api/getting-started) · [Compile to WASM](https://docs.wokwi.com/guides/custom-chips-to-wasm)
 
 ## Testing Guidelines
 
