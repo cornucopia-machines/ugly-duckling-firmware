@@ -103,6 +103,6 @@ def fix_compile_commands(input_path, output_path):
 # --- Main ---
 if __name__ == "__main__":
     input_file = "build/compile_commands.json"
-    output_file = "build/clang-tidy/compile_commands.json"
+    output_file = "build/clang/compile_commands.json"
 
     fix_compile_commands(input_file, output_file)
