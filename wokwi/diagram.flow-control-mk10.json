@@ -4,13 +4,11 @@
   "editor": "wokwi",
   "parts": [
     {
-      "type": "board-esp32-s3-devkitc-1",
+      "type": "board-esp32-c6-devkitc-1",
       "id": "esp",
       "top": -0.18,
       "left": 4.57,
-      "attrs": {
-        "flashSize": "16"
-      }
+      "attrs": { "flashSize": "16" }
     },
     {
       "type": "wokwi-led",
@@ -22,42 +20,44 @@
     {
       "type": "wokwi-resistor",
       "id": "r1",
-      "top": 32.75,
-      "left": 163.2,
+      "top": -53.65,
+      "left": 201.6,
       "attrs": { "value": "22" }
     },
     {
       "type": "wokwi-pushbutton",
       "id": "btn1",
-      "top": 169.4,
+      "top": 83,
       "left": 153.6,
       "attrs": { "color": "green", "label": "Flash", "bounce": "0" }
     },
     {
       "type": "chip-bq27220",
       "id": "bq27220",
-      "top": -115,
-      "left": -95,
+      "top": 87.42,
+      "left": -168,
       "attrs": { "voltage": "3800" }
     },
-    { "type": "chip-ina219", "id": "ina219", "top": -30, "left": -95, "attrs": { "voltage": "3800", "current": "0" } }
+    { "type": "chip-ina219", "id": "ina219", "top": 173.82, "left": -168, "attrs": { "voltage": "3800", "current": "0" } }
   ],
   "connections": [
     [ "esp:TX", "$serialMonitor:RX", "", [] ],
     [ "esp:RX", "$serialMonitor:TX", "", [] ],
-    [ "statusLed:A", "r1:2", "green", [] ],
+    [ "statusLed:A", "r1:2", "green", [ "h57.6", "v-57.6" ] ],
     [ "r1:1", "esp:3V3.2", "green", [ "v0" ] ],
-    [ "statusLed:C", "esp:45", "green", [ "v0" ] ],
+    [ "statusLed:C", "esp:8", "green", [ "h-191.15" ] ],
     [ "esp:GND.4", "btn1:2.l", "black", [ "h0" ] ],
-    [ "esp:0", "btn1:1.l", "green", [ "h0" ] ],
+    [ "esp:9", "btn1:1.l", "green", [ "h0" ] ],
     [ "bq27220:VCC", "esp:3V3.1", "red", [ "v0" ] ],
     [ "bq27220:GND", "esp:GND.1", "black", [ "v0" ] ],
     [ "bq27220:SCL", "esp:2", "yellow", [ "v0" ] ],
-    [ "bq27220:SDA", "esp:1", "blue", [ "v0" ] ],
+    [ "bq27220:SDA", "esp:3", "blue", [ "v0" ] ],
+    [ "esp:3V3", "bq27220:VCC", "red", [ "v-4.13", "h-173.25" ] ],
+    [ "r1:1", "esp:3V3", "red", [ "h-57.6", "h-153.15" ] ],
     [ "ina219:VCC", "bq27220:VCC", "red", [] ],
     [ "ina219:GND", "bq27220:GND", "black", [] ],
     [ "ina219:SCL", "esp:2", "yellow", [] ],
-    [ "ina219:SDA", "esp:1", "blue", [] ]
+    [ "ina219:SDA", "esp:3", "blue", [] ]
   ],
   "dependencies": {}
 }

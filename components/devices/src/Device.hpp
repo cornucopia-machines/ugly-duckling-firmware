@@ -341,11 +341,14 @@ enum class InitState : std::uint8_t {
 
 template <std::derived_from<DeviceDefinition> TDeviceDefinition>
 static void startDevice() {
+    auto deviceDefinition = std::make_shared<TDeviceDefinition>();
+    LOGD("Starting %s revision %d device",
+        deviceDefinition->model.c_str(), deviceDefinition->revision);
+
     auto resetReason = esp_reset_reason();
     LOGD("Restarting after reset reason: %d", resetReason);
 
     auto i2c = std::make_shared<I2CManager>();
-    auto deviceDefinition = std::make_shared<TDeviceDefinition>();
     auto battery = initBattery(deviceDefinition, i2c);
 
     initNvsFlash();

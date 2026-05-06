@@ -26,10 +26,14 @@ Each platform maps to one ESP-IDF target (and therefore one compiled binary), bu
 
 There are currently two platforms:
 
-| Platform    | Chip     | Models                                     |
-| ----------- | -------- | ------------------------------------------ |
-| **Spinach** | ESP32-S3 | MK5, MK6 (rev1–rev3), MK7, MK8 (rev1–rev2), MK9 rev1 |
-| **Carrot**  | ESP32-C6 | MK9 rev2                                              |
+* `spinach` is based on ESP32-S3
+  * MK5 (rev2)
+  * MK6 (rev1–rev3)
+  * MK7 (rev1)
+  * MK8 (rev1)
+  * MK9 (rev1)
+* `carrot` is based on ESP32-C6
+  * MK10 (rev1)
 
 Each platform produces a single firmware binary that covers all models on that platform.
 The correct model is selected at runtime based on the device's MAC address.
@@ -194,9 +198,8 @@ Pass `UD_GEN` to skip MAC detection and force a specific model.
 Make sure `IDF_TARGET` matches the platform the model belongs to:
 
 ```bash
-idf.py build -DUD_GEN=MK7       # Spinach (ESP32-S3)
-idf.py build -DUD_GEN=MK9       # Carrot (ESP32-C6, MK9 rev2)
-idf.py build -DUD_GEN=MK9_REV1  # Spinach (ESP32-S3, MK9 rev1)
+idf.py build -DUD_GEN=MK6_REV3       # Spinach (ESP32-S3)
+idf.py build -DUD_GEN=MK10_REV1      # Carrot (ESP32-C6)
 ```
 
 ### Flashing
@@ -247,7 +250,7 @@ Can use [Wokwi](https://wokwi.com/) to run the firmware in a simulated environme
 For this the firmware must be built with `-DWOKWI=1`.
 
 ```bash
-idf.py -DUD_GEN=MK6 -DUD_DEBUG=0 -DWOKWI=1 build
+idf.py -DUD_GEN=MK6_REV3 -DUD_DEBUG=0 -DWOKWI=1 build
 ```
 
 The opening a diagram in the [`wokwi`](wokwi) directory will start the simulation.

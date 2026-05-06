@@ -2,7 +2,7 @@
 
 ## Project Structure
 
-```
+```text
 main/               # App entry point (main.cpp); MAC-based device selection
 components/
   kernel/           # WiFi, MQTT, NTP, RTC, telemetry, NVS, power management
@@ -47,6 +47,16 @@ Quick reference:
 - LF endings, 4-space indent (2 for JSON/YAML/Markdown). WebKit `.clang-format`, warnings-as-errors via `.clang-tidy`.
 - Types: `PascalCase` — functions/methods: `camelCase` — macros/constants: `UPPER_SNAKE`.
 
+## Wokwi Simulation
+
+See [wokwi/README.md](wokwi/README.md) for diagrams, custom chip authoring (I2C skeleton, callback contract, endianness), build commands, and I2C library interoperability notes.
+
+Quick reference — build a custom chip after editing its `.c` file:
+
+```sh
+wokwi-cli chip compile chips/<name>.chip.c -o chips/<name>.chip.wasm
+```
+
 ## Testing Guidelines
 
 - Fast logic goes in `test/unit-tests/` (native Catch2, no hardware required).
@@ -67,3 +77,4 @@ Quick reference:
 - Never commit real MQTT credentials, TLS certificates, or device configs. Keep samples in `config-templates/`.
 - Prefer editing `sdkconfig.defaults` / `sdkconfig.*.defaults` and regenerating `sdkconfig` rather than hand-editing the tracked file.
 - Keep `dependencies.lock` and `managed_components/` in sync with ESP-IDF tooling; avoid manual edits unless intentionally vendoring.
+- **Never modify files under `managed_components/`.** Changes there are not committed, not available on CI, and are silently overwritten by `idf.py update-dependencies`. Fix interoperability issues in our own components instead.
