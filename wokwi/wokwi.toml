@@ -7,3 +7,7 @@ gdbServerPort=3333
 [[chip]]
 name = 'bq27220'
 binary = 'chips/bq27220.chip.wasm'
+
+[[chip]]
+name = 'ina219'
+binary = 'chips/ina219.chip.wasm'

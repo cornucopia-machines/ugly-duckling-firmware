@@ -31,7 +31,8 @@
       "left": 153.6,
       "attrs": { "color": "green", "label": "Flash", "bounce": "0" }
     },
-    { "type": "chip-bq27220", "id": "bq27220", "top": 87.42, "left": -168, "attrs": {} }
+    { "type": "chip-bq27220", "id": "bq27220", "top": 87.42, "left": -168, "attrs": {} },
+    { "type": "chip-ina219", "id": "ina219", "top": 170, "left": -168, "attrs": {} }
   ],
   "connections": [
     [ "esp:TX", "$serialMonitor:RX", "", [] ],
@@ -46,7 +47,11 @@
     [ "bq27220:SCL", "esp:2", "yellow", [ "v0" ] ],
     [ "bq27220:SDA", "esp:3", "blue", [ "v0" ] ],
     [ "esp:3V3", "bq27220:VCC", "red", [ "v-4.13", "h-173.25" ] ],
-    [ "r1:1", "esp:3V3", "red", [ "h-57.6", "h-153.15" ] ]
+    [ "r1:1", "esp:3V3", "red", [ "h-57.6", "h-153.15" ] ],
+    [ "ina219:VCC", "bq27220:VCC", "red", [] ],
+    [ "ina219:GND", "bq27220:GND", "black", [] ],
+    [ "ina219:SCL", "esp:2", "yellow", [] ],
+    [ "ina219:SDA", "esp:3", "blue", [] ]
   ],
   "dependencies": {}
 }

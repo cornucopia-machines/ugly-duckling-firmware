@@ -1,0 +1,5 @@
+{
+  "name": "INA219",
+  "author": "Lóránt Pintér",
+  "pins": ["VCC", "GND", "SCL", "SDA"]
+}
