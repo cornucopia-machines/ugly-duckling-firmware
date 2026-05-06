@@ -216,6 +216,15 @@ jobs:
             idf.py -DUD_GEN=MK6_REV3 -DUD_DEBUG=1 -DWOKWI=1 -DWOKWI_MQTT_HOST=${{ env.HOSTNAME }} build && \
             ccache -s
 
+      - name: Install wokwi-cli
+        run: curl -fsSL https://wokwi.com/ci/install.sh | sh
+
+      - name: Compile Wokwi custom chips
+        run: |
+          for c in wokwi/chips/*.chip.c; do
+            wokwi-cli chip compile "$c" -o "${c%.chip.c}.chip.wasm"
+          done
+
       - name: Run a Wokwi CI server
         uses: wokwi/wokwi-ci-server-action@v1
 
