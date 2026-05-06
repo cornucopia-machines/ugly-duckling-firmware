@@ -22,10 +22,10 @@ using namespace cornucopia::ugly_duckling::peripherals::valve;
 
 namespace cornucopia::ugly_duckling::devices {
 
-class UglyDucklingMk9Rev2 : public DeviceDefinition {
+class UglyDucklingMk10Rev1 : public DeviceDefinition {
 public:
-    explicit UglyDucklingMk9Rev2()
-        : DeviceDefinition({ .model = "mk9", .revision = 2, .boot = GPIO_NUM_9, .status = GPIO_NUM_8 }) {
+    explicit UglyDucklingMk10Rev1()
+        : DeviceDefinition({ .model = "mk10", .revision = 1, .boot = GPIO_NUM_9, .status = GPIO_NUM_8 }) {
     }
 
     std::shared_ptr<BatteryDriver> createBatteryDriver(const std::shared_ptr<I2CManager>& i2c) override {
@@ -81,18 +81,9 @@ protected:
     // Flow meter A
     DEFINE_PIN(GPIO_NUM_1, IFLOWA)
 
-    // Legacy soil moisture sensor pin
-    DEFINE_PIN(GPIO_NUM_3, ISOILML)
-
-    // Motor fault pin
-    DEFINE_PIN(GPIO_NUM_4, NFAULT)
-
-    // Enable / disable external load
-    DEFINE_PIN(GPIO_NUM_5, LOADEN)
-
     // Internal I2C
-    DEFINE_PIN(GPIO_NUM_6, SDA)
-    DEFINE_PIN(GPIO_NUM_7, SCL)
+    DEFINE_PIN(GPIO_NUM_2, SCL)
+    DEFINE_PIN(GPIO_NUM_3, SDA)
 
     // Status LED 2
     DEFINE_PIN(GPIO_NUM_9, STATUS2)
@@ -118,11 +109,11 @@ protected:
     DEFINE_PIN(GPIO_NUM_20, DBIN2)
     DEFINE_PIN(GPIO_NUM_21, DBIN1)
 
-    // Legacy soil temperature sensor
-    DEFINE_PIN(GPIO_NUM_22, ISOILTL)
+    // Enable / disable external load
+    DEFINE_PIN(GPIO_NUM_22, LOADEN)
 
-    // Enable pin for legacy soil moisture sensor
-    DEFINE_PIN(GPIO_NUM_23, NENSOILM)
+    // Motor fault pin
+    DEFINE_PIN(GPIO_NUM_23, NFAULT)
 };
 
 }    // namespace cornucopia::ugly_duckling::devices
