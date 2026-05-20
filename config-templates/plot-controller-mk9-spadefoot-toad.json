@@ -4,14 +4,14 @@
       "name": "flow-meter",
       "type": "flow-meter",
       "params": {
-        "pin": "IFLOWB"
+        "pin": "IFLOWA"
       }
     },
     {
       "name": "valve",
       "type": "valve",
       "params": {
-        "motor": "b"
+        "motor": "a"
       }
     },
     {
