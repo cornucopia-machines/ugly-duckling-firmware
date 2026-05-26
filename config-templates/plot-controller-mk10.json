@@ -1,0 +1,36 @@
+{
+  "peripherals": [
+    {
+      "name": "flow-meter",
+      "type": "flow-meter",
+      "params": {
+        "pin": "IFLOWA"
+      }
+    },
+    {
+      "name": "valve",
+      "type": "valve",
+      "params": {
+        "motor": "a"
+      }
+    },
+    {
+      "name": "air",
+      "type": "environment:sht3x",
+      "params": {
+        "sda": "SDA",
+        "scl": "SCL"
+      }
+    }
+  ],
+  "functions": [
+    {
+      "name": "plot",
+      "type": "plot-controller",
+      "params": {
+        "flowMeter": "flow-meter",
+        "valve": "valve"
+      }
+    }
+  ]
+}

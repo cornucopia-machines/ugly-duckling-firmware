@@ -95,7 +95,7 @@ void startDeviceBasedOnHardware() {
 #else
     // MK10 Rev1
     // TODO Use actual MAC address once devices ship
-    if (macAddressHasPrefix(0xFF, 0xFF, 0xFF, 0xFF)) {
+    if (macAddressHasPrefix(0xE8, 0xF6, 0x0A, 0xF2)) {
         startDevice<UglyDucklingMk10Rev1>();
         return;
     }
