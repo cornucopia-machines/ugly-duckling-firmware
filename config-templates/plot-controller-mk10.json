@@ -21,6 +21,14 @@
         "sda": "SDA",
         "scl": "SCL"
       }
+    },
+    {
+      "name": "soil",
+      "type": "soil:spadefoot-toad-bb",
+      "params": {
+        "sda": "EXT_SDA",
+        "scl": "EXT_SCL"
+      }
     }
   ],
   "functions": [

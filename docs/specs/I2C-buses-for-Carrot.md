@@ -1,5 +1,38 @@
 # External I2C for MK10 on ESP32-C6 (Carrot)
 
+## Status
+
+The MK10 software plan is **implemented** (branch `hardware/mk10-hw`). The
+remaining checklist items are hardware validation: confirming external pullups
+on the schematic, unit tests for the bitbang state machine, a Wokwi embedded
+test, and physical bring-up on an MK10 board.
+
+The MK11+ plan is **not yet started** — it depends on MK11+ hardware existing.
+
+### What was done
+
+`SpadefootToadSensor.hpp` was refactored into three classes sharing a common
+base (`SpadefootToadSensorBase`) that holds all protocol logic and exposes
+three pure-virtual transport primitives (`transportWriteByte`,
+`transportReadWord`, `transportReadBytes`):
+
+- **`SpadefootToadSensor`** (unchanged externally) — thin subclass forwarding
+  the three primitives to an `I2CDevice`. Spinach / MK11+ path is unaffected.
+- **`SpadefootToadSensorWithBitbangI2C`** (new, MK10-only) — implements the
+  same three primitives using open-drain GPIO bitbang at 100 kHz, with clock
+  stretching (10 ms timeout) and per-byte `portENTER_CRITICAL` sections
+  (≤90 µs ISR-disabled window). A `Mutex` serializes concurrent callers.
+
+`UglyDucklingMk10::registerDeviceSpecificPeripheralFactories` now registers
+`makeFactoryForSpadefootToadSensorWithBitbangI2C()` (type
+`soil:spadefoot-toad-bb`) with a comment explaining the MK10 constraint and
+discouraging copying this pattern for future devices.
+
+`config-templates/plot-controller-mk10.json` was updated to include the soil
+sensor entry (`soil:spadefoot-toad-bb`, pins `EXT_SDA` / `EXT_SCL`).
+
+Both ESP32-C6 (MK10/Carrot) and ESP32-S3 (Spinach) builds pass cleanly.
+
 ## Problem
 
 The MK10 hardware needs two independent I2C buses:
@@ -89,7 +122,7 @@ Implementation details for the three transport primitives in
   release, set the level to 1 and let the external pullup pull it high. The
   internal ~45 kΩ pullup is enabled as a safety net; **external pullups on
   the MK10 schematic are mandatory** for clean edges over the ~1 m cable.
-  Verify the schematic has them before writing software.
+  Confirmed: 2.2 kΩ pullups are present on both SDA and SCL.
 - **Bit timing.** Fixed at 100 kHz to match the Spadefoot Toad's TWI Address
   Match wakeup requirement (5 µs half-bit). `esp_rom_delay_us(5)` per
   half-bit. Cached as an integer; no floating-point on the hot path.
@@ -175,23 +208,23 @@ the `SDA` / `SCL` pin aliases.
 
 ### Implementation checklist
 
-- [ ] Extract shared protocol code from `SpadefootToadSensor` into a
+- [x] Extract shared protocol code from `SpadefootToadSensor` into a
       private base class `SpadefootToadSensorBase` in the same header.
-- [ ] Refactor `SpadefootToadSensor` to subclass `SpadefootToadSensorBase`
+- [x] Refactor `SpadefootToadSensor` to subclass `SpadefootToadSensorBase`
       and forward the three transport primitives to `I2CDevice`.
-- [ ] Add `SpadefootToadSensorWithBitbangI2C` with the inlined bitbang
+- [x] Add `SpadefootToadSensorWithBitbangI2C` with the inlined bitbang
       transport (open-drain, 100 kHz, clock stretching, per-byte critical
       sections).
-- [ ] Add `makeFactoryForSpadefootToadSensorWithBitbangI2C()` exporting
+- [x] Add `makeFactoryForSpadefootToadSensorWithBitbangI2C()` exporting
       peripheral type `soil:spadefoot-toad-bb`.
-- [ ] Register the bitbang factory from
+- [x] Register the bitbang factory from
       `UglyDucklingMk10::registerDeviceSpecificPeripheralFactories` with
       explanatory comment.
-- [ ] Add a file-level comment to `SpadefootToadSensor.hpp` explaining the
+- [x] Add a file-level comment to `SpadefootToadSensor.hpp` explaining the
       two variants and the MK10 constraint.
-- [ ] Update `config-templates/plot-controller-mk10.json` to use
+- [x] Update `config-templates/plot-controller-mk10.json` to use
       `soil:spadefoot-toad-bb` with `EXT_SDA` / `EXT_SCL`.
-- [ ] Confirm external pullups exist on the MK10 schematic.
+- [x] Confirm external pullups exist on the MK10 schematic. (2.2 kΩ on both SDA and SCL.)
 - [ ] Unit tests for the bitbang state machine in `test/unit-tests/`.
 - [ ] Wokwi diagram + embedded test fixture for an MK10 with a Spadefoot
       Toad slave.
