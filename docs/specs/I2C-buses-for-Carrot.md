@@ -298,28 +298,21 @@ Two narrow changes in `components/kernel/src/I2CManager.hpp`:
    `lp_source_clk = LP_I2C_SCLK_DEFAULT` for the LP port and
    `clk_source = I2C_CLK_SRC_DEFAULT` for HP ports.
 
-### i2cdev LP_I2C limitation and workaround
+### i2cdev LP_I2C fix
 
-`i2cdev.c` hardcodes `.clk_source = I2C_CLK_SRC_DEFAULT` when calling
+`i2cdev.c` hardcoded `.clk_source = I2C_CLK_SRC_DEFAULT` when calling
 `i2c_new_master_bus`. For `LP_I2C_NUM_0` this is the wrong value — LP_I2C
-requires `LP_I2C_SCLK_DEFAULT` — so i2cdev fails with `ESP_ERR_NOT_SUPPORTED`
-when asked to install the LP bus on its own.
+requires `LP_I2C_SCLK_DEFAULT` — so i2cdev failed with `ESP_ERR_NOT_SUPPORTED`
+when asked to install the LP bus.
 
-`I2CManager::preInstallIfLp` side-steps this by calling `i2c_new_master_bus`
-directly with `lp_source_clk = LP_I2C_SCLK_DEFAULT` the first time `getBusFor`
-sees `LP_I2C_NUM_0`. This is already implemented and the bus installs correctly.
-`espressif/bq27220`'s data-path operations are unaffected: `espressif/i2c_bus`
-calls `i2c_master_get_bus_handle()` first and reuses the pre-installed handle.
-
-However, i2cdev's internal `port_state->installed` flag is never set by the
-pre-install, so any i2cdev device later targeting the LP port will attempt a
-second `i2c_new_master_bus` and fail with `ESP_ERR_INVALID_STATE`. The drivers
-currently affected are `Bq27220Driver` (via `I2CDevice::probeRead()`) and
-`Ina219Driver` (uses i2cdev directly).
-
-The root fix belongs upstream — see [Long-term i2cdev strategy](#long-term-i2cdev-strategy).
-Once i2cdev is LP-aware, `preInstallIfLp` is removed and every i2cdev-based
-driver (including INA219) works on LP_I2C without modification.
+This is fixed in our fork (`cornucopia-machines/i2cdev`,
+branch `fix/lp-i2c-clock-source`, upstream issue
+[esp-idf-lib/i2cdev#12](https://github.com/esp-idf-lib/i2cdev/issues/12)).
+The fork is pinned as a git submodule at `components/esp-idf-lib__i2cdev/`,
+which shadows the registry version for all consumers. With the fix in place,
+i2cdev installs LP_I2C correctly on first use — `preInstallIfLp` has been
+removed from `I2CManager`, and every i2cdev-based driver (including INA219)
+works on LP_I2C without modification.
 
 ### What does _not_ change
 
@@ -336,11 +329,8 @@ driver (including INA219) works on LP_I2C without modification.
       (LP_I2C_NUM_0 for `(GPIO_NUM_6, GPIO_NUM_7)`, I2C_NUM_0 otherwise).
 - [x] Per-port clock-source selection (`lp_source_clk` for LP_I2C,
       `clk_source` for HP) on bus install.
-- [x] Pre-install the LP_I2C bus in `I2CManager` before any `i2cdev`
-      consumer touches the port.
-- [ ] Switch i2cdev dependency to the fork with LP-awareness fix; remove
-      `preInstallIfLp` from `I2CManager`. Until this lands, `Bq27220Driver`
-      probeRead and `Ina219Driver` cannot run on LP_I2C. See
+- [x] Switch i2cdev to fork with LP_I2C fix (`components/esp-idf-lib__i2cdev`
+      submodule); remove `preInstallIfLp` from `I2CManager`. See
       [Long-term i2cdev strategy](#long-term-i2cdev-strategy).
 - [ ] New `UglyDucklingMk11.hpp` device definition (mirrors MK10 with
       GPIO6/7 swapped to the internal bus).
@@ -392,18 +382,19 @@ requiring a dummy device. Useful for ensuring LP_I2C (or any bus) is installed
 at a well-defined point in startup rather than lazily on first transaction. Can
 be filed together with or as a follow-on to issue 2.
 
-### Interim approach
+### Current state
 
-Fork `esp-idf-lib/i2cdev`, apply fix 1, and point the project at the fork via
-a git reference in `idf_component.yml` while the upstream PR is in review. This
-unblocks MK11+ bring-up without waiting for a merge.
+Fix 1 is applied in our fork and the project uses it via the
+`components/esp-idf-lib__i2cdev` submodule (see `components/kernel/idf_component.yml`
+for rollback instructions). The ESP-IDF component manager cannot override a
+transitive registry dependency with a git source when both satisfy the semver
+constraint ([idf-component-manager#99](https://github.com/espressif/idf-component-manager/issues/99)),
+so a submodule in `components/` is the supported workaround until the upstream
+issue is resolved.
 
-### Effect on our codebase once fix 1 is active
-
-- `preInstallIfLp` removed from `I2CManager`.
-- No `I2CDevice` LP bypass needed — i2cdev installs LP_I2C correctly on first use.
-- `Ina219Driver` LP limitation removed — works on LP_I2C like any other i2cdev driver.
-- `i2cdev_init` / `i2cdev_done` calls in `I2CManager` unchanged.
+Once `esp-idf-lib/i2cdev` releases a version with the fix:
+- Remove the submodule (`git submodule deinit components/esp-idf-lib__i2cdev && git rm components/esp-idf-lib__i2cdev`)
+- Update the semver pin in `components/kernel/idf_component.yml` to the released version
 
 ### Option B: Migrate off i2cdev entirely
 
