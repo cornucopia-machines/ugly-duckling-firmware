@@ -194,10 +194,10 @@ private:
     Mutex mutex;
     std::vector<std::shared_ptr<I2CBus>> buses;
 
-    // On ESP32-C6: LP_I2C_NUM_0 is pin-locked to GPIO6/GPIO7; the single HP bus is I2C_NUM_0.
+    // On chips with LP_I2C (ESP32-C6): LP_I2C_NUM_0 is pin-locked to GPIO6/GPIO7; the single HP bus is I2C_NUM_0.
     // On other platforms (ESP32-S3): all buses are HP, assigned in registration order.
     i2c_port_t selectPort(const InternalPinPtr& sda, const InternalPinPtr& scl) {
-#if CONFIG_IDF_TARGET_ESP32C6
+#if SOC_LP_I2C_SUPPORTED
         if (sda->getGpio() == GPIO_NUM_6 && scl->getGpio() == GPIO_NUM_7) {
             return LP_I2C_NUM_0;
         }
