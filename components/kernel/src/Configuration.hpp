@@ -140,7 +140,7 @@ public:
     }
 
     void load(const JsonObject& json) override {
-        if (json[name].is<JsonObject>()) {
+        if (json[name].template is<JsonObject>()) {
             namePresentAtLoad = true;
             delegate->load(json[name]);
         } else {
@@ -150,7 +150,7 @@ public:
 
     void store(JsonObject& json) const override {
         if (hasValue()) {
-            auto section = json[name].to<JsonObject>();
+            auto section = json[name].template to<JsonObject>();
             delegate->store(section);
         }
     }
@@ -201,8 +201,8 @@ public:
     }
 
     void load(const JsonObject& json) override {
-        if (json[name].is<T>()) {
-            value = json[name].as<T>();
+        if (json[name].template is<T>()) {
+            value = json[name].template as<T>();
             configured = true;
         } else {
             reset();
@@ -251,10 +251,10 @@ public:
 
     void load(const JsonObject& json) override {
         reset();
-        if (json[name].is<JsonArray>()) {
-            auto jsonArray = json[name].as<JsonArray>();
+        if (json[name].template is<JsonArray>()) {
+            auto jsonArray = json[name].template as<JsonArray>();
             for (auto jsonEntry : jsonArray) {
-                const T& entry = jsonEntry.as<T>();
+                const T& entry = jsonEntry.template as<T>();
                 entries.push_back(entry);
             }
         }
@@ -269,7 +269,7 @@ public:
     }
 
     void store(JsonObject& json) const override {
-        auto jsonArray = json[name].to<JsonArray>();
+        auto jsonArray = json[name].template to<JsonArray>();
         for (auto& entry : entries) {
             jsonArray.add(entry);
         }
