@@ -21,6 +21,14 @@
         "sda": "SDA",
         "scl": "SCL"
       }
+    },
+    {
+      "name": "soil",
+      "type": "soil:spadefoot-toad-bb",
+      "params": {
+        "sda": "EXT_SDA",
+        "scl": "EXT_SCL"
+      }
     }
   ],
   "functions": [
@@ -29,7 +37,8 @@
       "type": "plot-controller",
       "params": {
         "flowMeter": "flow-meter",
-        "valve": "valve"
+        "valve": "valve",
+        "soilMoistureSensor": "soil"
       }
     }
   ]
