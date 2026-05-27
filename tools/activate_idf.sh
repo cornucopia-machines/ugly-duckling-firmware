@@ -20,3 +20,13 @@ case "$1" in
   '')      ;;
   *)       echo "activate_idf.sh: unknown platform '$1' (use 'carrot' or 'spinach')" ;;
 esac
+
+# Ensure idf.py and the IDF Python environment are on PATH.
+# The eim-based activation above may not update PATH in non-interactive shells
+# (e.g. `bash -c '...'` subshells used by Claude Code).
+export IDF_PATH="${HOME}/.espressif/v${VERSION}/esp-idf"
+export IDF_PYTHON_ENV_PATH="${HOME}/.espressif/tools/python/v${VERSION}/venv"
+case ":${PATH}:" in
+    *":${IDF_PATH}/tools:"*) ;;
+    *) export PATH="${IDF_PATH}/tools:${PATH}" ;;
+esac

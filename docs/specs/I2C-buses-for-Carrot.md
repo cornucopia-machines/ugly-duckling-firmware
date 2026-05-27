@@ -338,11 +338,11 @@ it is a one-driver problem, not a tree-wide one.
 
 ### Implementation checklist
 
-- [ ] Pin-aware port assignment in `I2CManager::getBusFor` for ESP32-C6
-      (LP_I2C_NUM_0 for `(GPIO_NUM_6, GPIO_NUM_7)`, HP otherwise).
-- [ ] Per-port clock-source selection (`lp_source_clk` for LP_I2C,
+- [x] Pin-aware port assignment in `I2CManager::getBusFor` for ESP32-C6
+      (LP_I2C_NUM_0 for `(GPIO_NUM_6, GPIO_NUM_7)`, I2C_NUM_0 otherwise).
+- [x] Per-port clock-source selection (`lp_source_clk` for LP_I2C,
       `clk_source` for HP) on bus install.
-- [ ] Pre-install the LP_I2C bus in `I2CManager` before any `i2cdev`
+- [x] Pre-install the LP_I2C bus in `I2CManager` before any `i2cdev`
       consumer touches the port.
 - [ ] Accommodate `Ina219Driver` so it reuses the existing bus handle
       instead of going through `i2cdev`'s install path (or accept a

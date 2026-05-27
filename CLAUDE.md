@@ -38,6 +38,14 @@ Before building, activate the ESP-IDF environment:
 . tools/activate_idf.sh spinach   # ESP32-S3 (MK9)
 ```
 
+After sourcing, `idf.py` is on `PATH`. To build and check the result:
+
+```sh
+. tools/activate_idf.sh carrot && idf.py build 2>&1 | tail -5
+```
+
+A successful build ends with `Project build complete.` An error prints the compiler diagnostics before the build aborts. **Do not pipe `idf.py build` through `grep` to check success** — grep's exit code replaces idf.py's, making a clean build look like a failure when grep finds no matches.
+
 The platform argument sets `IDF_TARGET`. When switching platforms, also run `idf.py set-target <target>` to regenerate the sdkconfig — the build will error if it was generated for a different target.
 
 `tools/activate_idf.sh` reads the IDF version from `main/idf_component.yml`. When upgrading IDF, update the version there (and in `components/kernel/idf_component.yml` and `.github/workflows/build.yml`); the script picks it up automatically.
