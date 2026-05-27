@@ -13,6 +13,8 @@
 
 # ESP-IDF generated files
 build/
+# Alternative build directories for platforms and for tests
+build-*/
 
 sdkconfig*
 !sdkconfig*.defaults
@@ -28,12 +30,6 @@ warnings.txt
 # Python cache files
 __pycache__/
 .pytest_cache/
-
-# Native build for tests
-build-native/
-
-# Build directory for tests
-build-test/
 
 # GitHub site publishing
 /work/
