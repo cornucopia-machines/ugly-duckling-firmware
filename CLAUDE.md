@@ -31,12 +31,24 @@ See [README.md](README.md) for build, flash, and development commands.
 
 ## Build Environment Setup
 
-Before building, activate the ESP-IDF environment and set the target:
+Before building, activate the ESP-IDF environment:
 
 ```sh
-. '/Users/lptr/.espressif/tools/activate_idf_v6.0.sh'
-export IDF_TARGET=esp32s3  # or esp32c6, etc.
+. tools/activate_idf.sh carrot    # ESP32-C6 (MK10+)
+. tools/activate_idf.sh spinach   # ESP32-S3 (MK9)
 ```
+
+After sourcing, `idf.py` is on `PATH`. To build and check the result:
+
+```sh
+. tools/activate_idf.sh carrot && idf.py build 2>&1 | tail -5
+```
+
+A successful build ends with `Project build complete.` An error prints the compiler diagnostics before the build aborts. **Do not pipe `idf.py build` through `grep` to check success** — grep's exit code replaces idf.py's, making a clean build look like a failure when grep finds no matches.
+
+The platform argument sets `IDF_TARGET`. When switching platforms, also run `idf.py set-target <target>` to regenerate the sdkconfig — the build will error if it was generated for a different target.
+
+`tools/activate_idf.sh` reads the IDF version from `main/idf_component.yml`. When upgrading IDF, update the version there (and in `components/kernel/idf_component.yml` and `.github/workflows/build.yml`); the script picks it up automatically.
 
 ## Coding Style
 
@@ -46,6 +58,7 @@ Quick reference:
 
 - LF endings, 4-space indent (2 for JSON/YAML/Markdown). WebKit `.clang-format`, warnings-as-errors via `.clang-tidy`.
 - Types: `PascalCase` — functions/methods: `camelCase` — macros/constants: `UPPER_SNAKE`.
+- Only remove existing comments if they became obsolete, outdated, or meaningless in the context of the new code. Preserve comments that explain intent, constraints, or non-obvious behavior.
 
 ## Wokwi Simulation
 

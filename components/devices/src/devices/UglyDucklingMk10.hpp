@@ -11,6 +11,7 @@
 
 #include <peripherals/Peripheral.hpp>
 #include <peripherals/door/Door.hpp>
+#include <peripherals/environment/SpadefootToadSensor.hpp>
 #include <peripherals/valve/ValveFactory.hpp>
 
 #include <devices/DeviceDefinition.hpp>
@@ -18,6 +19,7 @@
 using namespace cornucopia::ugly_duckling::kernel;
 using namespace cornucopia::ugly_duckling::kernel::drivers;
 using namespace cornucopia::ugly_duckling::peripherals::door;
+using namespace cornucopia::ugly_duckling::peripherals::environment;
 using namespace cornucopia::ugly_duckling::peripherals::valve;
 
 namespace cornucopia::ugly_duckling::devices {
@@ -57,6 +59,14 @@ protected:
 
         peripheralManager->registerFactory(valve::makeFactory(motors, ValveControlStrategyType::Latching));
         peripheralManager->registerFactory(door::makeFactory(motors));
+
+        // MK10 has one hardware I2C peripheral (HP_I2C0) on the internal bus (GPIO2/3).
+        // The external connector (GPIO10/11) has no remaining hardware I2C port, so the
+        // Spadefoot Toad is driven by bitbang software I2C. MK11+ re-routes the internal
+        // bus to LP_I2C0 (GPIO6/7), freeing HP_I2C0 for the external bus — no bitbang needed there.
+        // If a future MK10 firmware needs a second non-Spadefoot external I2C device,
+        // revisit whether a general-purpose bitbang transport is warranted; do not copy this class.
+        peripheralManager->registerFactory(environment::makeFactoryForSpadefootToadSensorWithBitbangI2C());
 
         ina219 = std::make_shared<Ina219Driver>(
             services.i2c,
