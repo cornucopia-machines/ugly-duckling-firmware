@@ -286,17 +286,17 @@ results in RTC slow memory — far more work than the gain.
 
 ### Code changes for MK11+
 
-Two narrow changes in `components/kernel/src/I2CManager.hpp`:
+One change in `components/kernel/src/I2CManager.hpp`, plus an i2cdev fix:
 
-1. **Pin-aware port allocation.** `getBusFor(sda, scl)` currently assigns
-   ports in registration order. On ESP32-C6, allocate `LP_I2C_NUM_0` when
-   the requested pair is `(GPIO_NUM_6, GPIO_NUM_7)`; otherwise pick the
-   next free HP port (just `I2C_NUM_0`, since C6 has only one HP I²C). On
-   ESP32-S3, behavior is unchanged.
+1. **Pin-aware port allocation.** `getBusFor(sda, scl)` allocates
+   `LP_I2C_NUM_0` when the requested pair is `(GPIO_NUM_6, GPIO_NUM_7)` on
+   chips with `SOC_LP_I2C_SUPPORTED`; otherwise picks the next free HP port
+   (`I2C_NUM_0` on ESP32-C6, registration order on ESP32-S3). Implemented.
 
-2. **Per-port clock-source.** When installing the bus, use
-   `lp_source_clk = LP_I2C_SCLK_DEFAULT` for the LP port and
-   `clk_source = I2C_CLK_SRC_DEFAULT` for HP ports.
+2. **Per-port clock-source.** i2cdev handles this: the patched fork detects
+   `LP_I2C_NUM_0` and sets `LP_I2C_SCLK_DEFAULT` instead of
+   `I2C_CLK_SRC_DEFAULT`. No change needed in `I2CManager`. Implemented via
+   the `components/esp-idf-lib__i2cdev` submodule.
 
 ### i2cdev LP_I2C fix
 
@@ -325,13 +325,12 @@ works on LP_I2C without modification.
 
 ### Implementation checklist
 
-- [x] Pin-aware port assignment in `I2CManager::getBusFor` for ESP32-C6
-      (LP_I2C_NUM_0 for `(GPIO_NUM_6, GPIO_NUM_7)`, I2C_NUM_0 otherwise).
-- [x] Per-port clock-source selection (`lp_source_clk` for LP_I2C,
-      `clk_source` for HP) on bus install.
-- [x] Switch i2cdev to fork with LP_I2C fix (`components/esp-idf-lib__i2cdev`
-      submodule); remove `preInstallIfLp` from `I2CManager`. See
-      [Long-term i2cdev strategy](#long-term-i2cdev-strategy).
+- [x] Pin-aware port assignment in `I2CManager::selectPort` — `LP_I2C_NUM_0`
+      for `(GPIO_NUM_6, GPIO_NUM_7)` on `SOC_LP_I2C_SUPPORTED` chips,
+      `I2C_NUM_0` otherwise.
+- [x] Per-port clock-source selection — handled by the patched i2cdev fork
+      (`components/esp-idf-lib__i2cdev` submodule); `preInstallIfLp` removed.
+      See [Long-term i2cdev strategy](#long-term-i2cdev-strategy).
 - [ ] New `UglyDucklingMk11.hpp` device definition (mirrors MK10 with
       GPIO6/7 swapped to the internal bus).
 - [ ] Hardware bring-up on MK11+: BQ27220 and INA219 over LP_I2C0,
@@ -339,12 +338,14 @@ works on LP_I2C without modification.
 
 ## Long-term i2cdev strategy
 
-`preInstallIfLp` and the remaining LP_I2C limitations both stem from the same
-root cause: `esp-idf-lib/i2cdev` hardcodes `.clk_source = I2C_CLK_SRC_DEFAULT`
-in `i2c_new_master_bus`, but for `LP_I2C_NUM_0` the correct value is
-`LP_I2C_SCLK_DEFAULT`. (`clk_source` and `lp_source_clk` are union members in
-`i2c_master_bus_config_t` — both field names work, the value is what matters.)
-This is a bug — any project using i2cdev with `LP_I2C_NUM_0` silently fails.
+The LP_I2C limitation in `esp-idf-lib/i2cdev` stems from a hardcoded
+`.clk_source = I2C_CLK_SRC_DEFAULT` in `i2c_new_master_bus`. For
+`LP_I2C_NUM_0` the correct value is `LP_I2C_SCLK_DEFAULT` (`clk_source` and
+`lp_source_clk` are union members in `i2c_master_bus_config_t` — both field
+names work, the value is what matters). This is a bug — any project using
+i2cdev with `LP_I2C_NUM_0` silently fails. The fix is applied in our fork and
+PR [esp-idf-lib/i2cdev#13](https://github.com/esp-idf-lib/i2cdev/pull/13) is
+open upstream.
 
 ### Fix plan
 
