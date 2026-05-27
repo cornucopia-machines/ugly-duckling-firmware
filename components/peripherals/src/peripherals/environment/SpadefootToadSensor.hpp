@@ -346,7 +346,7 @@ public:
         bbScl->digitalWrite(1);
 
         char addrBuf[5];
-        snprintf(addrBuf, sizeof(addrBuf), "%02X", address);
+        (void) snprintf(addrBuf, sizeof(addrBuf), "%02X", address);
         initializeProtocol("bitbang I2C SDA:" + sda->getName() + " SCL:" + scl->getName() + " addr:0x" + addrBuf);
     }
 
@@ -426,7 +426,7 @@ private:
     IRAM_ATTR bool sclRelease() {
         bbScl->digitalWriteFromISR(1);
         for (int i = 0; i < STRETCH_TIMEOUT_US; i++) {
-            if (bbScl->digitalReadFromISR() != 0) return true;
+            if (bbScl->digitalReadFromISR() != 0) { return true; }
             esp_rom_delay_us(1);
         }
         return false;    // slave held SCL low for > 10 ms
@@ -512,7 +512,7 @@ private:
             }
             esp_rom_delay_us(HALF_BIT_US);
             if (bbSda->digitalReadFromISR() != 0) {
-                byte |= (1u << i);
+                byte |= (1U << i);
             }
             bbScl->digitalWriteFromISR(0);
         }
