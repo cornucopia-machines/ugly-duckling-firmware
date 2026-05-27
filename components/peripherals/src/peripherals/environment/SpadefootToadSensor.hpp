@@ -34,6 +34,8 @@
 #include <I2CManager.hpp>
 #include <Task.hpp>
 
+#include "BitbangI2C.hpp"
+
 #include <peripherals/I2CSettings.hpp>
 #include <peripherals/Peripheral.hpp>
 #include <peripherals/api/ISoilMoistureSensor.hpp>
@@ -319,6 +321,9 @@ private:
 // Clock: 100 kHz fixed (5 µs half-bit, matching ATtiny TWI Address Match wakeup).
 // Clock stretching: poll SCL after release; abort after 10 ms.
 // Critical sections: per byte (8 bits + ACK/NACK = ≤90 µs at 100 kHz).
+//
+// EspBitbangPin and EspBitbangI2CBus (the ESP-IDF adapters) live in
+// BitbangI2C.hpp so the state machine and its adapters stay together.
 // ---------------------------------------------------------------------------
 
 class SpadefootToadSensorWithBitbangI2C final : public SpadefootToadSensorBase {
@@ -330,8 +335,9 @@ public:
         uint8_t address,
         bool logRawValues)
         : SpadefootToadSensorBase(name, logRawValues)
-        , bbSda(sda)
-        , bbScl(scl)
+        , sdaPin(sda)
+        , sclPin(scl)
+        , bus(sdaPin, sclPin)
         , bbAddress(address) {
         gpio_config_t conf = {
             .pin_bit_mask = (1ULL << sda->getGpio()) | (1ULL << scl->getGpio()),
@@ -342,8 +348,8 @@ public:
         };
         ESP_ERROR_THROW(gpio_config(&conf));
         // Release both lines — bus idle state.
-        bbSda->digitalWrite(1);
-        bbScl->digitalWrite(1);
+        sda->digitalWrite(1);
+        scl->digitalWrite(1);
 
         char addrBuf[5];
         (void) snprintf(addrBuf, sizeof(addrBuf), "%02X", address);
@@ -353,184 +359,71 @@ public:
 protected:
     void transportWriteByte(uint8_t cmd) override {
         Lock lock(bbMutex);
-        start();
-        if (!writeByteGetAck((bbAddress << 1) | 0x00)) {
-            stop();
+        bus.start();
+        if (!bus.writeByteGetAck(static_cast<uint8_t>((bbAddress << 1) | 0x00))) {
+            bus.stop();
             throw std::runtime_error("Spadefoot Toad bitbang: NACK on address (write)");
         }
-        if (!writeByteGetAck(cmd)) {
-            stop();
+        if (!bus.writeByteGetAck(cmd)) {
+            bus.stop();
             throw std::runtime_error("Spadefoot Toad bitbang: NACK on command byte");
         }
-        stop();
+        bus.stop();
     }
 
     uint16_t transportReadWord(uint8_t cmd) override {
         Lock lock(bbMutex);
-        start();
-        if (!writeByteGetAck((bbAddress << 1) | 0x00)) {
-            stop();
+        bus.start();
+        if (!bus.writeByteGetAck(static_cast<uint8_t>((bbAddress << 1) | 0x00))) {
+            bus.stop();
             throw std::runtime_error("Spadefoot Toad bitbang: NACK on address (write)");
         }
-        if (!writeByteGetAck(cmd)) {
-            stop();
+        if (!bus.writeByteGetAck(cmd)) {
+            bus.stop();
             throw std::runtime_error("Spadefoot Toad bitbang: NACK on command byte");
         }
-        repeatedStart();
-        if (!writeByteGetAck((bbAddress << 1) | 0x01)) {
-            stop();
+        bus.repeatedStart();
+        if (!bus.writeByteGetAck(static_cast<uint8_t>((bbAddress << 1) | 0x01))) {
+            bus.stop();
             throw std::runtime_error("Spadefoot Toad bitbang: NACK on address (read)");
         }
-        uint8_t hi = readByteAndAck(false);    // ACK — more bytes coming
-        uint8_t lo = readByteAndAck(true);     // NACK — last byte
-        stop();
+        uint8_t hi = bus.readByteAndAck(false);    // ACK — more bytes coming
+        uint8_t lo = bus.readByteAndAck(true);     // NACK — last byte
+        bus.stop();
         return (static_cast<uint16_t>(hi) << 8) | lo;
     }
 
     std::vector<uint8_t> transportReadBytes(uint8_t cmd, size_t n) override {
         Lock lock(bbMutex);
-        start();
-        if (!writeByteGetAck((bbAddress << 1) | 0x00)) {
-            stop();
+        bus.start();
+        if (!bus.writeByteGetAck(static_cast<uint8_t>((bbAddress << 1) | 0x00))) {
+            bus.stop();
             throw std::runtime_error("Spadefoot Toad bitbang: NACK on address (write)");
         }
-        if (!writeByteGetAck(cmd)) {
-            stop();
+        if (!bus.writeByteGetAck(cmd)) {
+            bus.stop();
             throw std::runtime_error("Spadefoot Toad bitbang: NACK on command byte");
         }
-        repeatedStart();
-        if (!writeByteGetAck((bbAddress << 1) | 0x01)) {
-            stop();
+        bus.repeatedStart();
+        if (!bus.writeByteGetAck(static_cast<uint8_t>((bbAddress << 1) | 0x01))) {
+            bus.stop();
             throw std::runtime_error("Spadefoot Toad bitbang: NACK on address (read)");
         }
         std::vector<uint8_t> buf(n);
         for (size_t i = 0; i < n; i++) {
-            buf[i] = readByteAndAck(i == n - 1);    // NACK on last byte
+            buf[i] = bus.readByteAndAck(i == n - 1);    // NACK on last byte
         }
-        stop();
+        bus.stop();
         return buf;
     }
 
 private:
-    static constexpr uint32_t HALF_BIT_US = 5;        // 100 kHz: 10 µs period
-    static constexpr int STRETCH_TIMEOUT_US = 10000;  // 10 ms clock-stretch limit
-
-    const InternalPinPtr bbSda;
-    const InternalPinPtr bbScl;
+    // Members are declared in initialization order: pins first, then bus (holds refs to pins).
+    EspBitbangPin sdaPin;
+    EspBitbangPin sclPin;
+    EspBitbangI2CBus bus;
     const uint8_t bbAddress;
     Mutex bbMutex;
-    portMUX_TYPE critMux = portMUX_INITIALIZER_UNLOCKED;
-
-    // Release SCL and wait for the slave to release it (clock stretching).
-    // Returns false on timeout.
-    IRAM_ATTR bool sclRelease() {
-        bbScl->digitalWriteFromISR(1);
-        for (int i = 0; i < STRETCH_TIMEOUT_US; i++) {
-            if (bbScl->digitalReadFromISR() != 0) { return true; }
-            esp_rom_delay_us(1);
-        }
-        return false;    // slave held SCL low for > 10 ms
-    }
-
-    // I2C START: SDA high → SDA low (while SCL high).
-    void start() {
-        bbSda->digitalWrite(1);
-        bbScl->digitalWrite(1);
-        esp_rom_delay_us(HALF_BIT_US);
-        bbSda->digitalWrite(0);
-        esp_rom_delay_us(HALF_BIT_US);
-        bbScl->digitalWrite(0);
-        esp_rom_delay_us(HALF_BIT_US);
-    }
-
-    // I2C REPEATED START: release SDA then SCL, then pull SDA low.
-    void repeatedStart() {
-        bbSda->digitalWrite(1);
-        esp_rom_delay_us(HALF_BIT_US);
-        bbScl->digitalWrite(1);
-        esp_rom_delay_us(HALF_BIT_US);
-        bbSda->digitalWrite(0);
-        esp_rom_delay_us(HALF_BIT_US);
-        bbScl->digitalWrite(0);
-        esp_rom_delay_us(HALF_BIT_US);
-    }
-
-    // I2C STOP: SCL high, then SDA low → SDA high.
-    void stop() {
-        bbSda->digitalWrite(0);
-        esp_rom_delay_us(HALF_BIT_US);
-        bbScl->digitalWrite(1);
-        esp_rom_delay_us(HALF_BIT_US);
-        bbSda->digitalWrite(1);
-        esp_rom_delay_us(HALF_BIT_US);
-    }
-
-    // Write one byte and read the ACK bit. Returns true if ACK (SDA low).
-    // Disables interrupts for the full 9-bit window (≤90 µs at 100 kHz).
-    IRAM_ATTR bool writeByteGetAck(uint8_t byte) {
-        bool ack;
-        portENTER_CRITICAL(&critMux);
-
-        for (int i = 7; i >= 0; i--) {
-            bbSda->digitalWriteFromISR((byte >> i) & 1);
-            esp_rom_delay_us(HALF_BIT_US);
-            if (!sclRelease()) {
-                portEXIT_CRITICAL(&critMux);
-                throw std::runtime_error("Spadefoot Toad bitbang: clock stretch timeout");
-            }
-            esp_rom_delay_us(HALF_BIT_US);
-            bbScl->digitalWriteFromISR(0);
-        }
-
-        // Release SDA for ACK
-        bbSda->digitalWriteFromISR(1);
-        esp_rom_delay_us(HALF_BIT_US);
-        if (!sclRelease()) {
-            portEXIT_CRITICAL(&critMux);
-            throw std::runtime_error("Spadefoot Toad bitbang: clock stretch timeout on ACK");
-        }
-        esp_rom_delay_us(HALF_BIT_US);
-        ack = (bbSda->digitalReadFromISR() == 0);    // ACK = SDA driven low by slave
-        bbScl->digitalWriteFromISR(0);
-
-        portEXIT_CRITICAL(&critMux);
-        return ack;
-    }
-
-    // Read one byte and send ACK (nack=false) or NACK (nack=true).
-    // Disables interrupts for the full 9-bit window (≤90 µs at 100 kHz).
-    IRAM_ATTR uint8_t readByteAndAck(bool nack) {
-        uint8_t byte = 0;
-        portENTER_CRITICAL(&critMux);
-
-        for (int i = 7; i >= 0; i--) {
-            bbSda->digitalWriteFromISR(1);    // Release SDA for slave to drive
-            esp_rom_delay_us(HALF_BIT_US);
-            if (!sclRelease()) {
-                portEXIT_CRITICAL(&critMux);
-                throw std::runtime_error("Spadefoot Toad bitbang: clock stretch timeout");
-            }
-            esp_rom_delay_us(HALF_BIT_US);
-            if (bbSda->digitalReadFromISR() != 0) {
-                byte |= (1U << i);
-            }
-            bbScl->digitalWriteFromISR(0);
-        }
-
-        // Send ACK or NACK
-        bbSda->digitalWriteFromISR(nack ? 1 : 0);
-        esp_rom_delay_us(HALF_BIT_US);
-        if (!sclRelease()) {
-            portEXIT_CRITICAL(&critMux);
-            throw std::runtime_error("Spadefoot Toad bitbang: clock stretch timeout on ACK/NACK");
-        }
-        esp_rom_delay_us(HALF_BIT_US);
-        bbScl->digitalWriteFromISR(0);
-        bbSda->digitalWriteFromISR(1);    // Release SDA
-
-        portEXIT_CRITICAL(&critMux);
-        return byte;
-    }
 };
 
 // ---------------------------------------------------------------------------

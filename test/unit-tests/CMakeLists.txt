@@ -38,6 +38,7 @@ include_directories(
     ${COMPONENTS_DIR}/kernel/test
     ${COMPONENTS_DIR}/utils/src
     ${COMPONENTS_DIR}/peripherals-api/src
+    ${COMPONENTS_DIR}/peripherals/src
     ${COMPONENTS_DIR}/scheduling/src
     ${COMPONENTS_DIR}/scheduling/test
     ${COMPONENTS_DIR}/utils/src
@@ -47,6 +48,7 @@ include_directories(
 # Collect all test source files
 file(GLOB_RECURSE TEST_SOURCES
     ${COMPONENTS_DIR}/kernel/test/*.cpp
+    ${COMPONENTS_DIR}/peripherals/test/*.cpp
     ${COMPONENTS_DIR}/scheduling/test/*.cpp
 )
 
