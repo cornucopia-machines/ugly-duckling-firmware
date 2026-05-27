@@ -301,9 +301,9 @@ Two narrow changes in `components/kernel/src/I2CManager.hpp`:
 ### i2cdev LP_I2C limitation and workaround
 
 `i2cdev.c` hardcodes `.clk_source = I2C_CLK_SRC_DEFAULT` when calling
-`i2c_new_master_bus`. For `LP_I2C_NUM_0` this is the wrong field — LP_I2C
-requires `.lp_source_clk` — so i2cdev fails with `ESP_ERR_NOT_SUPPORTED` when
-asked to install the LP bus on its own.
+`i2c_new_master_bus`. For `LP_I2C_NUM_0` this is the wrong value — LP_I2C
+requires `LP_I2C_SCLK_DEFAULT` — so i2cdev fails with `ESP_ERR_NOT_SUPPORTED`
+when asked to install the LP bus on its own.
 
 `I2CManager::preInstallIfLp` side-steps this by calling `i2c_new_master_bus`
 directly with `lp_source_clk = LP_I2C_SCLK_DEFAULT` the first time `getBusFor`
@@ -351,20 +351,22 @@ driver (including INA219) works on LP_I2C without modification.
 
 `preInstallIfLp` and the remaining LP_I2C limitations both stem from the same
 root cause: `esp-idf-lib/i2cdev` hardcodes `.clk_source = I2C_CLK_SRC_DEFAULT`
-in `i2c_new_master_bus`, but `LP_I2C_NUM_0` requires `.lp_source_clk` instead.
+in `i2c_new_master_bus`, but for `LP_I2C_NUM_0` the correct value is
+`LP_I2C_SCLK_DEFAULT`. (`clk_source` and `lp_source_clk` are union members in
+`i2c_master_bus_config_t` — both field names work, the value is what matters.)
 This is a bug — any project using i2cdev with `LP_I2C_NUM_0` silently fails.
 
 ### Fix plan
 
 Three issues/PRs against `https://github.com/esp-idf-lib/i2cdev`:
 
-**1. LP_I2C support (bug fix — file as PR)**
+**1. LP_I2C support (bug fix — [esp-idf-lib/i2cdev#12](https://github.com/esp-idf-lib/i2cdev/issues/12))**
 
-In `i2c_setup_port`, detect `LP_I2C_NUM_0` and build the bus config with
-`.lp_source_clk = LP_I2C_SCLK_DEFAULT` instead of
-`.clk_source = I2C_CLK_SRC_DEFAULT`. Guard with `#ifdef LP_I2C_NUM_0` so the
-change is a no-op on chips without LP_I2C. The `clk_flags` field already in
-`i2c_dev_t` is currently dead code and could be wired through here.
+In `i2c_setup_port`, detect `LP_I2C_NUM_0` and use `.clk_source =
+LP_I2C_SCLK_DEFAULT` instead of `.clk_source = I2C_CLK_SRC_DEFAULT`. Guard
+with `#if SOC_LP_I2C_SUPPORTED` so the change is a no-op on chips without
+LP_I2C. The `clk_flags` field already in `i2c_dev_t` is currently dead code
+and could be wired through here.
 
 This is a ~15-line change. Once active in our fork and the dependency updated,
 `preInstallIfLp` is removed from `I2CManager`, and every i2cdev-based driver —
