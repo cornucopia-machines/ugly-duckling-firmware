@@ -11,7 +11,7 @@
 # When upgrading IDF, update the version in main/idf_component.yml (and
 # components/kernel/idf_component.yml and .github/workflows/build.yml);
 # this script will pick it up automatically.
-VERSION=$(grep 'version:' main/idf_component.yml | tr -d ' "' | cut -d: -f2)
+VERSION=$(grep -m 1 'version:' main/idf_component.yml | tr -d ' "' | cut -d: -f2)
 . "$HOME/.espressif/tools/activate_idf_v${VERSION}.sh"
 
 case "$1" in

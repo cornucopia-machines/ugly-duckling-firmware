@@ -286,46 +286,33 @@ results in RTC slow memory — far more work than the gain.
 
 ### Code changes for MK11+
 
-Two narrow changes in `components/kernel/src/I2CManager.hpp`:
+One change in `components/kernel/src/I2CManager.hpp`, plus an i2cdev fix:
 
-1. **Pin-aware port allocation.** `getBusFor(sda, scl)` currently assigns
-   ports in registration order. On ESP32-C6, allocate `LP_I2C_NUM_0` when
-   the requested pair is `(GPIO_NUM_6, GPIO_NUM_7)`; otherwise pick the
-   next free HP port (just `I2C_NUM_0`, since C6 has only one HP I²C). On
-   ESP32-S3, behavior is unchanged.
+1. **Pin-aware port allocation.** `getBusFor(sda, scl)` allocates
+   `LP_I2C_NUM_0` when the requested pair is `(GPIO_NUM_6, GPIO_NUM_7)` on
+   chips with `SOC_LP_I2C_SUPPORTED`; otherwise picks the next free HP port
+   (`I2C_NUM_0` on ESP32-C6, registration order on ESP32-S3). Implemented.
 
-2. **Per-port clock-source.** When installing the bus, use
-   `lp_source_clk = LP_I2C_SCLK_DEFAULT` for the LP port and
-   `clk_source = I2C_CLK_SRC_DEFAULT` for HP ports.
+2. **Per-port clock-source.** i2cdev handles this: the patched fork detects
+   `LP_I2C_NUM_0` and sets `LP_I2C_SCLK_DEFAULT` instead of
+   `I2C_CLK_SRC_DEFAULT`. No change needed in `I2CManager`. Implemented via
+   the `components/esp-idf-lib__i2cdev` submodule.
 
-### Working around `i2cdev`'s clock-source assumption
+### i2cdev LP_I2C fix
 
-`managed_components/esp-idf-lib__i2cdev/i2cdev.c:426` hard-codes
-`clk_source = I2C_CLK_SRC_DEFAULT` on its `i2c_new_master_bus` call. The IDF
-test above proves that returns `ESP_ERR_NOT_SUPPORTED` for LP_I2C, so we
-cannot let `i2cdev` be the first thing to install the LP_I2C bus.
+`i2cdev.c` hardcoded `.clk_source = I2C_CLK_SRC_DEFAULT` when calling
+`i2c_new_master_bus`. For `LP_I2C_NUM_0` this is the wrong value — LP_I2C
+requires `LP_I2C_SCLK_DEFAULT` — so i2cdev failed with `ESP_ERR_NOT_SUPPORTED`
+when asked to install the LP bus.
 
-We already use the inverse handle-reuse pattern today in `Bq27220Driver`
-(see the comment at `components/kernel/src/drivers/Bq27220Driver.hpp:81–86`):
-`espressif/i2c_bus` — which BQ27220 sits on — calls
-`i2c_master_get_bus_handle()` first and only calls `i2c_new_master_bus()` if
-no bus exists. For MK11+ we apply the same pattern, just flipped:
-
-- `I2CManager` installs the LP_I2C bus itself with the correct
-  `lp_source_clk` **before** any `i2cdev`-using driver touches the port.
-- `espressif/bq27220` finds the existing handle via
-  `i2c_master_get_bus_handle()` and reuses it — the BQ27220 path "just
-  works."
-
-There is one wrinkle: `esp-idf-lib/i2cdev` does _not_ do a handle-reuse
-lookup before its `i2c_new_master_bus` call. If an `i2cdev`-based driver
-later targets the pre-installed LP_I2C port, the second install fails and
-`i2cdev` marks the port unusable. `Ina219Driver` is the only such driver on
-the internal bus today. The narrowest fix is to give `Ina219Driver` the same
-"reuse if present" treatment BQ27220 already gets — either by accepting a
-preinstalled `i2c_master_bus_handle_t` directly, or by routing it through
-our `I2CDevice` abstraction. The decision can wait until MK11+ bring-up;
-it is a one-driver problem, not a tree-wide one.
+This is fixed in our fork (`cornucopia-machines/i2cdev`,
+branch `fix/lp-i2c-clock-source`, upstream issue
+[esp-idf-lib/i2cdev#12](https://github.com/esp-idf-lib/i2cdev/issues/12)).
+The fork is pinned as a git submodule at `components/esp-idf-lib__i2cdev/`,
+which shadows the registry version for all consumers. With the fix in place,
+i2cdev installs LP_I2C correctly on first use — `preInstallIfLp` has been
+removed from `I2CManager`, and every i2cdev-based driver (including INA219)
+works on LP_I2C without modification.
 
 ### What does _not_ change
 
@@ -338,19 +325,107 @@ it is a one-driver problem, not a tree-wide one.
 
 ### Implementation checklist
 
-- [x] Pin-aware port assignment in `I2CManager::getBusFor` for ESP32-C6
-      (LP_I2C_NUM_0 for `(GPIO_NUM_6, GPIO_NUM_7)`, I2C_NUM_0 otherwise).
-- [x] Per-port clock-source selection (`lp_source_clk` for LP_I2C,
-      `clk_source` for HP) on bus install.
-- [x] Pre-install the LP_I2C bus in `I2CManager` before any `i2cdev`
-      consumer touches the port.
-- [ ] Accommodate `Ina219Driver` so it reuses the existing bus handle
-      instead of going through `i2cdev`'s install path (or accept a
-      preinstalled handle).
+- [x] Pin-aware port assignment in `I2CManager::selectPort` — `LP_I2C_NUM_0`
+      for `(GPIO_NUM_6, GPIO_NUM_7)` on `SOC_LP_I2C_SUPPORTED` chips,
+      `I2C_NUM_0` otherwise.
+- [x] Per-port clock-source selection — handled by the patched i2cdev fork
+      (`components/esp-idf-lib__i2cdev` submodule); `preInstallIfLp` removed.
+      See [Long-term i2cdev strategy](#long-term-i2cdev-strategy).
 - [ ] New `UglyDucklingMk11.hpp` device definition (mirrors MK10 with
       GPIO6/7 swapped to the internal bus).
 - [ ] Hardware bring-up on MK11+: BQ27220 and INA219 over LP_I2C0,
       pluggable peripherals over HP_I2C0.
+
+## Long-term i2cdev strategy
+
+The LP_I2C limitation in `esp-idf-lib/i2cdev` stems from a hardcoded
+`.clk_source = I2C_CLK_SRC_DEFAULT` in `i2c_new_master_bus`. For
+`LP_I2C_NUM_0` the correct value is `LP_I2C_SCLK_DEFAULT` (`clk_source` and
+`lp_source_clk` are union members in `i2c_master_bus_config_t` — both field
+names work, the value is what matters). This is a bug — any project using
+i2cdev with `LP_I2C_NUM_0` silently fails. The fix is applied in our fork and
+PR [esp-idf-lib/i2cdev#13](https://github.com/esp-idf-lib/i2cdev/pull/13) is
+open upstream.
+
+### Fix plan
+
+Three issues/PRs against `https://github.com/esp-idf-lib/i2cdev`:
+
+**1. LP_I2C support (bug fix — [esp-idf-lib/i2cdev#12](https://github.com/esp-idf-lib/i2cdev/issues/12))**
+
+In `i2c_setup_port`, detect `LP_I2C_NUM_0` and use `.clk_source =
+LP_I2C_SCLK_DEFAULT` instead of `.clk_source = I2C_CLK_SRC_DEFAULT`. Guard
+with `#if SOC_LP_I2C_SUPPORTED` so the change is a no-op on chips without
+LP_I2C. The `clk_flags` field already in `i2c_dev_t` is currently dead code
+and could be wired through here.
+
+This is a ~15-line change. Once active in our fork and the dependency updated,
+`preInstallIfLp` is removed from `I2CManager`, and every i2cdev-based driver —
+including `Ina219Driver` — works on LP_I2C without modification.
+
+**2. Externally pre-installed bus handle adoption (enhancement — file as issue)**
+
+i2cdev should call `i2c_master_get_bus_handle` before `i2c_new_master_bus` and
+silently adopt an existing handle rather than failing with
+`ESP_ERR_INVALID_STATE`. This is the same pattern `espressif/i2c_bus` already
+implements. It makes i2cdev robust when other components (e.g. `esp_lcd`) or
+application code pre-installs a bus on the same port.
+
+Not required for our use case once fix 1 lands (since `preInstallIfLp` is
+removed), but useful defensive behaviour for the wider ecosystem. File with a
+sketch of the `externally_owned` flag approach and the `espressif/i2c_bus`
+prior art.
+
+**3. Port pre-registration API (enhancement — file as issue)**
+
+An `i2cdev_open_port(port, sda, scl)` function that installs the bus without
+requiring a dummy device. Useful for ensuring LP_I2C (or any bus) is installed
+at a well-defined point in startup rather than lazily on first transaction. Can
+be filed together with or as a follow-on to issue 2.
+
+### Current state
+
+Fix 1 is applied in our fork and the project uses it via the
+`components/esp-idf-lib__i2cdev` submodule (see `components/kernel/idf_component.yml`
+for rollback instructions). The ESP-IDF component manager cannot override a
+transitive registry dependency with a git source when both satisfy the semver
+constraint ([idf-component-manager#99](https://github.com/espressif/idf-component-manager/issues/99)),
+so a submodule in `components/` is the supported workaround until the upstream
+issue is resolved.
+
+Once `esp-idf-lib/i2cdev` releases a version with the fix:
+- Remove the submodule (`git submodule deinit components/esp-idf-lib__i2cdev && git rm components/esp-idf-lib__i2cdev`)
+- Update the semver pin in `components/kernel/idf_component.yml` to the released version
+
+### Option B: Migrate off i2cdev entirely
+
+If the PR does not land in time for MK11+ bring-up, or if the esp-idf-lib
+organisation declines the change, the alternative is to replace each
+i2cdev-based driver with an implementation that uses the new `i2c_master`
+API directly (through `I2CDevice`).
+
+| Chip | Current dep | Replacement path |
+| ---- | ----------- | ---------------- |
+| SHT3x | `esp-idf-lib/sht3x` | `espressif/sht3x` v0.2.0 — Espressif-official, wraps `espressif/i2c_bus` which does handle-reuse exactly like bq27220. Dependency swap only, no code changes. |
+| SI7021 / SHT2x | `esp-idf-lib/si7021` | Port required. No maintained `i2c_master` alternative exists. The protocol is simple (~50 lines of I2C transactions). |
+| BH1750 | `esp-idf-lib/bh1750` | `k0i05/esp_bh1750` v1.2.7 on the component registry — raw `i2c_master` API, actively maintained, MIT. |
+| TSL2591 | `esp-idf-lib/tsl2591` | Port required from the existing MIT-licensed source (~200 lines of register-map I2C code). No new-API alternative found. |
+| INA219 | `esp-idf-lib/ina219` | Port required. `fborello-lambda/solar_panel_curve_tracer` on GitHub is a clean, complete reference using the new API. |
+
+The two drop-in swaps (SHT3x, BH1750) require no I2C-level changes; the three
+ports (SI7021, TSL2591, INA219) require implementing protocol logic against
+`I2CDevice`. End state: no i2cdev dependency, `I2CDevice` uses the new
+`i2c_master` API directly, no `#if` guards.
+
+### Which to pursue
+
+Apply fix 1 to the fork first — the code change is small, clearly a bug, and
+unblocks MK11+ bring-up regardless of upstream merge timeline. File issue 2
+(handle-adoption) separately so the upstream maintainers can evaluate it
+independently of the bug fix. If fix 1 merges upstream, Option B reduces to the
+three ports with no ready-made drop-in (SI7021, TSL2591, INA219), which can be
+ported lazily. If upstream is unresponsive, stay on the fork until a decision
+is made on Option B.
 
 ## Out of scope
 

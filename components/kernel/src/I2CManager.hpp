@@ -187,7 +187,6 @@ public:
             static_cast<int>(port), sda->getName().c_str(), scl->getName().c_str());
         auto bus = std::make_shared<I2CBus>(I2CBus { .port = port, .sda = sda, .scl = scl });
         buses.push_back(bus);
-        preInstallIfLp(*bus);
         return bus;
     }
 
@@ -195,10 +194,10 @@ private:
     Mutex mutex;
     std::vector<std::shared_ptr<I2CBus>> buses;
 
-    // On ESP32-C6: LP_I2C_NUM_0 is pin-locked to GPIO6/GPIO7; the single HP bus is I2C_NUM_0.
+    // On chips with LP_I2C (ESP32-C6): LP_I2C_NUM_0 is pin-locked to GPIO6/GPIO7; the single HP bus is I2C_NUM_0.
     // On other platforms (ESP32-S3): all buses are HP, assigned in registration order.
     i2c_port_t selectPort(const InternalPinPtr& sda, const InternalPinPtr& scl) {
-#if CONFIG_IDF_TARGET_ESP32C6
+#if SOC_LP_I2C_SUPPORTED
         if (sda->getGpio() == GPIO_NUM_6 && scl->getGpio() == GPIO_NUM_7) {
             return LP_I2C_NUM_0;
         }
@@ -213,27 +212,6 @@ private:
             throw std::runtime_error("Maximum number of I2C buses reached");
         }
         return static_cast<i2c_port_t>(buses.size());
-#endif
-    }
-
-    // Pre-install LP_I2C with the correct lp_source_clk before any i2cdev consumer can attempt
-    // to install it with the wrong clk_source (which would return ESP_ERR_NOT_SUPPORTED).
-    static void preInstallIfLp([[maybe_unused]] const I2CBus& bus) {
-#if CONFIG_IDF_TARGET_ESP32C6
-        if (bus.port != LP_I2C_NUM_0) {
-            return;
-        }
-        i2c_master_bus_config_t config = {};
-        config.i2c_port = bus.port;
-        config.sda_io_num = bus.sda->getGpio();
-        config.scl_io_num = bus.scl->getGpio();
-        config.lp_source_clk = LP_I2C_SCLK_DEFAULT;
-        config.glitch_ignore_cnt = 7;
-        config.flags.enable_internal_pullup = true;
-        i2c_master_bus_handle_t handle;
-        ESP_ERROR_THROW(i2c_new_master_bus(&config, &handle));
-        LOGTI(I2C, "Pre-installed LP_I2C bus on port %d (SDA: %s, SCL: %s)",
-            static_cast<int>(bus.port), bus.sda->getName().c_str(), bus.scl->getName().c_str());
 #endif
     }
 };

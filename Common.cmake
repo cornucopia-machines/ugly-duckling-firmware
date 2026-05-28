@@ -1,4 +1,5 @@
 list(APPEND EXTRA_COMPONENT_DIRS "${CMAKE_CURRENT_LIST_DIR}/components")
+list(APPEND EXTRA_COMPONENT_DIRS "${CMAKE_CURRENT_LIST_DIR}/vendored-components")
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 
