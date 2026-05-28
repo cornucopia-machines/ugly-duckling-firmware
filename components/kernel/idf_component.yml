@@ -8,11 +8,11 @@ dependencies:
   bblanchon/arduinojson: "7.4.3"
   esp-idf-lib/bh1750: "^1.1.7"
   esp-idf-lib/ds18x20: "^1.2.8"
-  # Pinned via submodule at components/esp-idf-lib__i2cdev (cornucopia-machines fork,
+  # Pinned via submodule at vendored-components/esp-idf-lib__i2cdev (cornucopia-machines fork,
   # branch fix/lp-i2c-clock-source) while the LP_I2C clock-source fix is pending upstream.
   # To revert once esp-idf-lib/i2cdev ships the fix in a new release (>= the version below):
-  #   git submodule deinit components/esp-idf-lib__i2cdev
-  #   git rm components/esp-idf-lib__i2cdev
+  #   git submodule deinit vendored-components/esp-idf-lib__i2cdev
+  #   git rm vendored-components/esp-idf-lib__i2cdev
   #   # Update the version constraint below to the released version that includes the fix
   #   # then run: idf.py -B build-carrot update-dependencies
   # See: https://github.com/esp-idf-lib/i2cdev/issues/12

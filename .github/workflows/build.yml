@@ -82,7 +82,7 @@ jobs:
           extra_docker_args: -v  ${{ env.CCACHE_DIR }}:/root/.ccache
           command: |
             ccache --max-size=${{ env.CCACHE_MAXSIZE }} && \
-            run-clang-tidy -p build/clang -header-filter="$(pwd)/(main|components/(?![^/]*__))" $(find main components -type f -name '*.cpp' -not -path '*/test/*' -not -path '*/build/*' -not -path '*/__*')
+            run-clang-tidy -p build/clang -header-filter="$(pwd)/(main|components)/" $(find main components -type f -name '*.cpp' -not -path '*/test/*' -not -path '*/build/*')
 
       - name: Collect artifacts
         run: |

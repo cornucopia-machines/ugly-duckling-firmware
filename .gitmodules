@@ -1,4 +1,4 @@
-[submodule "components/esp-idf-lib__i2cdev"]
-	path = components/esp-idf-lib__i2cdev
+[submodule "vendored-components/esp-idf-lib__i2cdev"]
+	path = vendored-components/esp-idf-lib__i2cdev
 	url = https://github.com/cornucopia-machines/i2cdev.git
 	branch = fix/lp-i2c-clock-source
