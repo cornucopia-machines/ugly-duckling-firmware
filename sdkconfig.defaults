@@ -101,6 +101,9 @@ CONFIG_MQTT_REPORT_DELETED_MESSAGES=y
 # We don't need TLS server functionality
 CONFIG_MBEDTLS_TLS_CLIENT_ONLY=y
 
+# DS peripheral requires eFuse-provisioned keys; we use PEM keys in NVS
+CONFIG_MBEDTLS_HARDWARE_RSA_DS_PERIPHERAL=n
+
 # Some CAs in the trust chain may be cross-signed by another CA (e.g. GTS Root R4
 # cross-signed by GlobalSign). Without this, the bundle only contains self-signed
 # roots and cannot resolve a trust path through a cross-signed intermediate,
