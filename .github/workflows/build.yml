@@ -99,12 +99,7 @@ jobs:
           esp_idf_version: ${{ env.ESP_IDF_VERSION }}
           esp_idf_docker_image: lptr/esp-idf-clang
           target: ${{ matrix.target }}
-          extra_docker_args: >-
-            -v ${{ env.CCACHE_DIR }}:/root/.ccache
-            -e IDF_CCACHE_ENABLE=1
-            -e CCACHE_COMPILERCHECK=content
           command: |
-            ccache --max-size=${{ env.CCACHE_MAXSIZE }} --zero-stats && \
             run-clang-tidy -p build/clang -header-filter="$(pwd)/(main|components)/" $(find main components -type f -name '*.cpp' -not -path '*/test/*' -not -path '*/build/*')
 
       - name: Save ccache cache
