@@ -68,7 +68,6 @@ jobs:
             -v ${{ env.CCACHE_DIR }}:/root/.ccache
             -e IDF_CCACHE_ENABLE=1
             -e CCACHE_COMPILERCHECK=content
-            -e CCACHE_LOGFILE=/root/.ccache/ccache.log
           command: |
             ccache --max-size=${{ env.CCACHE_MAXSIZE }} --zero-stats && \
             idf.py build \
@@ -78,11 +77,6 @@ jobs:
             esp-idf-sbom create -o build/ugly-duckling.spdx build/project_description.json && \
             pyspdxtools --novalidation --infile build/ugly-duckling.spdx --outfile build/ugly-duckling.spdx.json && \
             ccache -s
-
-      - name: Show ccache miss reasons
-        if: always()
-        run: |
-          grep -o 'Result: [^|]*' ${{ env.CCACHE_DIR }}/ccache.log 2>/dev/null | sort | uniq -c | sort -rn | head -20 || echo "No ccache log found"
 
       - name: Show binary sizes
         run: |
