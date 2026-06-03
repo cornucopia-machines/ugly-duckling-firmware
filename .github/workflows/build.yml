@@ -66,7 +66,7 @@ jobs:
           target: ${{ matrix.target }}
           extra_docker_args: -v  ${{ env.CCACHE_DIR }}:/root/.ccache
           command: |
-            ccache --max-size=${{ env.CCACHE_MAXSIZE }} && \
+            ccache --max-size=${{ env.CCACHE_MAXSIZE }} --zero-stats && \
             idf.py --ccache build \
               -DUD_DEBUG=${{ matrix.ud_debug }} \
               -DUD_LOG_VERBOSE=${{ env.UD_LOG_VERBOSE }} \
@@ -168,7 +168,7 @@ jobs:
           path: test/embedded-tests
           extra_docker_args: -v  ${{ env.CCACHE_DIR }}:/root/.ccache
           command: |
-            ccache --max-size=${{ env.CCACHE_MAXSIZE }} && \
+            ccache --max-size=${{ env.CCACHE_MAXSIZE }} --zero-stats && \
             idf.py --ccache build && \
             ccache -s
 
@@ -236,7 +236,7 @@ jobs:
           path: test/e2e-tests
           extra_docker_args: -v  ${{ env.CCACHE_DIR }}:/root/.ccache
           command: |
-            ccache --max-size=${{ env.CCACHE_MAXSIZE }} && \
+            ccache --max-size=${{ env.CCACHE_MAXSIZE }} --zero-stats && \
             idf.py --ccache -DUD_GEN=MK6_REV3 -DUD_DEBUG=1 -DWOKWI=1 -DWOKWI_MQTT_HOST=${{ env.HOSTNAME }} build && \
             ccache -s
 
