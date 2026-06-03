@@ -9,6 +9,7 @@ env:
   CCACHE_MAXSIZE: 256M
   CCACHE_COMPRESS: true
   ESP_IDF_VERSION: v6.0.1
+  TEST_TARGET: esp32s3
 
 jobs:
   build:
@@ -149,13 +150,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: ccache-${{ runner.os }}-${{ env.ESP_IDF_VERSION }}-esp32s3-embedded-test
+          key: ccache-${{ runner.os }}-${{ env.ESP_IDF_VERSION }}-${{ env.TEST_TARGET }}-embedded-test
 
       - name: esp-idf build
         uses: espressif/esp-idf-ci-action@v1
         with:
           esp_idf_version: ${{ env.ESP_IDF_VERSION }}
-          target: esp32s3
+          target: ${{ env.TEST_TARGET }}
           path: test/embedded-tests
           extra_docker_args: -v  ${{ env.CCACHE_DIR }}:/root/.ccache
           command: |
@@ -217,13 +218,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: ccache-${{ runner.os }}-${{ env.ESP_IDF_VERSION }}-esp32s3-e2e-test
+          key: ccache-${{ runner.os }}-${{ env.ESP_IDF_VERSION }}-${{ env.TEST_TARGET }}-e2e-test
 
       - name: esp-idf build
         uses: espressif/esp-idf-ci-action@v1
         with:
           esp_idf_version: ${{ env.ESP_IDF_VERSION }}
-          target: esp32s3
+          target: ${{ env.TEST_TARGET }}
           path: test/e2e-tests
           extra_docker_args: -v  ${{ env.CCACHE_DIR }}:/root/.ccache
           command: |
