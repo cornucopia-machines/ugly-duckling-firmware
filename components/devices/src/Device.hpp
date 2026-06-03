@@ -463,6 +463,7 @@ static void startDevice() {
 
     // Init real time clock
     auto rtc = std::make_shared<RtcDriver>(wifi->getNetworkReady(), networkConfig->ntp.get(), states->rtcInSync);
+    ble->setOnTimeReceived([rtc](time_t utcTime) { rtc->setTime(utcTime); });
 
     // Init MQTT connection
     auto clientId = "ugly-duckling-" + macAddress;

@@ -1,8 +1,10 @@
 #pragma once
 
 #include <array>
+#include <functional>
 #include <memory>
 #include <string>
+#include <time.h>
 
 #include <esp_random.h>
 #include <host/ble_hs.h>    // NOLINT(misc-header-include-cycle) -- ble_hs.h and ble_gap.h include each other; cycle is in ESP-IDF, not our code
@@ -10,6 +12,7 @@
 #include <nimble/nimble_port.h>
 #include <nimble/nimble_port_freertos.h>
 #include <services/bas/ble_svc_bas.h>
+#include <services/cts/ble_svc_cts.h>
 #include <services/dis/ble_svc_dis.h>
 #include <services/gap/ble_svc_gap.h>
 #include <services/gatt/ble_svc_gatt.h>
@@ -29,9 +32,11 @@ enum class BleStatus : std::uint8_t {
     Connected
 };
 
-// Starts NimBLE, advertises the device, and hosts the standard Device Information Service (DIS,
-// UUID 0x180A). Readable with any BLE scanner app (nRF Connect, LightBlue, etc.) without a
-// custom client.
+// Starts NimBLE, advertises the device, and hosts standard GATT services readable with any BLE
+// scanner app (nRF Connect, LightBlue, etc.) without a custom client:
+//  - Device Information Service (DIS, 0x180A): model, firmware version, serial number
+//  - Battery Service     (BAS, 0x180F): battery level, updated via setBatteryLevel()
+//  - Current Time Service (CTS, 0x1805): current time; a central can push the time on connect
 class BleDriver final {
 public:
     BleDriver(
@@ -57,6 +62,13 @@ public:
         ble_svc_gatt_init();
         ble_svc_dis_init();
         ble_svc_bas_init();
+        ble_svc_cts_init({
+            .fetch_time_cb = ctsGetTime,
+            .local_time_info_cb = ctsGetLocalTimeInfo,
+            .ref_time_info_cb = ctsGetRefTimeInfo,
+            .set_time_cb = ctsSetTime,
+            .set_local_time_info_cb = ctsSetLocalTimeInfo,
+        });
 
         // NimBLE DIS stores these pointers directly (no copy), so the strings must remain alive
         // for the device lifetime. They are stored as members below.
@@ -77,6 +89,10 @@ public:
 
     static void setBatteryLevel(uint8_t percent) {
         ble_svc_bas_battery_level_set(percent);
+    }
+
+    void setOnTimeReceived(std::function<void(time_t)> callback) {
+        onTimeReceived = std::move(callback);
     }
 
 private:
@@ -151,10 +167,66 @@ private:
         return 0;
     }
 
+    static int ctsGetTime(struct ble_svc_cts_curr_time* ct) {
+        time_t now = system_clock::to_time_t(system_clock::now());
+        struct tm t {};
+        gmtime_r(&now, &t);
+        ct->et_256.d_d_t.d_t = {
+            .year = static_cast<uint16_t>(t.tm_year + 1900),
+            .month = static_cast<uint8_t>(t.tm_mon + 1),
+            .day = static_cast<uint8_t>(t.tm_mday),
+            .hours = static_cast<uint8_t>(t.tm_hour),
+            .minutes = static_cast<uint8_t>(t.tm_min),
+            .seconds = static_cast<uint8_t>(t.tm_sec),
+        };
+        // CTS day-of-week: 1=Monday … 7=Sunday; tm_wday: 0=Sunday … 6=Saturday
+        ct->et_256.d_d_t.day_of_week = (t.tm_wday == 0) ? 7 : static_cast<uint8_t>(t.tm_wday);
+        ct->et_256.fractions_256 = 0;
+        ct->adjust_reason = 0;
+        return 0;
+    }
+
+    static int ctsSetTime(struct ble_svc_cts_curr_time ct) {
+        if (instance->onTimeReceived) {
+            const auto& d = ct.et_256.d_d_t.d_t;
+            struct tm t = {
+                .tm_sec = d.seconds,
+                .tm_min = d.minutes,
+                .tm_hour = d.hours,
+                .tm_mday = d.day,
+                .tm_mon = d.month - 1,
+                .tm_year = d.year - 1900,
+                .tm_isdst = 0,
+            };
+            // mktime treats tm as local time; on ESP-IDF TZ defaults to UTC so this is correct
+            instance->onTimeReceived(mktime(&t));
+        }
+        return 0;
+    }
+
+    static int ctsGetLocalTimeInfo(struct ble_svc_cts_local_time_info* lti) {
+        lti->timezone = 0;                  // UTC (units of 15 min)
+        lti->dst_offset = TIME_STANDARD;    // no DST
+        return 0;
+    }
+
+    static int ctsGetRefTimeInfo(struct ble_svc_cts_reference_time_info* rti) {
+        rti->time_source = TIME_SOURCE_UNKNOWN;
+        rti->time_accuracy = 254;           // unknown
+        rti->days_since_update = 0;
+        rti->hours_since_update = 0;
+        return 0;
+    }
+
+    static int ctsSetLocalTimeInfo(struct ble_svc_cts_local_time_info /* lti */) {
+        return 0;    // timezone management not supported
+    }
+
     void startAdvertising() {
-        static const std::array<ble_uuid16_t, 2> serviceUuids = { {
+        static const std::array<ble_uuid16_t, 3> serviceUuids = { {
             { .u = { .type = BLE_UUID_TYPE_16 }, .value = 0x180A },
             { .u = { .type = BLE_UUID_TYPE_16 }, .value = 0x180F },
+            { .u = { .type = BLE_UUID_TYPE_16 }, .value = 0x1805 },
         } };
 
         // Primary ad: flags + name (26 bytes available after flags' 3B + name header 2B).
@@ -204,6 +276,8 @@ private:
     const std::string firmwareVersion;
     const std::string serialNumber;
     const std::array<uint8_t, 6> bleAddr;
+
+    std::function<void(time_t)> onTimeReceived;
 
     BleStatus status { BleStatus::Idle };
 
