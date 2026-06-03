@@ -73,6 +73,21 @@ jobs:
             pyspdxtools --novalidation --infile build/ugly-duckling.spdx --outfile build/ugly-duckling.spdx.json && \
             ccache -s
 
+      - name: Show binary sizes
+        run: |
+          {
+            echo "### Binary sizes — ${{ matrix.environment }}"
+            echo
+            echo '| File | Size |'
+            echo '| --- | ---: |'
+            for f in build/*.bin build/bootloader/bootloader.bin build/partition_table/partition-table.bin; do
+              [ -f "$f" ] || continue
+              size=$(stat -c '%s' "$f")
+              printf '| `%s` | %s B (%s) |\n' "$f" "$size" "$(numfmt --to=iec-i --suffix=B --format='%.1f' "$size")"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+          ls -l build/*.bin build/bootloader/bootloader.bin build/partition_table/partition-table.bin
+
       - name: clang-tidy
         uses: espressif/esp-idf-ci-action@v1
         with:
