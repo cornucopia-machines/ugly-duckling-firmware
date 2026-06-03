@@ -133,6 +133,10 @@ CONFIG_BT_ENABLED=y
 CONFIG_BT_NIMBLE_ENABLED=y
 # Allow NimBLE host to enter light sleep alongside the rest of the system
 CONFIG_BT_NIMBLE_SLEEP_ENABLE=y
+# Enable DIS characteristics (all off by default; runtime setters are no-ops without these)
+CONFIG_BT_NIMBLE_SVC_DIS_MANUFACTURER_NAME=y
+CONFIG_BT_NIMBLE_SVC_DIS_FIRMWARE_REVISION=y
+CONFIG_BT_NIMBLE_SVC_DIS_SERIAL_NUMBER=y
 
 # --- Optional NimBLE size-reduction knobs (review before enabling) -------------
 # Default NimBLE config compiles in all four roles, BLE5 features, and supports
