@@ -20,7 +20,7 @@ namespace cornucopia::ugly_duckling::kernel::drivers {
 
 LOGGING_TAG(BLE, "ble")
 
-enum class BleStatus {
+enum class BleStatus : std::uint8_t {
     Off,
     Resetting,
     Error,
@@ -44,7 +44,8 @@ public:
         , modelName(modelName)
         , firmwareVersion(firmwareVersion)
         , serialNumber(serialNumber)
-        , bleAddr(loadOrGenerateAddress(*nvs)) {
+        , bleAddr(loadOrGenerateAddress(*nvs))
+        , status(BleStatus::Off) {
         instance = this;
 
         nimble_port_init();
@@ -125,7 +126,7 @@ private:
     }
 
     static int gapEventCallback(struct ble_gap_event* event, void* driverp) {
-        auto driver = static_cast<BleDriver*>(driverp);
+        auto* driver = static_cast<BleDriver*>(driverp);
         switch (event->type) {
             case BLE_GAP_EVENT_CONNECT:
                 if (event->connect.status == 0) {
@@ -196,7 +197,7 @@ private:
     const std::string serialNumber;
     const std::array<uint8_t, 6> bleAddr;
 
-    BleStatus status { BleStatus::Off };
+    BleStatus status;
 
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
     inline static BleDriver* instance = nullptr;
