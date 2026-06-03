@@ -49,7 +49,8 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: ccache-${{ runner.os }}-${{ env.ESP_IDF_VERSION }}-${{ matrix.target }}-${{ matrix.ud_debug }}
+          key: ccache-${{ env.ESP_IDF_VERSION }}-${{ matrix.target }}-${{ matrix.ud_debug }}-${{ github.run_id }}
+          restore-keys: ccache-${{ env.ESP_IDF_VERSION }}-${{ matrix.target }}-${{ matrix.ud_debug }}-
 
       - name: Create dummy config directory
         run: |
@@ -109,7 +110,7 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: ccache-${{ runner.os }}-${{ env.ESP_IDF_VERSION }}-${{ matrix.target }}-${{ matrix.ud_debug }}
+          key: ccache-${{ env.ESP_IDF_VERSION }}-${{ matrix.target }}-${{ matrix.ud_debug }}-${{ github.run_id }}
 
       - name: Collect artifacts
         run: |
@@ -161,7 +162,8 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: ccache-${{ runner.os }}-${{ env.ESP_IDF_VERSION }}-${{ env.TEST_TARGET }}-embedded-test
+          key: ccache-${{ env.ESP_IDF_VERSION }}-${{ env.TEST_TARGET }}-embedded-test-${{ github.run_id }}
+          restore-keys: ccache-${{ env.ESP_IDF_VERSION }}-${{ env.TEST_TARGET }}-embedded-test-
 
       - name: esp-idf build
         uses: espressif/esp-idf-ci-action@v1
@@ -231,7 +233,8 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: ccache-${{ runner.os }}-${{ env.ESP_IDF_VERSION }}-${{ env.TEST_TARGET }}-e2e-test
+          key: ccache-${{ env.ESP_IDF_VERSION }}-${{ env.TEST_TARGET }}-e2e-test-${{ github.run_id }}
+          restore-keys: ccache-${{ env.ESP_IDF_VERSION }}-${{ env.TEST_TARGET }}-e2e-test-
 
       - name: esp-idf build
         uses: espressif/esp-idf-ci-action@v1
