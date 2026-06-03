@@ -104,6 +104,13 @@ CONFIG_MBEDTLS_TLS_CLIENT_ONLY=y
 # DS peripheral requires eFuse-provisioned keys; we use PEM keys in NVS
 CONFIG_MBEDTLS_HARDWARE_RSA_DS_PERIPHERAL=n
 
+# Use the "common" CA bundle (covers the most widely-used commercial roots)
+# instead of FULL. FULL ships ~150 CAs (~110 KB of .rodata in libmbed-builtin);
+# CMN is roughly half that. TODO: switch to a hand-picked custom bundle (just
+# the MQTT broker chain + Cloudflare R2 OTA chain) — that drops it under 10 KB
+# but requires confirming exactly which CAs both endpoints chain to.
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_CMN=y
+
 # Some CAs in the trust chain may be cross-signed by another CA (e.g. GTS Root R4
 # cross-signed by GlobalSign). Without this, the bundle only contains self-signed
 # roots and cannot resolve a trust path through a cross-signed intermediate,
@@ -126,3 +133,34 @@ CONFIG_BT_ENABLED=y
 CONFIG_BT_NIMBLE_ENABLED=y
 # Allow NimBLE host to enter light sleep alongside the rest of the system
 CONFIG_BT_NIMBLE_SLEEP_ENABLE=y
+
+# --- Optional NimBLE size-reduction knobs (review before enabling) -------------
+# Default NimBLE config compiles in all four roles, BLE5 features, and supports
+# up to 3 simultaneous connections — together this is ~235 KB in libble_app.a.
+# As of now we only use BLE as a *peripheral* (advertising DIS, future Wi-Fi
+# provisioning). If devices later need to scan or connect to BLE peripherals
+# of their own (e.g. soil sensors), they must keep the CENTRAL role enabled
+# — disabling CENTRAL means we can advertise but cannot initiate connections.
+#
+# Estimated savings (combined ~60–100 KB in libble_app.a; verify with `idf.py size`):
+#
+# # Drop the Central role (no outgoing connections, no scanning for connectable peers).
+# # Required if we later want to talk to BLE soil sensors as a client.
+# # CONFIG_BT_NIMBLE_ROLE_CENTRAL=n
+#
+# # Drop the Observer role (no passive scanning for beacons / advertisements).
+# # CONFIG_BT_NIMBLE_ROLE_OBSERVER=n
+#
+# # Cap simultaneous connections at 1 — we only ever talk to one phone/provisioner.
+# # Each extra slot costs ~1–2 KB RAM + some flash.
+# # CONFIG_BT_NIMBLE_MAX_CONNECTIONS=1
+#
+# # Disable BLE 5.0 extended/periodic advertising and 2M/Coded PHY. Phones do
+# # provisioning over legacy 1M PHY; we don't need extended adv for DIS.
+# # CONFIG_BT_NIMBLE_EXT_ADV=n
+# # CONFIG_BT_NIMBLE_PERIODIC_ADV=n
+# # CONFIG_BT_NIMBLE_50_FEATURE_SUPPORT=n
+#
+# # Disable L2CAP connection-oriented channels (we only use ATT/GATT).
+# # CONFIG_BT_NIMBLE_L2CAP_COC_MAX_NUM=0
+# ------------------------------------------------------------------------------
