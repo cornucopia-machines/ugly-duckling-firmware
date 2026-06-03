@@ -67,6 +67,7 @@ jobs:
           extra_docker_args: >-
             -v ${{ env.CCACHE_DIR }}:/root/.ccache
             -e IDF_CCACHE_ENABLE=1
+            -e CCACHE_COMPILERCHECK=content
             -e CCACHE_LOGFILE=/root/.ccache/ccache.log
           command: |
             ccache --max-size=${{ env.CCACHE_MAXSIZE }} --zero-stats && \
@@ -107,6 +108,7 @@ jobs:
           extra_docker_args: >-
             -v ${{ env.CCACHE_DIR }}:/root/.ccache
             -e IDF_CCACHE_ENABLE=1
+            -e CCACHE_COMPILERCHECK=content
           command: |
             ccache --max-size=${{ env.CCACHE_MAXSIZE }} --zero-stats && \
             run-clang-tidy -p build/clang -header-filter="$(pwd)/(main|components)/" $(find main components -type f -name '*.cpp' -not -path '*/test/*' -not -path '*/build/*')
@@ -180,6 +182,7 @@ jobs:
           extra_docker_args: >-
             -v ${{ env.CCACHE_DIR }}:/root/.ccache
             -e IDF_CCACHE_ENABLE=1
+            -e CCACHE_COMPILERCHECK=content
           command: |
             ccache --max-size=${{ env.CCACHE_MAXSIZE }} --zero-stats && \
             idf.py build && \
@@ -251,6 +254,7 @@ jobs:
           extra_docker_args: >-
             -v ${{ env.CCACHE_DIR }}:/root/.ccache
             -e IDF_CCACHE_ENABLE=1
+            -e CCACHE_COMPILERCHECK=content
           command: |
             ccache --max-size=${{ env.CCACHE_MAXSIZE }} --zero-stats && \
             idf.py -DUD_GEN=MK6_REV3 -DUD_DEBUG=1 -DWOKWI=1 -DWOKWI_MQTT_HOST=${{ env.HOSTNAME }} build && \
