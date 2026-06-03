@@ -278,13 +278,16 @@ void initTelemetryPublishTask(
     milliseconds publishInterval,
     const std::shared_ptr<Watchdog>& watchdog,
     const std::shared_ptr<MqttRoot>& mqttRoot,
+    const std::shared_ptr<BleDriver>& ble,
     const std::shared_ptr<BatteryManager>& batteryManager,
     const std::shared_ptr<PowerManager>& powerManager,
     const std::shared_ptr<WiFiDriver>& wifi,
     const std::shared_ptr<TelemetryCollector>& telemetryCollector,
     const std::shared_ptr<CopyQueue<bool>>& telemetryPublishQueue) {
-    Task::loop("telemetry", 8192, [publishInterval, watchdog, mqttRoot, batteryManager, powerManager, wifi, telemetryCollector, telemetryPublishQueue](Task& task) {
+    Task::loop("telemetry", 8192, [publishInterval, watchdog, mqttRoot, ble, batteryManager, powerManager, wifi, telemetryCollector, telemetryPublishQueue](Task& task) {
         task.markWakeTime();
+
+        ble->setBatteryLevel(batteryManager->getPercentage());
 
         mqttRoot->publish("telemetry", [batteryManager, powerManager, wifi, mqttRoot, telemetryCollector](JsonObject& telemetry) {
             telemetry["uptime"] = duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count();
@@ -553,7 +556,7 @@ static void startDevice() {
         }
     }
 
-    initTelemetryPublishTask(settings->publishInterval.get(), watchdog, mqttRoot, batteryManager, powerManager, wifi, telemetryCollector, telemetryPublishQueue);
+    initTelemetryPublishTask(settings->publishInterval.get(), watchdog, mqttRoot, ble, batteryManager, powerManager, wifi, telemetryCollector, telemetryPublishQueue);
 
     // Enable power saving once we are done initializing
     WiFiDriver::setPowerSaveMode(settings->sleepWhenIdle.get());

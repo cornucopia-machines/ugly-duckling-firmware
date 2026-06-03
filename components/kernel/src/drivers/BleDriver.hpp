@@ -9,6 +9,7 @@
 #include <host/ble_uuid.h>
 #include <nimble/nimble_port.h>
 #include <nimble/nimble_port_freertos.h>
+#include <services/bas/ble_svc_bas.h>
 #include <services/dis/ble_svc_dis.h>
 #include <services/gap/ble_svc_gap.h>
 #include <services/gatt/ble_svc_gatt.h>
@@ -27,8 +28,6 @@ enum class BleStatus : std::uint8_t {
     Advertising,
     Connected
 };
-
-// Test change
 
 // Starts NimBLE, advertises the device, and hosts the standard Device Information Service (DIS,
 // UUID 0x180A). Readable with any BLE scanner app (nRF Connect, LightBlue, etc.) without a
@@ -53,10 +52,11 @@ public:
         ble_hs_cfg.reset_cb = onReset;
         ble_hs_cfg.sync_cb = onSync;
 
-        // Order matters: GAP and GATT must be initialized before DIS
+        // Order matters: GAP and GATT must be initialized before other services
         ble_svc_gap_init();
         ble_svc_gatt_init();
         ble_svc_dis_init();
+        ble_svc_bas_init();
 
         // NimBLE DIS stores these pointers directly (no copy), so the strings must remain alive
         // for the device lifetime. They are stored as members below.
@@ -75,9 +75,13 @@ public:
         return status;
     }
 
+    void setBatteryLevel(uint8_t percent) {
+        ble_svc_bas_battery_level_set(percent);
+    }
+
 private:
     static std::array<uint8_t, 6> loadOrGenerateAddress(NvsStore& nvs) {
-        std::array<uint8_t, 6> addr {};
+        std::array<uint8_t, 6> addr { };
         JsonDocument doc;
         if (nvs.getJson("addr", doc) && doc.is<JsonArray>() && doc.as<JsonArray>().size() == 6) {
             auto arr = doc.as<JsonArray>();
@@ -148,30 +152,35 @@ private:
     }
 
     void startAdvertising() {
-        // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
-        static ble_uuid16_t disUuid = BLE_UUID16_INIT(0x180A);
+        static const std::array<ble_uuid16_t, 2> serviceUuids = { {
+            { { BLE_UUID_TYPE_16 }, 0x180A },
+            { { BLE_UUID_TYPE_16 }, 0x180F },
+        } };
 
+        // Primary ad: flags + name (26 bytes available after flags' 3B + name header 2B).
         const char* name = ble_svc_gap_device_name();
-        auto nameLen = static_cast<uint8_t>(strnlen(name, UINT8_MAX));
+        struct ble_hs_adv_fields adFields = { };
+        adFields.flags = BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP;
+        adFields.name = reinterpret_cast<const uint8_t*>(name);
+        adFields.name_len = static_cast<uint8_t>(strnlen(name, 26));
+        adFields.name_is_complete = (strnlen(name, 27) <= 26) ? 1 : 0;
 
-        struct ble_hs_adv_fields fields = { };
-        fields.flags = BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP;
-        fields.uuids16 = &disUuid;
-        fields.num_uuids16 = 1;
-        fields.uuids16_is_complete = 1;
-
-        // BLE advertising PDU is 31 bytes. With flags (3B) + UUID16 (4B) + name header (2B) = 9B
-        // overhead, 22 bytes remain for the name. Skip name in adv if it doesn't fit; it is still
-        // readable via the GAP Device Name characteristic after connecting.
-        if (nameLen <= 22) {
-            fields.name = reinterpret_cast<const uint8_t*>(name);
-            fields.name_len = nameLen;
-            fields.name_is_complete = 1;
-        }
-
-        int rc = ble_gap_adv_set_fields(&fields);
+        int rc = ble_gap_adv_set_fields(&adFields);
         if (rc != 0) {
             LOGTE(BLE, "Failed to set advertising fields: %d", rc);
+            status = BleStatus::Error;
+            return;
+        }
+
+        // Scan response: service UUIDs (so they don't compete with the name for PDU space).
+        struct ble_hs_adv_fields rspFields = { };
+        rspFields.uuids16 = serviceUuids.data();
+        rspFields.num_uuids16 = serviceUuids.size();
+        rspFields.uuids16_is_complete = 1;
+
+        rc = ble_gap_adv_rsp_set_fields(&rspFields);
+        if (rc != 0) {
+            LOGTE(BLE, "Failed to set scan response fields: %d", rc);
             status = BleStatus::Error;
             return;
         }
