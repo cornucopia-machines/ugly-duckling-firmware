@@ -28,6 +28,8 @@ enum class BleStatus : std::uint8_t {
     Connected
 };
 
+// Test change
+
 // Starts NimBLE, advertises the device, and hosts the standard Device Information Service (DIS,
 // UUID 0x180A). Readable with any BLE scanner app (nRF Connect, LightBlue, etc.) without a
 // custom client.
