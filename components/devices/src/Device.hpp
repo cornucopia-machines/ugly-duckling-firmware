@@ -408,11 +408,13 @@ static void startDevice() {
     KernelStatusTask::init(statusLed, states);
 
     // Init BLE
+    auto bleNvs = std::make_shared<NvsStore>("ble");
     auto ble = std::make_shared<BleDriver>(
         networkConfig->getHostname(),
         "Ugly Duckling " + modelWithRevision,
         firmwareVersion,
-        macAddress);
+        macAddress,
+        bleNvs);
 
     // Init WiFi
     auto wifi = std::make_shared<WiFiDriver>(

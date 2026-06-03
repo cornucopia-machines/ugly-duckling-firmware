@@ -1,7 +1,10 @@
 #pragma once
 
+#include <array>
+#include <memory>
 #include <string>
 
+#include <esp_random.h>
 #include <host/ble_hs.h>    // NOLINT(misc-header-include-cycle) -- ble_hs.h and ble_gap.h include each other; cycle is in ESP-IDF, not our code
 #include <host/ble_uuid.h>
 #include <nimble/nimble_port.h>
@@ -11,6 +14,7 @@
 #include <services/gatt/ble_svc_gatt.h>
 
 #include <Log.hpp>
+#include <NvsStore.hpp>
 
 namespace cornucopia::ugly_duckling::kernel::drivers {
 
@@ -34,11 +38,13 @@ public:
         const std::string& deviceName,
         const std::string& modelName,
         const std::string& firmwareVersion,
-        const std::string& serialNumber)
+        const std::string& serialNumber,
+        const std::shared_ptr<NvsStore>& nvs)
         : deviceName(deviceName)
         , modelName(modelName)
         , firmwareVersion(firmwareVersion)
-        , serialNumber(serialNumber) {
+        , serialNumber(serialNumber)
+        , bleAddr(loadOrGenerateAddress(*nvs)) {
         instance = this;
 
         nimble_port_init();
@@ -70,23 +76,52 @@ public:
     }
 
 private:
-    static void onSync() {
-        ble_addr_t addr;
-        int rc = ble_hs_id_gen_rnd(1, &addr);
-        if (rc == 0) {
-            ble_hs_id_set_rnd(addr.val);
+    static std::array<uint8_t, 6> loadOrGenerateAddress(NvsStore& nvs) {
+        std::array<uint8_t, 6> addr {};
+        JsonDocument doc;
+        if (nvs.getJson("addr", doc) && doc.is<JsonArray>() && doc.as<JsonArray>().size() == 6) {
+            auto arr = doc.as<JsonArray>();
+            for (size_t i = 0; i < 6; i++) {
+                addr[i] = arr[i].as<uint8_t>();
+            }
+            LOGTD(BLE, "Loaded BLE address from NVS");
+            return addr;
         }
-        instance->startAdvertising();
+        // Generate a static random address: fill with random bytes, then set the top 2 bits of
+        // the MSB to 11 as required by the Bluetooth spec for static random addresses.
+        esp_fill_random(addr.data(), addr.size());
+        addr[5] |= 0xC0;
+        JsonDocument newDoc;
+        auto arr = newDoc.to<JsonArray>();
+        for (auto byte : addr) {
+            arr.add(byte);
+        }
+        nvs.setJson("addr", newDoc.as<JsonVariantConst>());
+        LOGTD(BLE, "Generated and stored new BLE address");
+        return addr;
+    }
+
+    static void onSync() {
+        instance->handleSync();
     }
 
     static void onReset(int reason) {
-        LOGTW(BLE, "Host reset, reason: %d", reason);
-        instance->status = BleStatus::Resetting;
+        instance->handleReset(reason);
     }
 
     static void hostTask(void* /* param */) {
         nimble_port_run();
         nimble_port_freertos_deinit();
+    }
+
+    void handleSync() {
+        ble_hs_id_set_rnd(bleAddr.data());
+        startAdvertising();
+    }
+
+    void handleReset(int reason) {
+        status = BleStatus::Resetting;
+        LOGTE(BLE, "Resetting state; reason=%d", reason);
     }
 
     static int gapEventCallback(struct ble_gap_event* event, void* driverp) {
@@ -159,6 +194,8 @@ private:
     const std::string modelName;
     const std::string firmwareVersion;
     const std::string serialNumber;
+    const std::array<uint8_t, 6> bleAddr;
+
     BleStatus status { BleStatus::Off };
 
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
