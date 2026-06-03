@@ -5,7 +5,7 @@
 ```text
 main/               # App entry point (main.cpp); MAC-based device selection
 components/
-  kernel/           # WiFi, MQTT, NTP, RTC, telemetry, NVS, power management
+  kernel/           # BLE, WiFi, MQTT, NTP, RTC, telemetry, NVS, power management
   devices/          # Hardware model definitions (pin assignments, on-board drivers)
   peripherals/      # Sensor and actuator implementations
   peripherals-api/  # Peripheral interfaces (IPeripheral, IValve, …)

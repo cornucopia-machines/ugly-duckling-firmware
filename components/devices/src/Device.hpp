@@ -29,6 +29,7 @@ static const char* const firmwareVersion = reinterpret_cast<const char*>(esp_app
 #include <NvsConfiguration.hpp>
 #include <NvsStore.hpp>
 #include <Strings.hpp>
+#include <drivers/BleDriver.hpp>
 #include <drivers/RtcDriver.hpp>
 #include <mqtt/MqttDriver.hpp>
 #include <mqtt/MqttLog.hpp>
@@ -405,6 +406,13 @@ static void startDevice() {
     auto statusLed = std::make_shared<LedDriver>("status", deviceDefinition->statusPin);
     auto states = std::make_shared<ModuleStates>();
     KernelStatusTask::init(statusLed, states);
+
+    // Init BLE
+    auto ble = std::make_shared<BleDriver>(
+        networkConfig->getHostname(),
+        modelWithRevision,
+        firmwareVersion,
+        macAddress);
 
     // Init WiFi
     auto wifi = std::make_shared<WiFiDriver>(

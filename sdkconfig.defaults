@@ -118,3 +118,11 @@ CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_CROSS_SIGNED_VERIFY=y
 
 # Allow outdated network provisioning security protocols
 CONFIG_ESP_PROTOCOMM_SUPPORT_SECURITY_VERSION_1=y
+
+#
+# Bluetooth (NimBLE) — Device Information Service + future provisioning / local-only mode
+#
+CONFIG_BT_ENABLED=y
+CONFIG_BT_NIMBLE_ENABLED=y
+# Allow NimBLE host to enter light sleep alongside the rest of the system
+CONFIG_BT_NIMBLE_SLEEP_ENABLE=y
