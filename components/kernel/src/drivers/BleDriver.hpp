@@ -45,7 +45,7 @@ public:
         // NimBLE DIS stores these pointers directly (no copy), so the strings must remain alive
         // for the device lifetime. They are stored as members below.
         ble_svc_gap_device_name_set(this->deviceName.c_str());
-        ble_svc_dis_manufacturer_name_set("Cornucopia");
+        ble_svc_dis_manufacturer_name_set("Cornucopia Machines");
         ble_svc_dis_model_number_set(this->modelName.c_str());
         ble_svc_dis_firmware_revision_set(this->firmwareVersion.c_str());
         ble_svc_dis_serial_number_set(this->serialNumber.c_str());
