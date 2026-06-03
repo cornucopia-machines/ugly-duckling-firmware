@@ -2,7 +2,7 @@
 
 #include <string>
 
-#include <host/ble_hs.h>
+#include <host/ble_hs.h>  // NOLINT(misc-header-include-cycle) -- ble_hs.h and ble_gap.h include each other; cycle is in ESP-IDF, not our code
 #include <host/ble_uuid.h>
 #include <nimble/nimble_port.h>
 #include <nimble/nimble_port_freertos.h>
@@ -61,7 +61,7 @@ private:
         if (rc == 0) {
             ble_hs_id_set_rnd(addr.val);
         }
-        instance->startAdvertising();
+        BleDriver::startAdvertising();
     }
 
     static void onReset(int reason) {
@@ -80,13 +80,13 @@ private:
                     LOGTD(BLE, "Client connected (handle=%d)", event->connect.conn_handle);
                 } else {
                     LOGTD(BLE, "Connection failed, restarting advertising");
-                    instance->startAdvertising();
+                    BleDriver::startAdvertising();
                 }
                 break;
             case BLE_GAP_EVENT_DISCONNECT:
                 LOGTD(BLE, "Client disconnected (reason=%d), restarting advertising",
                     event->disconnect.reason);
-                instance->startAdvertising();
+                BleDriver::startAdvertising();
                 break;
             default:
                 break;
