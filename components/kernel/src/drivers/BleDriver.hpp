@@ -125,7 +125,7 @@ private:
 
     void handleReset(int reason) {
         status = BleStatus::Resetting;
-        LOGTE(BLE, "Resetting state; reason=%d", reason);
+        LOGTE(BLE, "Resetting state; reason: 0x%02x", reason);
     }
 
     static int gapEventCallback(struct ble_gap_event* event, void* driverp) {
@@ -136,12 +136,12 @@ private:
                     driver->status = BleStatus::Connected;
                     LOGTD(BLE, "Client connected, handle: %d", event->connect.conn_handle);
                 } else {
-                    LOGTD(BLE, "Connection failed, error: %d, restarting advertising", event->connect.status);
+                    LOGTD(BLE, "Connection failed, error: 0x%02x, restarting advertising", event->connect.status);
                     driver->startAdvertising();
                 }
                 break;
             case BLE_GAP_EVENT_DISCONNECT:
-                LOGTD(BLE, "Client disconnected, reason: %d, restarting advertising",
+                LOGTD(BLE, "Client disconnected, reason: 0x%02x, restarting advertising",
                     event->disconnect.reason);
                 driver->startAdvertising();
                 break;
@@ -167,7 +167,7 @@ private:
 
         int rc = ble_gap_adv_set_fields(&adFields);
         if (rc != 0) {
-            LOGTE(BLE, "Failed to set advertising fields: %d", rc);
+            LOGTE(BLE, "Failed to set advertising fields: 0x%02x", rc);
             status = BleStatus::Error;
             return;
         }
@@ -180,7 +180,7 @@ private:
 
         rc = ble_gap_adv_rsp_set_fields(&rspFields);
         if (rc != 0) {
-            LOGTE(BLE, "Failed to set scan response fields: %d", rc);
+            LOGTE(BLE, "Failed to set scan response fields: 0x%02x", rc);
             status = BleStatus::Error;
             return;
         }
@@ -191,7 +191,7 @@ private:
 
         rc = ble_gap_adv_start(BLE_OWN_ADDR_RANDOM, nullptr, BLE_HS_FOREVER, &params, gapEventCallback, this);
         if (rc != 0 && rc != BLE_HS_EALREADY) {
-            LOGTE(BLE, "Failed to start advertising: %d", rc);
+            LOGTE(BLE, "Failed to start advertising: 0x%02x", rc);
             status = BleStatus::Error;
             return;
         }
