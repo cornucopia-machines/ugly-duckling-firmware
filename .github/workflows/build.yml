@@ -48,7 +48,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: ccache-${{ runner.os }}-${{ env.ESP_IDF_VERSION }}-${{ matrix.environment }}
+          key: ccache-${{ runner.os }}-${{ env.ESP_IDF_VERSION }}-${{ matrix.target }}-${{ matrix.ud_debug }}
 
       - name: Create dummy config directory
         run: |
@@ -65,7 +65,7 @@ jobs:
           extra_docker_args: -v  ${{ env.CCACHE_DIR }}:/root/.ccache
           command: |
             ccache --max-size=${{ env.CCACHE_MAXSIZE }} && \
-            idf.py build \
+            idf.py --ccache build \
               -DUD_DEBUG=${{ matrix.ud_debug }} \
               -DUD_LOG_VERBOSE=${{ env.UD_LOG_VERBOSE }} \
               && \
@@ -149,7 +149,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: ccache-${{ runner.os }}-${{ env.ESP_IDF_VERSION }}-embedded-test
+          key: ccache-${{ runner.os }}-${{ env.ESP_IDF_VERSION }}-esp32s3-embedded-test
 
       - name: esp-idf build
         uses: espressif/esp-idf-ci-action@v1
@@ -160,7 +160,7 @@ jobs:
           extra_docker_args: -v  ${{ env.CCACHE_DIR }}:/root/.ccache
           command: |
             ccache --max-size=${{ env.CCACHE_MAXSIZE }} && \
-            idf.py build && \
+            idf.py --ccache build && \
             ccache -s
 
       - name: Run a Wokwi CI server
@@ -217,7 +217,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: ccache-${{ runner.os }}-${{ env.ESP_IDF_VERSION }}-e2e-test
+          key: ccache-${{ runner.os }}-${{ env.ESP_IDF_VERSION }}-esp32s3-e2e-test
 
       - name: esp-idf build
         uses: espressif/esp-idf-ci-action@v1
@@ -228,7 +228,7 @@ jobs:
           extra_docker_args: -v  ${{ env.CCACHE_DIR }}:/root/.ccache
           command: |
             ccache --max-size=${{ env.CCACHE_MAXSIZE }} && \
-            idf.py -DUD_GEN=MK6_REV3 -DUD_DEBUG=1 -DWOKWI=1 -DWOKWI_MQTT_HOST=${{ env.HOSTNAME }} build && \
+            idf.py --ccache -DUD_GEN=MK6_REV3 -DUD_DEBUG=1 -DWOKWI=1 -DWOKWI_MQTT_HOST=${{ env.HOSTNAME }} build && \
             ccache -s
 
       - name: Install wokwi-cli
