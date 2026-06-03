@@ -6,6 +6,7 @@
 
 #include <BatteryManager.hpp>
 #include <Strings.hpp>
+#include <drivers/BleDriver.hpp>
 #include <drivers/RtcDriver.hpp>
 #include <drivers/WiFiDriver.hpp>
 
@@ -18,9 +19,13 @@ namespace cornucopia::ugly_duckling::kernel {
 #ifdef UD_DEBUG
 class DebugConsole {
 public:
-    DebugConsole(const std::shared_ptr<BatteryManager>& battery, const std::shared_ptr<WiFiDriver>& wifi)
+    DebugConsole(
+        const std::shared_ptr<BatteryManager>& battery,
+        const std::shared_ptr<WiFiDriver>& wifi,
+        const std::shared_ptr<BleDriver>& ble)
         : battery(battery)
-        , wifi(wifi) {
+        , wifi(wifi)
+        , ble(ble) {
         status.reserve(256);
         Task::loop("console", 3072, 1, [this](Task& task) {
             printStatus();
@@ -39,6 +44,7 @@ private:
         status += "[" + std::string(1, spinner[counter]) + "] ";
         status += "\033[33m" + std::string(firmwareVersion) + "\033[0m";
         status += ", uptime: \033[33m" + toStringWithPrecision(static_cast<double>(uptime.count()) / 1000.0, 1) + "\033[0m s";
+        status += ", BT: " + bleStatus();
         status += ", WIFI: " + std::string(wifiStatus());
         status += ", RTC \033[33m" + std::string(RtcDriver::isTimeSet() ? "OK" : "UNSYNCED") + "\033[0m";
         status += ", heap \033[33m" + toStringWithPrecision(heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024.0, 2) + "\033[0m kB";
@@ -100,8 +106,28 @@ private:
         return "\033[0;33mIP?\033[0m";
     }
 
+    std::string bleStatus() {
+        switch (ble->getStatus()) {
+            case BleStatus::Off:
+                return "\033[0;33mOFF\033[0m";
+            case BleStatus::Idle:
+                return "\033[0;33mIDLE\033[0m";
+            case BleStatus::Advertising:
+                return "\033[0;32mADV\033[0m";
+            case BleStatus::Connected:
+                return "\033[0;32mCONN\033[0m";
+            case BleStatus::Resetting:
+                return "\033[0;31mRST\033[0m";
+            case BleStatus::Error:
+                return "\033[0;31mERR\033[0m";
+            default:
+                return "\033[0;31m???\033[0m";
+        }
+    }
+
     const std::shared_ptr<BatteryManager> battery;
     const std::shared_ptr<WiFiDriver> wifi;
+    const std::shared_ptr<BleDriver> ble;
 
     size_t counter {};
     std::string status;

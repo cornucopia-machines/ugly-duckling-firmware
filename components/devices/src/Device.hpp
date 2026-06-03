@@ -410,7 +410,7 @@ static void startDevice() {
     // Init BLE
     auto ble = std::make_shared<BleDriver>(
         networkConfig->getHostname(),
-        modelWithRevision,
+        "Ugly Duckling " + modelWithRevision,
         firmwareVersion,
         macAddress);
 
@@ -454,7 +454,7 @@ static void startDevice() {
     }
 
 #ifdef UD_DEBUG
-    new DebugConsole(batteryManager, wifi);
+    new DebugConsole(batteryManager, wifi, ble);
 #endif
 
     // Init real time clock
