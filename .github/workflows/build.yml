@@ -8,7 +8,6 @@ env:
   CCACHE_DIR: ${{ github.workspace }}/.ccache
   CCACHE_MAXSIZE: 256M
   CCACHE_COMPRESS: true
-  CCACHE_COMPILERCHECK: content
   ESP_IDF_VERSION: v6.0.1
   TEST_TARGET: esp32s3
 
@@ -64,7 +63,9 @@ jobs:
           esp_idf_version: ${{ env.ESP_IDF_VERSION }}
           esp_idf_docker_image: lptr/esp-idf-clang
           target: ${{ matrix.target }}
-          extra_docker_args: -v  ${{ env.CCACHE_DIR }}:/root/.ccache
+          extra_docker_args: >-
+            -v ${{ env.CCACHE_DIR }}:/root/.ccache
+            -e CCACHE_COMPILERCHECK=content
           command: |
             ccache --max-size=${{ env.CCACHE_MAXSIZE }} --zero-stats && \
             idf.py --ccache build \
@@ -96,7 +97,9 @@ jobs:
           esp_idf_version: ${{ env.ESP_IDF_VERSION }}
           esp_idf_docker_image: lptr/esp-idf-clang
           target: ${{ matrix.target }}
-          extra_docker_args: -v  ${{ env.CCACHE_DIR }}:/root/.ccache
+          extra_docker_args: >-
+            -v ${{ env.CCACHE_DIR }}:/root/.ccache
+            -e CCACHE_COMPILERCHECK=content
           command: |
             ccache --max-size=${{ env.CCACHE_MAXSIZE }} && \
             run-clang-tidy -p build/clang -header-filter="$(pwd)/(main|components)/" $(find main components -type f -name '*.cpp' -not -path '*/test/*' -not -path '*/build/*')
@@ -166,7 +169,9 @@ jobs:
           esp_idf_version: ${{ env.ESP_IDF_VERSION }}
           target: ${{ env.TEST_TARGET }}
           path: test/embedded-tests
-          extra_docker_args: -v  ${{ env.CCACHE_DIR }}:/root/.ccache
+          extra_docker_args: >-
+            -v ${{ env.CCACHE_DIR }}:/root/.ccache
+            -e CCACHE_COMPILERCHECK=content
           command: |
             ccache --max-size=${{ env.CCACHE_MAXSIZE }} --zero-stats && \
             idf.py --ccache build && \
@@ -234,7 +239,9 @@ jobs:
           esp_idf_version: ${{ env.ESP_IDF_VERSION }}
           target: ${{ env.TEST_TARGET }}
           path: test/e2e-tests
-          extra_docker_args: -v  ${{ env.CCACHE_DIR }}:/root/.ccache
+          extra_docker_args: >-
+            -v ${{ env.CCACHE_DIR }}:/root/.ccache
+            -e CCACHE_COMPILERCHECK=content
           command: |
             ccache --max-size=${{ env.CCACHE_MAXSIZE }} --zero-stats && \
             idf.py --ccache -DUD_GEN=MK6_REV3 -DUD_DEBUG=1 -DWOKWI=1 -DWOKWI_MQTT_HOST=${{ env.HOSTNAME }} build && \
