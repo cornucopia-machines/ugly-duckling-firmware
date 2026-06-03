@@ -38,12 +38,12 @@ Two PDUs are sent on each advertising interval:
 
 Service UUIDs included in the scan response:
 
-| UUID        | Service                                 |
-| ----------- | --------------------------------------- |
-| 0x180A      | Device Information (DIS)                |
-| 0x180F      | Battery (BAS)                           |
-| 0x1805      | Current Time (CTS)                      |
-| TBD 128-bit | Ugly Duckling Service (custom, planned) |
+| UUID                                   | Service                        |
+| -------------------------------------- | ------------------------------ |
+| 0x180A                                 | Device Information (DIS)       |
+| 0x180F                                 | Battery (BAS)                  |
+| 0x1805                                 | Current Time (CTS)             |
+| `100D32C7-A4E6-4F72-8D7A-A61871CE4FD6` | Ugly Duckling Service (custom) |
 
 The three standard 16-bit UUIDs together occupy 3 × 2 + 1 (type) + 1 (length)
 = 8 bytes. The one 128-bit custom UUID adds 16 + 2 = 18 bytes. Total: 26 bytes
@@ -121,14 +121,14 @@ lifecycle:
 
 #### Phase 1 — WiFi scan (firmware)
 
-- [ ] Assign a permanent 128-bit UUID for the Ugly Duckling Service
-- [ ] Add the custom GATT service skeleton to `BleDriver` (NimBLE `ble_gatt_svc_def` table)
-- [ ] Add the custom service UUID to the scan-response PDU in `startAdvertising()`
-- [ ] Implement the **WiFi Scan Results** characteristic (Read + Notify)
-  - [ ] Trigger `esp_wifi_scan_start()` on read; handle APSTA mode if SoftAP is active
-  - [ ] Encode results as JSON array `[{ssid, rssi, authMode}]`
-  - [ ] Handle chunked transfer for payloads larger than the negotiated MTU
-  - [ ] Notify connected client when scan completes
+- [x] Assign a permanent 128-bit UUID for the Ugly Duckling Service
+- [x] Add the custom GATT service skeleton to `BleDriver` (NimBLE `ble_gatt_svc_def` table)
+- [x] Add the custom service UUID to the scan-response PDU in `startAdvertising()`
+- [x] Implement the **WiFi Scan Results** characteristic (Read + Notify)
+  - [x] Trigger `esp_wifi_scan_start()` on read; handle APSTA mode if SoftAP is active
+  - [x] Encode results as JSON array `[{ssid, rssi, authMode}]`
+  - [x] Handle chunked transfer for payloads larger than the negotiated MTU
+  - [x] Notify connected client when scan completes
 
 #### Phase 2 — WiFi credentials (firmware)
 
@@ -169,9 +169,13 @@ custom UUIDs in the scan response.
 
 ### Service UUID
 
-A randomly generated 128-bit UUID will be assigned (TBD). It will be added to
-the scan-response PDU so apps can filter for Ugly Duckling devices without
-connecting first.
+| Item                             | UUID                                   |
+| -------------------------------- | -------------------------------------- |
+| Ugly Duckling Service            | `100D32C7-A4E6-4F72-8D7A-A61871CE4FD6` |
+| WiFi Scan Results characteristic | `0x0001` (16-bit, within the service)  |
+
+The service UUID is included in the scan-response PDU so apps can filter for
+Ugly Duckling devices without connecting first.
 
 ### Intended user flow (WiFi provisioning)
 

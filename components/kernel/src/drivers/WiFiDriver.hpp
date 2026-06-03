@@ -1,12 +1,17 @@
 #pragma once
 
+#include <atomic>
 #include <chrono>
+#include <functional>
+#include <string>
+#include <vector>
 
 #include <esp_event.h>
 #include <esp_wifi.h>
 #include <network_provisioning/manager.h>
 #include <network_provisioning/scheme_softap.h>
 
+#include <ArduinoJson.h>
 #include <Concurrent.hpp>
 #include <State.hpp>
 #include <StateManager.hpp>
@@ -76,6 +81,34 @@ public:
         });
     }
 
+    // Starts a WiFi scan and calls onComplete(json) when done.
+    // If a scan is already running the call is ignored.
+    // WiFi must be started (STA or APSTA); returns "[]" immediately if not.
+    void startWifiScan(std::function<void(std::string)> onComplete) {
+        {
+            Lock lock(scanMutex);
+            if (scanInProgress.load()) {
+                return;
+            }
+            scanInProgress = true;
+            scanCompleteCallback = std::move(onComplete);
+        }
+
+        wifi_mode_t mode = WIFI_MODE_NULL;
+        esp_wifi_get_mode(&mode);
+        if (mode == WIFI_MODE_NULL) {
+            finishScan("[]");
+            return;
+        }
+
+        wifi_scan_config_t scanConfig = {};
+        esp_err_t err = esp_wifi_scan_start(&scanConfig, false);
+        if (err != ESP_OK) {
+            LOGTD(WIFI, "Failed to start WiFi scan: %s", esp_err_to_name(err));
+            finishScan("[]");
+        }
+    }
+
     void populateTelemetry(JsonObject& json) {
         if (networkReady.isSet()) {
             wifi_ap_record_t apInfo = {};
@@ -102,6 +135,32 @@ public:
     }
 
 private:
+    void finishScan(std::string json) {
+        std::function<void(std::string)> callback;
+        {
+            Lock lock(scanMutex);
+            scanInProgress = false;
+            callback = std::move(scanCompleteCallback);
+            scanCompleteCallback = nullptr;
+        }
+        if (callback) {
+            callback(std::move(json));
+        }
+    }
+
+    static const char* wifiAuthModeStr(wifi_auth_mode_t mode) {
+        switch (mode) {
+            case WIFI_AUTH_OPEN: return "open";
+            case WIFI_AUTH_WEP: return "wep";
+            case WIFI_AUTH_WPA_PSK: return "wpa_psk";
+            case WIFI_AUTH_WPA2_PSK: return "wpa2_psk";
+            case WIFI_AUTH_WPA_WPA2_PSK: return "wpa_wpa2_psk";
+            case WIFI_AUTH_WPA3_PSK: return "wpa3_psk";
+            case WIFI_AUTH_WPA2_WPA3_PSK: return "wpa2_wpa3_psk";
+            default: return "unknown";
+        }
+    }
+
     static void onEvent(void* arg, esp_event_base_t eventBase, int32_t eventId, void* eventData) {
         auto* driver = static_cast<WiFiDriver*>(arg);
         if (eventBase == WIFI_EVENT) {
@@ -115,6 +174,29 @@ private:
 
     void onWiFiEvent(int32_t eventId, void* eventData) {
         switch (eventId) {
+            case WIFI_EVENT_SCAN_DONE: {
+                if (!scanInProgress.load()) {
+                    break;
+                }
+                uint16_t num = 0;
+                esp_wifi_scan_get_ap_num(&num);
+                std::vector<wifi_ap_record_t> records(num);
+                esp_wifi_scan_get_ap_records(&num, records.data());
+
+                JsonDocument doc;
+                auto arr = doc.to<JsonArray>();
+                for (uint16_t i = 0; i < num; i++) {
+                    auto entry = arr.add<JsonObject>();
+                    entry["ssid"] = reinterpret_cast<const char*>(records[i].ssid);
+                    entry["rssi"] = records[i].rssi;
+                    entry["authMode"] = wifiAuthModeStr(records[i].authmode);
+                }
+                std::string json;
+                serializeJson(doc, json);
+                LOGTD(WIFI, "WiFi scan done: %d APs found", num);
+                finishScan(std::move(json));
+                break;
+            }
             case WIFI_EVENT_STA_START: {
                 LOGTD(WIFI, "Started");
                 stationStarted.set();
@@ -422,6 +504,10 @@ private:
     std::optional<esp_ip4_addr_t> ip;
 
     std::atomic<int> disconnectCount { 0 };
+
+    Mutex scanMutex;
+    std::atomic<bool> scanInProgress { false };
+    std::function<void(std::string)> scanCompleteCallback;
 };
 
 }    // namespace cornucopia::ugly_duckling::kernel::drivers

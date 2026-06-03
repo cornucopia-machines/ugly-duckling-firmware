@@ -464,6 +464,11 @@ static void startDevice() {
     // Init real time clock
     auto rtc = std::make_shared<RtcDriver>(wifi->getNetworkReady(), networkConfig->ntp.get(), states->rtcInSync);
     ble->setOnTimeReceived([rtc](time_t utcTime) { rtc->setTime(utcTime); });
+    ble->setOnWifiScanRequested([wifi, ble]() {
+        wifi->startWifiScan([ble](std::string json) {
+            ble->setScanResults(std::move(json));
+        });
+    });
 
     // Init MQTT connection
     auto clientId = "ugly-duckling-" + macAddress;

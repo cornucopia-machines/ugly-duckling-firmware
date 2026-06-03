@@ -1,13 +1,17 @@
 #pragma once
 
 #include <array>
+#include <atomic>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <time.h>
 
 #include <esp_random.h>
+#include <host/ble_gatt.h>
 #include <host/ble_hs.h>    // NOLINT(misc-header-include-cycle) -- ble_hs.h and ble_gap.h include each other; cycle is in ESP-IDF, not our code
+#include <host/ble_hs_mbuf.h>
 #include <host/ble_uuid.h>
 #include <nimble/nimble_port.h>
 #include <nimble/nimble_port_freertos.h>
@@ -37,6 +41,7 @@ enum class BleStatus : std::uint8_t {
 //  - Device Information Service (DIS, 0x180A): model, firmware version, serial number
 //  - Battery Service     (BAS, 0x180F): battery level, updated via setBatteryLevel()
 //  - Current Time Service (CTS, 0x1805): current time; a central can push the time on connect
+//  - Ugly Duckling Service (custom, 128-bit): WiFi scan results (Read + Notify)
 class BleDriver final {
 public:
     BleDriver(
@@ -70,6 +75,16 @@ public:
             .set_local_time_info_cb = ctsSetLocalTimeInfo,
         });
 
+        // Register the Ugly Duckling custom GATT service (must be before nimble_port_freertos_init)
+        int rc = ble_gatts_count_cfg(gattSvcs);
+        if (rc != 0) {
+            LOGTE(BLE, "ble_gatts_count_cfg failed: 0x%02x", rc);
+        }
+        rc = ble_gatts_add_svcs(gattSvcs);
+        if (rc != 0) {
+            LOGTE(BLE, "ble_gatts_add_svcs failed: 0x%02x", rc);
+        }
+
         // NimBLE DIS stores these pointers directly (no copy), so the strings must remain alive
         // for the device lifetime. They are stored as members below.
         ble_svc_gap_device_name_set(this->deviceName.c_str());
@@ -93,6 +108,40 @@ public:
 
     void setOnTimeReceived(std::function<void(time_t)> callback) {
         onTimeReceived = std::move(callback);
+    }
+
+    void setOnWifiScanRequested(std::function<void()> callback) {
+        onWifiScanRequested = std::move(callback);
+    }
+
+    // Called by the WiFi driver when a BLE-triggered scan completes.
+    // Updates the cached value and notifies the connected client (if any).
+    void setScanResults(std::string json) {
+        {
+            std::lock_guard<std::mutex> lock(scanResultsMutex);
+            wifiScanResults = std::move(json);
+        }
+        scanInProgress = false;
+
+        int handle = connHandle.load();
+        if (handle < 0) {
+            return;
+        }
+        std::string results;
+        {
+            std::lock_guard<std::mutex> lock(scanResultsMutex);
+            results = wifiScanResults;
+        }
+        struct os_mbuf* om = ble_hs_mbuf_from_flat(
+            results.data(), static_cast<uint16_t>(std::min(results.size(), static_cast<size_t>(UINT16_MAX))));
+        if (om == nullptr) {
+            LOGTE(BLE, "Failed to allocate mbuf for scan results notification");
+            return;
+        }
+        int rc = ble_gatts_notify_custom(static_cast<uint16_t>(handle), scanResultsValHandle, om);
+        if (rc != 0) {
+            LOGTD(BLE, "Failed to notify scan results: 0x%02x", rc);
+        }
     }
 
 private:
@@ -149,6 +198,7 @@ private:
         switch (event->type) {
             case BLE_GAP_EVENT_CONNECT:
                 if (event->connect.status == 0) {
+                    driver->connHandle = static_cast<int>(event->connect.conn_handle);
                     driver->status = BleStatus::Connected;
                     LOGTD(BLE, "Client connected, handle: %d", event->connect.conn_handle);
                 } else {
@@ -157,6 +207,7 @@ private:
                 }
                 break;
             case BLE_GAP_EVENT_DISCONNECT:
+                driver->connHandle = -1;
                 LOGTD(BLE, "Client disconnected, reason: 0x%02x, restarting advertising",
                     event->disconnect.reason);
                 driver->startAdvertising();
@@ -222,8 +273,35 @@ private:
         return 0;    // timezone management not supported
     }
 
+    static int scanResultsAccessCallback(uint16_t /* conn_handle */, uint16_t /* attr_handle */, struct ble_gatt_access_ctxt* ctxt, void* /* arg */) {
+        if (ctxt->op != BLE_GATT_ACCESS_OP_READ_CHR) {
+            return BLE_ATT_ERR_UNLIKELY;
+        }
+
+        // Return cached results (may be empty on first read before any scan completes).
+        std::string results;
+        {
+            std::lock_guard<std::mutex> lock(instance->scanResultsMutex);
+            results = instance->wifiScanResults;
+        }
+        int rc = os_mbuf_append(ctxt->om, results.data(), results.size());
+        if (rc != 0) {
+            return BLE_ATT_ERR_INSUFFICIENT_RES;
+        }
+
+        // Trigger a fresh scan (no-op if one is already in progress).
+        if (instance->onWifiScanRequested) {
+            bool expected = false;
+            if (instance->scanInProgress.compare_exchange_strong(expected, true)) {
+                instance->onWifiScanRequested();
+            }
+        }
+
+        return 0;
+    }
+
     void startAdvertising() {
-        static const std::array<ble_uuid16_t, 3> serviceUuids = { {
+        static const std::array<ble_uuid16_t, 3> serviceUuids16 = { {
             { .u = { .type = BLE_UUID_TYPE_16 }, .value = 0x180A },
             { .u = { .type = BLE_UUID_TYPE_16 }, .value = 0x180F },
             { .u = { .type = BLE_UUID_TYPE_16 }, .value = 0x1805 },
@@ -244,11 +322,14 @@ private:
             return;
         }
 
-        // Scan response: service UUIDs (so they don't compete with the name for PDU space).
+        // Scan response: 3 × 16-bit UUIDs (8 B) + 1 × 128-bit UUID (18 B) = 26 B of 31 B available.
         struct ble_hs_adv_fields rspFields = { };
-        rspFields.uuids16 = serviceUuids.data();
-        rspFields.num_uuids16 = serviceUuids.size();
+        rspFields.uuids16 = serviceUuids16.data();
+        rspFields.num_uuids16 = serviceUuids16.size();
         rspFields.uuids16_is_complete = 1;
+        rspFields.uuids128 = &uglyDucklingServiceUuid;
+        rspFields.num_uuids128 = 1;
+        rspFields.uuids128_is_complete = 1;
 
         rc = ble_gap_adv_rsp_set_fields(&rspFields);
         if (rc != 0) {
@@ -278,8 +359,53 @@ private:
     const std::array<uint8_t, 6> bleAddr;
 
     std::function<void(time_t)> onTimeReceived;
+    std::function<void()> onWifiScanRequested;
 
     BleStatus status { BleStatus::Idle };
+    std::atomic<int> connHandle { -1 };
+
+    std::mutex scanResultsMutex;
+    std::string wifiScanResults;
+    std::atomic<bool> scanInProgress { false };
+
+    // Ugly Duckling Service — UUID: 100D32C7-A4E6-4F72-8D7A-A61871CE4FD6
+    // Bytes stored little-endian (LSB first) as required by NimBLE.
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
+    inline static ble_uuid128_t uglyDucklingServiceUuid = BLE_UUID128_INIT(
+        0xd6, 0x4f, 0xce, 0x71, 0x18, 0xa6, 0x7a, 0x8d,
+        0x72, 0x4f, 0xe6, 0xa4, 0xc7, 0x32, 0x0d, 0x10);
+
+    // WiFi Scan Results characteristic — 16-bit UUID 0x0001 (custom, within the Ugly Duckling Service)
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
+    inline static ble_uuid16_t scanResultsChrUuid = { .u = { .type = BLE_UUID_TYPE_16 }, .value = 0x0001 };
+
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
+    inline static uint16_t scanResultsValHandle = 0;
+
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
+    inline static ble_gatt_chr_def uglyDucklingChrs[] = {
+        {
+            .uuid = &scanResultsChrUuid.u,
+            .access_cb = scanResultsAccessCallback,
+            .arg = nullptr,
+            .descriptors = nullptr,
+            .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_NOTIFY,
+            .min_key_size = 0,
+            .val_handle = &scanResultsValHandle,
+        },
+        { },    // terminator
+    };
+
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
+    inline static ble_gatt_svc_def gattSvcs[] = {
+        {
+            .type = BLE_GATT_SVC_TYPE_PRIMARY,
+            .uuid = &uglyDucklingServiceUuid.u,
+            .includes = nullptr,
+            .characteristics = uglyDucklingChrs,
+        },
+        { },    // terminator
+    };
 
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
     inline static BleDriver* instance = nullptr;
