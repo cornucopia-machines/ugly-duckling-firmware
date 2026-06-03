@@ -75,7 +75,7 @@ public:
         return status;
     }
 
-    void setBatteryLevel(uint8_t percent) {
+    static void setBatteryLevel(uint8_t percent) {
         ble_svc_bas_battery_level_set(percent);
     }
 
@@ -153,8 +153,8 @@ private:
 
     void startAdvertising() {
         static const std::array<ble_uuid16_t, 2> serviceUuids = { {
-            { { BLE_UUID_TYPE_16 }, 0x180A },
-            { { BLE_UUID_TYPE_16 }, 0x180F },
+            { .u = { .type = BLE_UUID_TYPE_16 }, .value = 0x180A },
+            { .u = { .type = BLE_UUID_TYPE_16 }, .value = 0x180F },
         } };
 
         // Primary ad: flags + name (26 bytes available after flags' 3B + name header 2B).
