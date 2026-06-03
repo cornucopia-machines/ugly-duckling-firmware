@@ -108,8 +108,6 @@ private:
 
     std::string bleStatus() {
         switch (ble->getStatus()) {
-            case BleStatus::Off:
-                return "\033[0;33mOFF\033[0m";
             case BleStatus::Idle:
                 return "\033[0;33mIDLE\033[0m";
             case BleStatus::Advertising:

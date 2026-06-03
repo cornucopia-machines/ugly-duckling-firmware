@@ -21,10 +21,9 @@ namespace cornucopia::ugly_duckling::kernel::drivers {
 LOGGING_TAG(BLE, "ble")
 
 enum class BleStatus : std::uint8_t {
-    Off,
+    Idle,
     Resetting,
     Error,
-    Idle,
     Advertising,
     Connected
 };
@@ -44,12 +43,10 @@ public:
         , modelName(modelName)
         , firmwareVersion(firmwareVersion)
         , serialNumber(serialNumber)
-        , bleAddr(loadOrGenerateAddress(*nvs))
-        , status(BleStatus::Off) {
+        , bleAddr(loadOrGenerateAddress(*nvs)) {
         instance = this;
 
         nimble_port_init();
-        status = BleStatus::Idle;
 
         ble_hs_cfg.reset_cb = onReset;
         ble_hs_cfg.sync_cb = onSync;
@@ -197,7 +194,7 @@ private:
     const std::string serialNumber;
     const std::array<uint8_t, 6> bleAddr;
 
-    BleStatus status;
+    BleStatus status { BleStatus::Idle };
 
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
     inline static BleDriver* instance = nullptr;
