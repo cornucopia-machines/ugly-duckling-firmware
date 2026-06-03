@@ -2,7 +2,6 @@
 
 #include <string>
 
-#include <host/ble_gap.h>
 #include <host/ble_hs.h>
 #include <host/ble_uuid.h>
 #include <nimble/nimble_port.h>
@@ -95,7 +94,7 @@ private:
         return 0;
     }
 
-    void startAdvertising() {
+    static void startAdvertising() {
         // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
         static ble_uuid16_t disUuid = BLE_UUID16_INIT(0x180A);
 
