@@ -128,14 +128,14 @@ private:
             case BLE_GAP_EVENT_CONNECT:
                 if (event->connect.status == 0) {
                     driver->status = BleStatus::Connected;
-                    LOGTD(BLE, "Client connected (handle=%d)", event->connect.conn_handle);
+                    LOGTD(BLE, "Client connected, handle: %d", event->connect.conn_handle);
                 } else {
-                    LOGTD(BLE, "Connection failed (error=%d), restarting advertising", event->connect.status);
+                    LOGTD(BLE, "Connection failed, error: %d, restarting advertising", event->connect.status);
                     driver->startAdvertising();
                 }
                 break;
             case BLE_GAP_EVENT_DISCONNECT:
-                LOGTD(BLE, "Client disconnected (reason=%d), restarting advertising",
+                LOGTD(BLE, "Client disconnected, reason: %d, restarting advertising",
                     event->disconnect.reason);
                 driver->startAdvertising();
                 break;
