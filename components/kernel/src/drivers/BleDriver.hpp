@@ -19,6 +19,7 @@
 #include <services/gap/ble_svc_gap.h>
 #include <services/gatt/ble_svc_gatt.h>
 
+#include "WifiApRecord.hpp"
 #include <ArduinoJson.h>
 #include <Log.hpp>
 #include <NvsStore.hpp>
@@ -125,6 +126,7 @@ public:
     // Updates the cached value and notifies the connected client (if any).
     // Schedules work on the NimBLE host task so all BLE state is single-threaded.
     void setWifiStatus(std::string newStatus) {
+        LOGTD(BLE, "Publishing new WiFi status: %s", newStatus.c_str());
         postToHostTask([this, s = std::move(newStatus)]() mutable {
             wifiStatus = std::move(s);
             if (connHandle < 0) {
@@ -143,25 +145,42 @@ public:
     }
 
     // Called by the WiFi driver when a BLE-triggered scan completes.
-    // Updates the cached value and notifies the connected client (if any).
     // Schedules work on the NimBLE host task so all BLE state is single-threaded.
-    void setScanResults(std::string json) {
-        postToHostTask([this, j = std::move(json)]() mutable {
-            wifiScanResults = std::move(j);
+    //
+    // Protocol: one Notify per AP (self-contained JSON object), followed by one empty
+    // Notify as an end-of-stream sentinel. The client appends each AP to a list
+    // and finalises on the empty sentinel — no string assembly or re-parsing needed.
+    void setScanResults(std::vector<WifiApRecord> results) {
+        LOGTD(BLE, "Publishing WiFi scan results (%u APs)", static_cast<unsigned>(results.size()));
+        postToHostTask([this, aps = std::move(results)]() mutable {
             scanInProgress = false;
             if (connHandle < 0) {
                 return;
             }
-            struct os_mbuf* om = ble_hs_mbuf_from_flat(
-                wifiScanResults.data(), static_cast<uint16_t>(std::min(wifiScanResults.size(), static_cast<size_t>(UINT16_MAX))));
-            if (om == nullptr) {
-                LOGTE(BLE, "Failed to allocate mbuf for scan results notification");
-                return;
+            for (const WifiApRecord& ap : aps) {
+                JsonDocument doc;
+                doc["ssid"] = ap.ssid;
+                doc["rssi"] = ap.rssi;
+                doc["authMode"] = ap.authMode;
+                doc["wifiGen"] = ap.wifiGen;
+                std::string apJson;
+                serializeJson(doc, apJson);
+                struct os_mbuf* om = ble_hs_mbuf_from_flat(apJson.data(), static_cast<uint16_t>(apJson.size()));
+                if (om == nullptr) {
+                    LOGTE(BLE, "Failed to allocate mbuf for AP notification");
+                    return;
+                }
+                int rc = ble_gatts_notify_custom(static_cast<uint16_t>(connHandle), scanResultsValHandle, om);
+                if (rc != 0) {
+                    LOGTD(BLE, "Failed to notify AP: 0x%02x", rc);
+                    return;
+                }
             }
-            int rc = ble_gatts_notify_custom(static_cast<uint16_t>(connHandle), scanResultsValHandle, om);
-            if (rc != 0) {
-                LOGTD(BLE, "Failed to notify scan results: 0x%02x", rc);
+            struct os_mbuf* sentinel = ble_hs_mbuf_from_flat(nullptr, 0);
+            if (sentinel != nullptr) {
+                ble_gatts_notify_custom(static_cast<uint16_t>(connHandle), scanResultsValHandle, sentinel);
             }
+            LOGTD(BLE, "Sent %u AP notification(s) + sentinel", static_cast<unsigned>(aps.size()));
         });
     }
 
@@ -316,24 +335,10 @@ private:
         return 0;    // timezone management not supported
     }
 
-    static int scanResultsAccessCallback(uint16_t /* conn_handle */, uint16_t /* attr_handle */, struct ble_gatt_access_ctxt* ctxt, void* /* arg */) {
-        if (ctxt->op != BLE_GATT_ACCESS_OP_READ_CHR) {
-            return BLE_ATT_ERR_UNLIKELY;
-        }
-
-        // Return cached results (may be empty on first read before any scan completes).
-        int rc = os_mbuf_append(ctxt->om, instance->wifiScanResults.data(), instance->wifiScanResults.size());
-        if (rc != 0) {
-            return BLE_ATT_ERR_INSUFFICIENT_RES;
-        }
-
-        // Trigger a fresh scan (no-op if one is already in progress).
-        if (instance->onWifiScanRequested && !instance->scanInProgress) {
-            instance->scanInProgress = true;
-            instance->onWifiScanRequested();
-        }
-
-        return 0;
+    static int scanResultsAccessCallback(uint16_t /* conn_handle */, uint16_t /* attr_handle */, struct ble_gatt_access_ctxt* /* ctxt */, void* /* arg */) {
+        // Read is not supported; results are delivered exclusively via Notify.
+        // A scan is triggered by writing "scan" to the WiFi Control characteristic.
+        return BLE_ATT_ERR_READ_NOT_PERMITTED;
     }
 
     static int wifiStatusAccessCallback(uint16_t /* conn_handle */, uint16_t /* attr_handle */, struct ble_gatt_access_ctxt* ctxt, void* /* arg */) {
@@ -378,7 +383,12 @@ private:
         if (ble_hs_mbuf_to_flat(ctxt->om, cmd.data(), len, nullptr) != 0) {
             return BLE_ATT_ERR_UNLIKELY;
         }
-        if (instance->onWifiControlReceived) {
+        if (cmd == "scan") {
+            if (instance->onWifiScanRequested && !instance->scanInProgress) {
+                instance->scanInProgress = true;
+                instance->onWifiScanRequested();
+            }
+        } else if (instance->onWifiControlReceived) {
             instance->onWifiControlReceived(std::move(cmd));
         }
         return 0;
@@ -452,7 +462,6 @@ private:
     // All fields below are only accessed from the NimBLE host task (GAP/GATT callbacks
     // and postToHostTask closures), so no synchronisation is needed.
     int connHandle { -1 };
-    std::string wifiScanResults;
     bool scanInProgress { false };
     std::string wifiStatus;
 
@@ -532,7 +541,7 @@ private:
             .access_cb = scanResultsAccessCallback,
             .arg = nullptr,
             .descriptors = scanResultsDscs,
-            .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_NOTIFY,
+            .flags = BLE_GATT_CHR_F_NOTIFY,
             .min_key_size = 0,
             .val_handle = &scanResultsValHandle,
             .cpfd = nullptr,

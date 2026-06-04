@@ -124,11 +124,10 @@ lifecycle:
 - [x] Assign a permanent 128-bit UUID for the Ugly Duckling Service
 - [x] Add the custom GATT service skeleton to `BleDriver` (NimBLE `ble_gatt_svc_def` table)
 - [x] Add the custom service UUID to the scan-response PDU in `startAdvertising()`
-- [x] Implement the **WiFi Scan Results** characteristic (Read + Notify)
-  - [x] Trigger `esp_wifi_scan_start()` on read; handle APSTA mode if SoftAP is active
-  - [x] Encode results as JSON array `[{ssid, rssi, authMode}]`
-  - [x] Handle chunked transfer for payloads larger than the negotiated MTU
-  - [x] Notify connected client when scan completes
+- [x] Implement the **WiFi Scan Results** characteristic (Notify only)
+  - [x] Trigger `esp_wifi_scan_start()` via `scan` command on WiFi Control; handle APSTA mode if SoftAP is active
+  - [x] Deliver each AP as an individual Notify (`{"ssid":…,"rssi":…,"authMode":…,"wifiGen":…}`)
+  - [x] Send one empty Notify as end-of-stream sentinel after the last AP
 
 #### Phase 2 — WiFi credentials (firmware)
 
@@ -140,6 +139,7 @@ lifecycle:
   - [x] Validate inputs; map errors to `failed:<reason>` in WiFi Status
   - [x] Store credentials in NVS and trigger `WiFiDriver` reconnect
 - [x] Implement the **WiFi Control** characteristic (Write Without Response)
+  - [x] Handle `scan` command (trigger WiFi scan; results delivered via WiFi Scan Results notifications)
   - [x] Handle `disconnect` command
   - [x] Handle `disable` command (stub for WiFi-less mode)
 
@@ -182,8 +182,10 @@ Ugly Duckling devices without connecting first.
 2. App connects to the device over BLE and discovers the Ugly Duckling Service.
 3. App reads the **WiFi Status** characteristic to check if the device is
    already provisioned.
-4. If not provisioned (or re-provisioning), app reads (or subscribes to)
-   **WiFi Scan Results** to get a list of nearby SSIDs.
+4. If not provisioned (or re-provisioning), app subscribes to **WiFi Scan
+   Results** notifications, then writes `scan` to **WiFi Control** to trigger a
+   scan. Each AP arrives as a separate notification; an empty notification
+   signals the end of the list.
 5. App subscribes to **WiFi Status** notifications.
 6. App writes the **WiFi Credentials** characteristic with the chosen SSID and
    password.
@@ -195,12 +197,12 @@ Ugly Duckling devices without connecting first.
 
 All characteristic UUIDs are 16-bit, scoped to the Ugly Duckling Service. Each also exposes a read-only **User Description** descriptor (0x2901) so BLE scanner apps (LightBlue, nRF Connect) display a human-readable label alongside the UUID.
 
-| Characteristic    | UUID     | Properties             | Description                                                                                                                                                                                                                                             |
-| ----------------- | -------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| WiFi Scan Results | `0x0001` | Read, Notify           | Triggers a WiFi scan on read; returns (and notifies) a compact JSON array of `{ssid, rssi, authMode}` for discovered APs. Large results may require chunked transfer (`Read Blob` or repeated Notify).                                                  |
-| WiFi Status       | `0x0002` | Read, Notify           | Reports current WiFi state as a short string: `unconfigured`, `connecting`, `connected`, `failed:<reason>`, or `disabled`. Notified on every state change. Failure reasons include `ssid_too_long`, `password_too_long`, `auth_failed`, `ap_not_found`. |
-| WiFi Credentials  | `0x0003` | Write Without Response | Accepts `{ssid, password}` as JSON. Device validates and initiates a connection attempt; outcome reported via WiFi Status.                                                                                                                              |
-| WiFi Control      | `0x0004` | Write Without Response | Accepts a command string: `disconnect` (drop current connection) or `disable` (turn off WiFi entirely, for future WiFi-less mode).                                                                                                                      |
+| Characteristic    | UUID     | Properties             | Description                                                                                                                                                                                                                                                      |
+| ----------------- | -------- | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| WiFi Scan Results | `0x0001` | Notify                 | Delivers scan results as individual notifications — one per AP (`{"ssid":…,"rssi":…,"authMode":…,"wifiGen":…}`) — followed by one empty notification as an end-of-stream sentinel. Read is not supported. A scan is triggered by writing `scan` to WiFi Control. |
+| WiFi Status       | `0x0002` | Read, Notify           | Reports current WiFi state as a short string: `unconfigured`, `connecting`, `connected`, `failed:<reason>`, or `disabled`. Notified on every state change. Failure reasons include `ssid_too_long`, `password_too_long`, `auth_failed`, `ap_not_found`.          |
+| WiFi Credentials  | `0x0003` | Write Without Response | Accepts `{ssid, password}` as JSON. Device validates and initiates a connection attempt; outcome reported via WiFi Status.                                                                                                                                       |
+| WiFi Control      | `0x0004` | Write Without Response | Accepts a command string: `scan` (trigger a WiFi scan; results delivered via WiFi Scan Results notifications), `disconnect` (drop current connection), or `disable` (turn off WiFi entirely, for future WiFi-less mode).                                         |
 
 ### Security
 
@@ -247,10 +249,18 @@ so there is no inherent conflict. Notes:
 - WiFi scan runs via `esp_wifi_scan_start()`. On ESP32, a scan can run while
   associated to an AP (passive or brief active scan on the home channel), so an
   existing connection need not be dropped.
-- BLE MTU is negotiated per connection (default 23 bytes, up to ~512 bytes with
-  MTU exchange). The scan results payload will likely exceed a single ATT PDU;
-  options are chunked `Read Blob` reads, or a `Notify` stream with a simple
-  framing marker.
+- The WiFi Scan Results characteristic is Notify-only (no Read). A scan is
+  triggered by writing `scan` to the WiFi Control characteristic. The firmware
+  sends one Notify per discovered AP — each a self-contained JSON object
+  `{"ssid":…,"rssi":…,"authMode":…,"wifiGen":…}` — followed by one **empty Notify** (zero
+  bytes) as an end-of-stream sentinel. The client appends each AP to a list and
+  finalises on the empty sentinel. No string assembly or re-parsing is required.
+  `wifiGen` is the highest 802.11 generation the AP advertises: `1`=b, `3`=g,
+  `4`=n (WiFi 4), `6`=ax (WiFi 6). Derived from the PHY bitfields in
+  `wifi_ap_record_t`; `phy_11ac` is not exposed by ESP-IDF (5 GHz not supported).
+  Each AP's JSON is at most ~90 bytes (32-byte SSID + longest authMode string + wifiGen),
+  which fits comfortably within the MTU negotiated by any modern phone (≥ 256);
+  MTU exchange is expected before subscribing.
 - Credentials are stored in NVS so `WiFiDriver`'s existing reconnect logic
   picks them up on subsequent boots. The `network_prov_mgr` NVS format will be
   reused if compatible; otherwise credentials go directly under a known NVS

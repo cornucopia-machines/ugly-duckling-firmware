@@ -12,6 +12,7 @@
 #include <network_provisioning/manager.h>
 #include <network_provisioning/scheme_softap.h>
 
+#include "WifiApRecord.hpp"
 #include <ArduinoJson.h>
 #include <Concurrent.hpp>
 #include <Overloaded.hpp>
@@ -103,9 +104,9 @@ public:
         eventQueue.offer(EvDisableCmd { });
     }
 
-    // Starts a WiFi scan and calls onComplete(json) when done.
+    // Starts a WiFi scan and calls onComplete with the discovered APs when done.
     // If a scan is already in progress the request is ignored.
-    void startWifiScan(std::function<void(std::string)> onComplete) {
+    void startWifiScan(std::function<void(std::vector<WifiApRecord>)> onComplete) {
         eventQueue.offer(EvScanRequest { std::move(onComplete) });
     }
 
@@ -145,6 +146,16 @@ private:
         }
     }
 
+    static uint8_t wifiGenFromRecord(const wifi_ap_record_t& r) {
+        if (r.phy_11ax) { return 6;
+}
+        if (r.phy_11n) { return 4;
+}
+        if (r.phy_11g) { return 3;
+}
+        return 1;
+    }
+
     static const char* wifiAuthModeStr(wifi_auth_mode_t mode) {
         switch (mode) {
             case WIFI_AUTH_OPEN:
@@ -182,21 +193,21 @@ private:
             case WIFI_EVENT_SCAN_DONE: {
                 uint16_t num = 0;
                 esp_wifi_scan_get_ap_num(&num);
-                std::vector<wifi_ap_record_t> records(num);
-                esp_wifi_scan_get_ap_records(&num, records.data());
+                std::vector<wifi_ap_record_t> raw(num);
+                esp_wifi_scan_get_ap_records(&num, raw.data());
 
-                JsonDocument doc;
-                auto arr = doc.to<JsonArray>();
+                std::vector<WifiApRecord> aps;
+                aps.reserve(num);
                 for (uint16_t i = 0; i < num; i++) {
-                    auto entry = arr.add<JsonObject>();
-                    entry["ssid"] = reinterpret_cast<const char*>(records[i].ssid);
-                    entry["rssi"] = records[i].rssi;
-                    entry["authMode"] = wifiAuthModeStr(records[i].authmode);
+                    aps.push_back({
+                        .ssid = reinterpret_cast<const char*>(raw[i].ssid),
+                        .rssi = raw[i].rssi,
+                        .authMode = wifiAuthModeStr(raw[i].authmode),
+                        .wifiGen = wifiGenFromRecord(raw[i]),
+                    });
                 }
-                std::string json;
-                serializeJson(doc, json);
                 LOGTD(WIFI, "WiFi scan done: %d APs found", num);
-                eventQueue.offer(EvScanDone { std::move(json) });
+                eventQueue.offer(EvScanDone { std::move(aps) });
                 break;
             }
             case WIFI_EVENT_STA_START: {
@@ -315,7 +326,7 @@ private:
         bool disabled = false;
         bool connected = false;
         steady_clock::time_point connectingSince;
-        std::optional<std::function<void(std::string)>> pendingScanCallback;
+        std::optional<std::function<void(std::vector<WifiApRecord>)>> pendingScanCallback;
         while (true) {
             if (!connected) {
                 if (disabled) {
@@ -387,7 +398,7 @@ private:
                             if (pendingScanCallback.has_value()) {
                                 auto cb = std::move(*pendingScanCallback);
                                 pendingScanCallback.reset();
-                                cb(ev.json);
+                                cb(ev.records);
                             }
                         },
                         [&](const EvScanRequest& ev) {
@@ -400,7 +411,7 @@ private:
                             if (mode == WIFI_MODE_NULL) {
                                 auto cb = std::move(*pendingScanCallback);
                                 pendingScanCallback.reset();
-                                cb("[]");
+                                cb({});
                                 return;
                             }
                             wifi_scan_config_t scanConfig = { };
@@ -409,7 +420,7 @@ private:
                                 LOGTD(WIFI, "Failed to start WiFi scan: %s", esp_err_to_name(err));
                                 auto cb = std::move(*pendingScanCallback);
                                 pendingScanCallback.reset();
-                                cb("[]");
+                                cb({});
                             }
                         },
                         [&](const EvCredentials& ev) {
@@ -581,10 +592,10 @@ private:
     };
     struct EvProvisioningDone { };
     struct EvScanDone {
-        std::string json;
+        std::vector<WifiApRecord> records;
     };
     struct EvScanRequest {
-        std::function<void(std::string)> onComplete;
+        std::function<void(std::vector<WifiApRecord>)> onComplete;
     };
     struct EvCredentials {
         std::string ssid;
