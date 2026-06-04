@@ -469,6 +469,19 @@ static void startDevice() {
             ble->setScanResults(std::move(json));
         });
     });
+    ble->setOnWifiCredentialsReceived([wifi](std::string ssid, std::string password) {
+        wifi->setCredentials(ssid, password);
+    });
+    ble->setOnWifiControlReceived([wifi](std::string cmd) {
+        if (cmd == "disconnect") {
+            wifi->disconnect();
+        } else if (cmd == "disable") {
+            wifi->disable();
+        }
+    });
+    wifi->setOnStatusChanged([ble](const std::string& status) {
+        ble->setWifiStatus(status);
+    });
 
     // Init MQTT connection
     auto clientId = "ugly-duckling-" + macAddress;

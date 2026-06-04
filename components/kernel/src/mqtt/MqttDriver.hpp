@@ -700,7 +700,8 @@ private:
     uint32_t port { };
     esp_mqtt_client_handle_t client;
 
-    Queue<std::variant<Connected, Disconnected, MessagePublished, Subscribed, OutgoingMessage, Subscription>> eventQueue;
+    using MqttEvent = std::variant<Connected, Disconnected, MessagePublished, Subscribed, OutgoingMessage, Subscription>;
+    Queue<MqttEvent> eventQueue;
     Queue<IncomingMessage> incomingQueue;
     // TODO Use a map instead
     std::vector<Subscription> subscriptions;

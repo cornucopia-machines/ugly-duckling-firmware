@@ -132,16 +132,16 @@ lifecycle:
 
 #### Phase 2 — WiFi credentials (firmware)
 
-- [ ] Implement the **WiFi Status** characteristic (Read + Notify)
-  - [ ] Report `unconfigured`, `connecting`, `connected`, `failed:<reason>`, `disabled`
-  - [ ] Notify on every state change
-- [ ] Implement the **WiFi Credentials** characteristic (Write Without Response)
-  - [ ] Parse `{ssid, password}` JSON
-  - [ ] Validate inputs; map errors to `failed:<reason>` in WiFi Status
-  - [ ] Store credentials in NVS and trigger `WiFiDriver` reconnect
-- [ ] Implement the **WiFi Control** characteristic (Write Without Response)
-  - [ ] Handle `disconnect` command
-  - [ ] Handle `disable` command (stub for WiFi-less mode)
+- [x] Implement the **WiFi Status** characteristic (Read + Notify)
+  - [x] Report `unconfigured`, `connecting`, `connected`, `failed:<reason>`, `disabled`
+  - [x] Notify on every state change
+- [x] Implement the **WiFi Credentials** characteristic (Write Without Response)
+  - [x] Parse `{ssid, password}` JSON
+  - [x] Validate inputs; map errors to `failed:<reason>` in WiFi Status
+  - [x] Store credentials in NVS and trigger `WiFiDriver` reconnect
+- [x] Implement the **WiFi Control** characteristic (Write Without Response)
+  - [x] Handle `disconnect` command
+  - [x] Handle `disable` command (stub for WiFi-less mode)
 
 #### Phase 3 — security (firmware)
 
@@ -169,10 +169,9 @@ custom UUIDs in the scan response.
 
 ### Service UUID
 
-| Item                             | UUID                                   |
-| -------------------------------- | -------------------------------------- |
-| Ugly Duckling Service            | `100D32C7-A4E6-4F72-8D7A-A61871CE4FD6` |
-| WiFi Scan Results characteristic | `0x0001` (16-bit, within the service)  |
+| Item                  | UUID                                   |
+| --------------------- | -------------------------------------- |
+| Ugly Duckling Service | `100D32C7-A4E6-4F72-8D7A-A61871CE4FD6` |
 
 The service UUID is included in the scan-response PDU so apps can filter for
 Ugly Duckling devices without connecting first.
@@ -192,16 +191,16 @@ Ugly Duckling devices without connecting first.
    `failed:<reason>` (covering both immediate validation errors and async
    connection failures).
 
-### Characteristics (planned)
+### Characteristics
 
-All UUIDs are 128-bit and TBD.
+All characteristic UUIDs are 16-bit, scoped to the Ugly Duckling Service. Each also exposes a read-only **User Description** descriptor (0x2901) so BLE scanner apps (LightBlue, nRF Connect) display a human-readable label alongside the UUID.
 
-| Characteristic    | Properties             | Description                                                                                                                                                                                                                                             |
-| ----------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| WiFi Scan Results | Read, Notify           | Triggers a WiFi scan on read; returns (and notifies) a compact JSON array of `{ssid, rssi, authMode}` for discovered APs. Large results may require chunked transfer (`Read Blob` or repeated Notify).                                                  |
-| WiFi Credentials  | Write Without Response | Accepts `{ssid, password}` as JSON. Device validates and initiates a connection attempt; outcome reported via WiFi Status.                                                                                                                              |
-| WiFi Status       | Read, Notify           | Reports current WiFi state as a short string: `unconfigured`, `connecting`, `connected`, `failed:<reason>`, or `disabled`. Notified on every state change. Failure reasons include `ssid_too_long`, `password_too_long`, `auth_failed`, `ap_not_found`. |
-| WiFi Control      | Write Without Response | Accepts a command string: `disconnect` (drop current connection) or `disable` (turn off WiFi entirely, for future WiFi-less mode).                                                                                                                      |
+| Characteristic    | UUID     | Properties             | Description                                                                                                                                                                                                                                             |
+| ----------------- | -------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| WiFi Scan Results | `0x0001` | Read, Notify           | Triggers a WiFi scan on read; returns (and notifies) a compact JSON array of `{ssid, rssi, authMode}` for discovered APs. Large results may require chunked transfer (`Read Blob` or repeated Notify).                                                  |
+| WiFi Status       | `0x0002` | Read, Notify           | Reports current WiFi state as a short string: `unconfigured`, `connecting`, `connected`, `failed:<reason>`, or `disabled`. Notified on every state change. Failure reasons include `ssid_too_long`, `password_too_long`, `auth_failed`, `ap_not_found`. |
+| WiFi Credentials  | `0x0003` | Write Without Response | Accepts `{ssid, password}` as JSON. Device validates and initiates a connection attempt; outcome reported via WiFi Status.                                                                                                                              |
+| WiFi Control      | `0x0004` | Write Without Response | Accepts a command string: `disconnect` (drop current connection) or `disable` (turn off WiFi entirely, for future WiFi-less mode).                                                                                                                      |
 
 ### Security
 

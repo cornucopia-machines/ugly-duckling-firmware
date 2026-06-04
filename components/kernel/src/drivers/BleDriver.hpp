@@ -21,6 +21,7 @@
 #include <services/gap/ble_svc_gap.h>
 #include <services/gatt/ble_svc_gatt.h>
 
+#include <ArduinoJson.h>
 #include <Log.hpp>
 #include <NvsStore.hpp>
 
@@ -112,6 +113,41 @@ public:
 
     void setOnWifiScanRequested(std::function<void()> callback) {
         onWifiScanRequested = std::move(callback);
+    }
+
+    void setOnWifiCredentialsReceived(std::function<void(std::string, std::string)> callback) {
+        onWifiCredentialsReceived = std::move(callback);
+    }
+
+    void setOnWifiControlReceived(std::function<void(std::string)> callback) {
+        onWifiControlReceived = std::move(callback);
+    }
+
+    // Called by the WiFi driver whenever the WiFi status string changes.
+    // Updates the cached value and notifies the connected client (if any).
+    void setWifiStatus(std::string newStatus) {
+        {
+            std::lock_guard<std::mutex> lock(wifiStatusMutex);
+            wifiStatus = std::move(newStatus);
+        }
+        int handle = connHandle.load();
+        if (handle < 0) {
+            return;
+        }
+        std::string s;
+        {
+            std::lock_guard<std::mutex> lock(wifiStatusMutex);
+            s = wifiStatus;
+        }
+        struct os_mbuf* om = ble_hs_mbuf_from_flat(s.data(), s.size());
+        if (om == nullptr) {
+            LOGTE(BLE, "Failed to allocate mbuf for WiFi status notification");
+            return;
+        }
+        int rc = ble_gatts_notify_custom(static_cast<uint16_t>(handle), wifiStatusValHandle, om);
+        if (rc != 0) {
+            LOGTD(BLE, "Failed to notify WiFi status: 0x%02x", rc);
+        }
     }
 
     // Called by the WiFi driver when a BLE-triggered scan completes.
@@ -300,6 +336,57 @@ private:
         return 0;
     }
 
+    static int wifiStatusAccessCallback(uint16_t /* conn_handle */, uint16_t /* attr_handle */, struct ble_gatt_access_ctxt* ctxt, void* /* arg */) {
+        if (ctxt->op != BLE_GATT_ACCESS_OP_READ_CHR) {
+            return BLE_ATT_ERR_UNLIKELY;
+        }
+        std::string status;
+        {
+            std::lock_guard<std::mutex> lock(instance->wifiStatusMutex);
+            status = instance->wifiStatus;
+        }
+        int rc = os_mbuf_append(ctxt->om, status.data(), status.size());
+        return rc == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
+    }
+
+    static int wifiCredentialsAccessCallback(uint16_t /* conn_handle */, uint16_t /* attr_handle */, struct ble_gatt_access_ctxt* ctxt, void* /* arg */) {
+        if (ctxt->op != BLE_GATT_ACCESS_OP_WRITE_CHR) {
+            return BLE_ATT_ERR_UNLIKELY;
+        }
+        uint16_t len = OS_MBUF_PKTLEN(ctxt->om);
+        std::string json(len, '\0');
+        if (ble_hs_mbuf_to_flat(ctxt->om, json.data(), len, nullptr) != 0) {
+            return BLE_ATT_ERR_UNLIKELY;
+        }
+        JsonDocument doc;
+        if (deserializeJson(doc, json) != DeserializationError::Ok
+            || !doc["ssid"].is<const char*>()
+            || !doc["password"].is<const char*>()) {
+            return BLE_ATT_ERR_UNLIKELY;
+        }
+        if (instance->onWifiCredentialsReceived) {
+            instance->onWifiCredentialsReceived(
+                doc["ssid"].as<std::string>(),
+                doc["password"].as<std::string>());
+        }
+        return 0;
+    }
+
+    static int wifiControlAccessCallback(uint16_t /* conn_handle */, uint16_t /* attr_handle */, struct ble_gatt_access_ctxt* ctxt, void* /* arg */) {
+        if (ctxt->op != BLE_GATT_ACCESS_OP_WRITE_CHR) {
+            return BLE_ATT_ERR_UNLIKELY;
+        }
+        uint16_t len = OS_MBUF_PKTLEN(ctxt->om);
+        std::string cmd(len, '\0');
+        if (ble_hs_mbuf_to_flat(ctxt->om, cmd.data(), len, nullptr) != 0) {
+            return BLE_ATT_ERR_UNLIKELY;
+        }
+        if (instance->onWifiControlReceived) {
+            instance->onWifiControlReceived(std::move(cmd));
+        }
+        return 0;
+    }
+
     void startAdvertising() {
         static const std::array<ble_uuid16_t, 3> serviceUuids16 = { {
             { .u = { .type = BLE_UUID_TYPE_16 }, .value = 0x180A },
@@ -360,6 +447,8 @@ private:
 
     std::function<void(time_t)> onTimeReceived;
     std::function<void()> onWifiScanRequested;
+    std::function<void(std::string, std::string)> onWifiCredentialsReceived;
+    std::function<void(std::string)> onWifiControlReceived;
 
     BleStatus status { BleStatus::Idle };
     std::atomic<int> connHandle { -1 };
@@ -367,6 +456,9 @@ private:
     std::mutex scanResultsMutex;
     std::string wifiScanResults;
     std::atomic<bool> scanInProgress { false };
+
+    std::mutex wifiStatusMutex;
+    std::string wifiStatus;
 
     // Ugly Duckling Service — UUID: 100D32C7-A4E6-4F72-8D7A-A61871CE4FD6
     // Bytes stored little-endian (LSB first) as required by NimBLE.
@@ -378,9 +470,54 @@ private:
     // WiFi Scan Results characteristic — 16-bit UUID 0x0001 (custom, within the Ugly Duckling Service)
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
     inline static ble_uuid16_t scanResultsChrUuid = { .u = { .type = BLE_UUID_TYPE_16 }, .value = 0x0001 };
-
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
     inline static uint16_t scanResultsValHandle = 0;
+
+    // WiFi Status characteristic — 16-bit UUID 0x0002 (custom, within the Ugly Duckling Service)
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
+    inline static ble_uuid16_t wifiStatusChrUuid = { .u = { .type = BLE_UUID_TYPE_16 }, .value = 0x0002 };
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
+    inline static uint16_t wifiStatusValHandle = 0;
+
+    // WiFi Credentials characteristic — 16-bit UUID 0x0003 (custom, within the Ugly Duckling Service)
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
+    inline static ble_uuid16_t wifiCredentialsChrUuid = { .u = { .type = BLE_UUID_TYPE_16 }, .value = 0x0003 };
+
+    // WiFi Control characteristic — 16-bit UUID 0x0004 (custom, within the Ugly Duckling Service)
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
+    inline static ble_uuid16_t wifiControlChrUuid = { .u = { .type = BLE_UUID_TYPE_16 }, .value = 0x0004 };
+
+    // Characteristic User Description descriptor — standard UUID 0x2901; read by LightBlue/nRF Connect
+    // to display a human-readable label next to each custom characteristic UUID.
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
+    inline static ble_uuid16_t userDescUuid = { .u = { .type = BLE_UUID_TYPE_16 }, .value = 0x2901 };
+
+    static int userDescAccessCallback(uint16_t /* conn_handle */, uint16_t /* attr_handle */, struct ble_gatt_access_ctxt* ctxt, void* arg) {
+        const char* label = static_cast<const char*>(arg);
+        int rc = os_mbuf_append(ctxt->om, label, strlen(label));
+        return rc == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
+    }
+
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
+    inline static ble_gatt_dsc_def scanResultsDscs[] = {
+        { .uuid = &userDescUuid.u, .att_flags = BLE_ATT_F_READ, .min_key_size = 0, .access_cb = userDescAccessCallback, .arg = const_cast<char*>("WiFi Scan Results") },
+        { },
+    };
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
+    inline static ble_gatt_dsc_def wifiStatusDscs[] = {
+        { .uuid = &userDescUuid.u, .att_flags = BLE_ATT_F_READ, .min_key_size = 0, .access_cb = userDescAccessCallback, .arg = const_cast<char*>("WiFi Status") },
+        { },
+    };
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
+    inline static ble_gatt_dsc_def wifiCredentialsDscs[] = {
+        { .uuid = &userDescUuid.u, .att_flags = BLE_ATT_F_READ, .min_key_size = 0, .access_cb = userDescAccessCallback, .arg = const_cast<char*>("WiFi Credentials") },
+        { },
+    };
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
+    inline static ble_gatt_dsc_def wifiControlDscs[] = {
+        { .uuid = &userDescUuid.u, .att_flags = BLE_ATT_F_READ, .min_key_size = 0, .access_cb = userDescAccessCallback, .arg = const_cast<char*>("WiFi Control") },
+        { },
+    };
 
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
     inline static ble_gatt_chr_def uglyDucklingChrs[] = {
@@ -388,10 +525,37 @@ private:
             .uuid = &scanResultsChrUuid.u,
             .access_cb = scanResultsAccessCallback,
             .arg = nullptr,
-            .descriptors = nullptr,
+            .descriptors = scanResultsDscs,
             .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_NOTIFY,
             .min_key_size = 0,
             .val_handle = &scanResultsValHandle,
+        },
+        {
+            .uuid = &wifiStatusChrUuid.u,
+            .access_cb = wifiStatusAccessCallback,
+            .arg = nullptr,
+            .descriptors = wifiStatusDscs,
+            .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_NOTIFY,
+            .min_key_size = 0,
+            .val_handle = &wifiStatusValHandle,
+        },
+        {
+            .uuid = &wifiCredentialsChrUuid.u,
+            .access_cb = wifiCredentialsAccessCallback,
+            .arg = nullptr,
+            .descriptors = wifiCredentialsDscs,
+            .flags = BLE_GATT_CHR_F_WRITE_NO_RSP,
+            .min_key_size = 0,
+            .val_handle = nullptr,
+        },
+        {
+            .uuid = &wifiControlChrUuid.u,
+            .access_cb = wifiControlAccessCallback,
+            .arg = nullptr,
+            .descriptors = wifiControlDscs,
+            .flags = BLE_GATT_CHR_F_WRITE_NO_RSP,
+            .min_key_size = 0,
+            .val_handle = nullptr,
         },
         { },    // terminator
     };
