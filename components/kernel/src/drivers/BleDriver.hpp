@@ -1,10 +1,8 @@
 #pragma once
 
 #include <array>
-#include <atomic>
 #include <functional>
 #include <memory>
-#include <mutex>
 #include <string>
 #include <time.h>
 
@@ -125,62 +123,69 @@ public:
 
     // Called by the WiFi driver whenever the WiFi status string changes.
     // Updates the cached value and notifies the connected client (if any).
+    // Schedules work on the NimBLE host task so all BLE state is single-threaded.
     void setWifiStatus(std::string newStatus) {
-        {
-            std::lock_guard<std::mutex> lock(wifiStatusMutex);
-            wifiStatus = std::move(newStatus);
-        }
-        int handle = connHandle.load();
-        if (handle < 0) {
-            return;
-        }
-        std::string s;
-        {
-            std::lock_guard<std::mutex> lock(wifiStatusMutex);
-            s = wifiStatus;
-        }
-        struct os_mbuf* om = ble_hs_mbuf_from_flat(s.data(), s.size());
-        if (om == nullptr) {
-            LOGTE(BLE, "Failed to allocate mbuf for WiFi status notification");
-            return;
-        }
-        int rc = ble_gatts_notify_custom(static_cast<uint16_t>(handle), wifiStatusValHandle, om);
-        if (rc != 0) {
-            LOGTD(BLE, "Failed to notify WiFi status: 0x%02x", rc);
-        }
+        postToHostTask([this, s = std::move(newStatus)]() mutable {
+            wifiStatus = std::move(s);
+            if (connHandle < 0) {
+                return;
+            }
+            struct os_mbuf* om = ble_hs_mbuf_from_flat(wifiStatus.data(), wifiStatus.size());
+            if (om == nullptr) {
+                LOGTE(BLE, "Failed to allocate mbuf for WiFi status notification");
+                return;
+            }
+            int rc = ble_gatts_notify_custom(static_cast<uint16_t>(connHandle), wifiStatusValHandle, om);
+            if (rc != 0) {
+                LOGTD(BLE, "Failed to notify WiFi status: 0x%02x", rc);
+            }
+        });
     }
 
     // Called by the WiFi driver when a BLE-triggered scan completes.
     // Updates the cached value and notifies the connected client (if any).
+    // Schedules work on the NimBLE host task so all BLE state is single-threaded.
     void setScanResults(std::string json) {
-        {
-            std::lock_guard<std::mutex> lock(scanResultsMutex);
-            wifiScanResults = std::move(json);
-        }
-        scanInProgress = false;
-
-        int handle = connHandle.load();
-        if (handle < 0) {
-            return;
-        }
-        std::string results;
-        {
-            std::lock_guard<std::mutex> lock(scanResultsMutex);
-            results = wifiScanResults;
-        }
-        struct os_mbuf* om = ble_hs_mbuf_from_flat(
-            results.data(), static_cast<uint16_t>(std::min(results.size(), static_cast<size_t>(UINT16_MAX))));
-        if (om == nullptr) {
-            LOGTE(BLE, "Failed to allocate mbuf for scan results notification");
-            return;
-        }
-        int rc = ble_gatts_notify_custom(static_cast<uint16_t>(handle), scanResultsValHandle, om);
-        if (rc != 0) {
-            LOGTD(BLE, "Failed to notify scan results: 0x%02x", rc);
-        }
+        postToHostTask([this, j = std::move(json)]() mutable {
+            wifiScanResults = std::move(j);
+            scanInProgress = false;
+            if (connHandle < 0) {
+                return;
+            }
+            struct os_mbuf* om = ble_hs_mbuf_from_flat(
+                wifiScanResults.data(), static_cast<uint16_t>(std::min(wifiScanResults.size(), static_cast<size_t>(UINT16_MAX))));
+            if (om == nullptr) {
+                LOGTE(BLE, "Failed to allocate mbuf for scan results notification");
+                return;
+            }
+            int rc = ble_gatts_notify_custom(static_cast<uint16_t>(connHandle), scanResultsValHandle, om);
+            if (rc != 0) {
+                LOGTD(BLE, "Failed to notify scan results: 0x%02x", rc);
+            }
+        });
     }
 
 private:
+    // Posts a callable onto the NimBLE host task's event queue. All BLE state
+    // (wifiStatus, wifiScanResults, connHandle, scanInProgress) is owned by the
+    // host task, so this is the only safe way to mutate it from another task.
+    static void postToHostTask(std::function<void()> fn) {
+        struct Payload {
+            ble_npl_event ev;
+            std::function<void()> fn;
+        };
+        auto* payload = new Payload { .ev = {}, .fn = std::move(fn) };    // NOLINT(cppcoreguidelines-owning-memory)
+        ble_npl_event_init(
+            &payload->ev,
+            [](ble_npl_event* ev) {
+                auto* p = static_cast<Payload*>(ble_npl_event_get_arg(ev));
+                p->fn();
+                delete p;    // NOLINT(cppcoreguidelines-owning-memory)
+            },
+            payload);
+        ble_npl_eventq_put(nimble_port_get_dflt_eventq(), &payload->ev);
+    }
+
     static std::array<uint8_t, 6> loadOrGenerateAddress(NvsStore& nvs) {
         std::array<uint8_t, 6> addr { };
         JsonDocument doc;
@@ -317,22 +322,15 @@ private:
         }
 
         // Return cached results (may be empty on first read before any scan completes).
-        std::string results;
-        {
-            std::lock_guard<std::mutex> lock(instance->scanResultsMutex);
-            results = instance->wifiScanResults;
-        }
-        int rc = os_mbuf_append(ctxt->om, results.data(), results.size());
+        int rc = os_mbuf_append(ctxt->om, instance->wifiScanResults.data(), instance->wifiScanResults.size());
         if (rc != 0) {
             return BLE_ATT_ERR_INSUFFICIENT_RES;
         }
 
         // Trigger a fresh scan (no-op if one is already in progress).
-        if (instance->onWifiScanRequested) {
-            bool expected = false;
-            if (instance->scanInProgress.compare_exchange_strong(expected, true)) {
-                instance->onWifiScanRequested();
-            }
+        if (instance->onWifiScanRequested && !instance->scanInProgress) {
+            instance->scanInProgress = true;
+            instance->onWifiScanRequested();
         }
 
         return 0;
@@ -342,12 +340,7 @@ private:
         if (ctxt->op != BLE_GATT_ACCESS_OP_READ_CHR) {
             return BLE_ATT_ERR_UNLIKELY;
         }
-        std::string status;
-        {
-            std::lock_guard<std::mutex> lock(instance->wifiStatusMutex);
-            status = instance->wifiStatus;
-        }
-        int rc = os_mbuf_append(ctxt->om, status.data(), status.size());
+        int rc = os_mbuf_append(ctxt->om, instance->wifiStatus.data(), instance->wifiStatus.size());
         return rc == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
     }
 
@@ -455,13 +448,12 @@ private:
     std::function<void(std::string)> onWifiControlReceived;
 
     BleStatus status { BleStatus::Idle };
-    std::atomic<int> connHandle { -1 };
 
-    std::mutex scanResultsMutex;
+    // All fields below are only accessed from the NimBLE host task (GAP/GATT callbacks
+    // and postToHostTask closures), so no synchronisation is needed.
+    int connHandle { -1 };
     std::string wifiScanResults;
-    std::atomic<bool> scanInProgress { false };
-
-    std::mutex wifiStatusMutex;
+    bool scanInProgress { false };
     std::string wifiStatus;
 
     // Ugly Duckling Service — UUID: 100D32C7-A4E6-4F72-8D7A-A61871CE4FD6
