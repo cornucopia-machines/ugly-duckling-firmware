@@ -355,7 +355,7 @@ private:
         if (ctxt->op != BLE_GATT_ACCESS_OP_WRITE_CHR) {
             return BLE_ATT_ERR_UNLIKELY;
         }
-        // NOLINTNEXTLINE(bugprone-casting-through-void, cppcoreguidelines-pro-type-cstyle-cast)
+        // NOLINTNEXTLINE(bugprone-casting-through-void, cppcoreguidelines-pro-type-cstyle-cast, performance-no-int-to-ptr)
         uint16_t len = OS_MBUF_PKTLEN(ctxt->om);
         std::string json(len, '\0');
         if (ble_hs_mbuf_to_flat(ctxt->om, json.data(), len, nullptr) != 0) {
@@ -379,7 +379,7 @@ private:
         if (ctxt->op != BLE_GATT_ACCESS_OP_WRITE_CHR) {
             return BLE_ATT_ERR_UNLIKELY;
         }
-        // NOLINTNEXTLINE(bugprone-casting-through-void, cppcoreguidelines-pro-type-cstyle-cast)
+        // NOLINTNEXTLINE(bugprone-casting-through-void, cppcoreguidelines-pro-type-cstyle-cast, performance-no-int-to-ptr)
         uint16_t len = OS_MBUF_PKTLEN(ctxt->om);
         std::string cmd(len, '\0');
         if (ble_hs_mbuf_to_flat(ctxt->om, cmd.data(), len, nullptr) != 0) {
