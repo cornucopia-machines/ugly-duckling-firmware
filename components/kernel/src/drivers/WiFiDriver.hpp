@@ -303,8 +303,6 @@ private:
         }
     }
 
-    // TODO Refactor this to avoid using goto
-    // NOLINTBEGIN(cppcoreguidelines-avoid-goto)
     void runLoop() {
         bool disabled = false;
         bool connected = false;
@@ -313,28 +311,26 @@ private:
         while (true) {
             if (!connected) {
                 if (disabled) {
-                    goto handleEvents;
-                }
-                if (configPortalRunning.isSet()) {
+                    // nothing — just drain events
+                } else if (configPortalRunning.isSet()) {
                     // TODO Add some sort of timeout here
                     LOGTV(WIFI, "Provisioning already running");
-                    goto handleEvents;
-                }
-                if (networkConnecting.isSet()) {
+                } else if (networkConnecting.isSet()) {
                     if (steady_clock::now() - connectingSince < WIFI_CONNECTION_TIMEOUT) {
                         LOGTV(WIFI, "Already connecting");
-                        goto handleEvents;
+                    } else {
+                        LOGTI(WIFI, "Connection timed out, retrying");
+                        networkConnecting.clear();
+                        ensureWifiStopped();
+                        connectingSince = steady_clock::now();
+                        connect();
                     }
-
-                    LOGTI(WIFI, "Connection timed out, retrying");
-                    networkConnecting.clear();
-                    ensureWifiStopped();
+                } else {
+                    connectingSince = steady_clock::now();
+                    connect();
                 }
-                connectingSince = steady_clock::now();
-                connect();
             }
 
-        handleEvents:
             eventQueue.drainIn(duration_cast<ticks>(WIFI_CHECK_INTERVAL), [&](const auto& event) {
                 // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
                 std::visit(overloaded {
@@ -442,7 +438,6 @@ private:
             });
         }
     }
-    // NOLINTEND(cppcoreguidelines-avoid-goto)
 
     void connect() {
         networkConnecting.set();
