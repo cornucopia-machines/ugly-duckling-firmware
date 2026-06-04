@@ -90,7 +90,7 @@ public:
     // Validates {ssid, password} and triggers a reconnect via the event queue.
     // Validation errors are reported via the status callback as "failed:<reason>".
     void setCredentials(const std::string& ssid, const std::string& password) {
-        eventQueue.offer(EvCredentials { ssid, password });
+        eventQueue.offer(EvCredentials { .ssid = ssid, .password = password });
     }
 
     // Drops the current connection; the driver will reconnect immediately.
@@ -111,7 +111,7 @@ public:
 
     void populateTelemetry(JsonObject& json) {
         if (networkReady.isSet()) {
-            wifi_ap_record_t apInfo = {};
+            wifi_ap_record_t apInfo = { };
             esp_err_t err = esp_wifi_sta_get_ap_info(&apInfo);
             if (err == ESP_OK) {
                 json["rssi"] = apInfo.rssi;
@@ -147,14 +147,22 @@ private:
 
     static const char* wifiAuthModeStr(wifi_auth_mode_t mode) {
         switch (mode) {
-            case WIFI_AUTH_OPEN: return "open";
-            case WIFI_AUTH_WEP: return "wep";
-            case WIFI_AUTH_WPA_PSK: return "wpa_psk";
-            case WIFI_AUTH_WPA2_PSK: return "wpa2_psk";
-            case WIFI_AUTH_WPA_WPA2_PSK: return "wpa_wpa2_psk";
-            case WIFI_AUTH_WPA3_PSK: return "wpa3_psk";
-            case WIFI_AUTH_WPA2_WPA3_PSK: return "wpa2_wpa3_psk";
-            default: return "unknown";
+            case WIFI_AUTH_OPEN:
+                return "open";
+            case WIFI_AUTH_WEP:
+                return "wep";
+            case WIFI_AUTH_WPA_PSK:
+                return "wpa_psk";
+            case WIFI_AUTH_WPA2_PSK:
+                return "wpa2_psk";
+            case WIFI_AUTH_WPA_WPA2_PSK:
+                return "wpa_wpa2_psk";
+            case WIFI_AUTH_WPA3_PSK:
+                return "wpa3_psk";
+            case WIFI_AUTH_WPA2_WPA3_PSK:
+                return "wpa2_wpa3_psk";
+            default:
+                return "unknown";
         }
     }
 
@@ -332,109 +340,110 @@ private:
             }
 
             eventQueue.drainIn(duration_cast<ticks>(WIFI_CHECK_INTERVAL), [&](const auto& event) {
-                // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-                std::visit(overloaded {
-                    [&](const EvStarted&) {
-                        if (!configPortalRunning.isSet()) {
-                            esp_err_t err = esp_wifi_connect();
+                std::visit(
+                    overloaded {
+                        [&](const EvStarted&) {
+                            if (!configPortalRunning.isSet()) {
+                                esp_err_t err = esp_wifi_connect();
+                                if (err != ESP_OK) {
+                                    LOGTD(WIFI, "Failed to start connecting: %s, stopping", esp_err_to_name(err));
+                                    ensureWifiStopped();
+                                }
+                            }
+                        },
+                        [&](const EvGotIp&) {
+                            connected = true;
+                            networkConnecting.clear();
+                            setWifiStatusInternal("connected");
+                            LOGTD(WIFI, "Connected to the network");
+                        },
+                        [&](const EvLostIp&) {
+                            connected = false;
+                            networkConnecting.clear();
+                            setWifiStatusInternal("connecting");
+                            disconnectCount++;
+                        },
+                        [&](const EvDisconnected& ev) {
+                            connected = false;
+                            networkConnecting.clear();
+                            if (!disabled) {
+                                if (ev.reason == WIFI_REASON_AUTH_FAIL
+                                    || ev.reason == WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT
+                                    || ev.reason == WIFI_REASON_HANDSHAKE_TIMEOUT) {
+                                    setWifiStatusInternal("failed:auth_failed");
+                                } else if (ev.reason == WIFI_REASON_NO_AP_FOUND) {
+                                    setWifiStatusInternal("failed:ap_not_found");
+                                } else {
+                                    setWifiStatusInternal("connecting");
+                                }
+                            }
+                            disconnectCount++;
+                            LOGTD(WIFI, "Disconnected from the network");
+                        },
+                        [&](const EvProvisioningDone&) {
+                            configPortalRunning.clear();
+                        },
+                        [&](const EvScanDone& ev) {
+                            if (pendingScanCallback.has_value()) {
+                                auto cb = std::move(*pendingScanCallback);
+                                pendingScanCallback.reset();
+                                cb(ev.json);
+                            }
+                        },
+                        [&](const EvScanRequest& ev) {
+                            if (pendingScanCallback.has_value()) {
+                                return;    // scan already in progress, ignore
+                            }
+                            pendingScanCallback = ev.onComplete;
+                            wifi_mode_t mode = WIFI_MODE_NULL;
+                            esp_wifi_get_mode(&mode);
+                            if (mode == WIFI_MODE_NULL) {
+                                auto cb = std::move(*pendingScanCallback);
+                                pendingScanCallback.reset();
+                                cb("[]");
+                                return;
+                            }
+                            wifi_scan_config_t scanConfig = { };
+                            esp_err_t err = esp_wifi_scan_start(&scanConfig, false);
                             if (err != ESP_OK) {
-                                LOGTD(WIFI, "Failed to start connecting: %s, stopping", esp_err_to_name(err));
-                                ensureWifiStopped();
+                                LOGTD(WIFI, "Failed to start WiFi scan: %s", esp_err_to_name(err));
+                                auto cb = std::move(*pendingScanCallback);
+                                pendingScanCallback.reset();
+                                cb("[]");
                             }
-                        }
-                    },
-                    [&](const EvGotIp&) {
-                        connected = true;
-                        networkConnecting.clear();
-                        setWifiStatusInternal("connected");
-                        LOGTD(WIFI, "Connected to the network");
-                    },
-                    [&](const EvLostIp&) {
-                        connected = false;
-                        networkConnecting.clear();
-                        setWifiStatusInternal("connecting");
-                        disconnectCount++;
-                    },
-                    [&](const EvDisconnected& ev) {
-                        connected = false;
-                        networkConnecting.clear();
-                        if (!disabled) {
-                            if (ev.reason == WIFI_REASON_AUTH_FAIL
-                                || ev.reason == WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT
-                                || ev.reason == WIFI_REASON_HANDSHAKE_TIMEOUT) {
-                                setWifiStatusInternal("failed:auth_failed");
-                            } else if (ev.reason == WIFI_REASON_NO_AP_FOUND) {
-                                setWifiStatusInternal("failed:ap_not_found");
-                            } else {
-                                setWifiStatusInternal("connecting");
+                        },
+                        [&](const EvCredentials& ev) {
+                            if (ev.ssid.size() > sizeof(wifi_sta_config_t::ssid) - 1) {
+                                setWifiStatusInternal("failed:ssid_too_long");
+                                return;
                             }
-                        }
-                        disconnectCount++;
-                        LOGTD(WIFI, "Disconnected from the network");
+                            if (ev.password.size() > sizeof(wifi_sta_config_t::password) - 1) {
+                                setWifiStatusInternal("failed:password_too_long");
+                                return;
+                            }
+                            wifi_config_t config = { };
+                            strncpy(reinterpret_cast<char*>(config.sta.ssid), ev.ssid.c_str(), sizeof(config.sta.ssid) - 1);
+                            strncpy(reinterpret_cast<char*>(config.sta.password), ev.password.c_str(), sizeof(config.sta.password) - 1);
+                            ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &config));
+                            setWifiStatusInternal("connecting");
+                            connected = false;
+                            disabled = false;
+                            networkConnecting.clear();
+                            configPortalRunning.clear();
+                            ensureWifiStopped();
+                        },
+                        [&](const EvDisconnectCmd&) {
+                            ensureWifiStopped();
+                        },
+                        [&](const EvDisableCmd&) {
+                            connected = false;
+                            networkConnecting.clear();
+                            disabled = true;
+                            setWifiStatusInternal("disabled");
+                            ensureWifiStopped();
+                        },
                     },
-                    [&](const EvProvisioningDone&) {
-                        configPortalRunning.clear();
-                    },
-                    [&](const EvScanDone& ev) {
-                        if (pendingScanCallback.has_value()) {
-                            auto cb = std::move(*pendingScanCallback);
-                            pendingScanCallback.reset();
-                            cb(std::move(ev.json));
-                        }
-                    },
-                    [&](const EvScanRequest& ev) {
-                        if (pendingScanCallback.has_value()) {
-                            return;    // scan already in progress, ignore
-                        }
-                        pendingScanCallback = std::move(ev.onComplete);
-                        wifi_mode_t mode = WIFI_MODE_NULL;
-                        esp_wifi_get_mode(&mode);
-                        if (mode == WIFI_MODE_NULL) {
-                            auto cb = std::move(*pendingScanCallback);
-                            pendingScanCallback.reset();
-                            cb("[]");
-                            return;
-                        }
-                        wifi_scan_config_t scanConfig = {};
-                        esp_err_t err = esp_wifi_scan_start(&scanConfig, false);
-                        if (err != ESP_OK) {
-                            LOGTD(WIFI, "Failed to start WiFi scan: %s", esp_err_to_name(err));
-                            auto cb = std::move(*pendingScanCallback);
-                            pendingScanCallback.reset();
-                            cb("[]");
-                        }
-                    },
-                    [&](const EvCredentials& ev) {
-                        if (ev.ssid.size() > sizeof(wifi_sta_config_t::ssid) - 1) {
-                            setWifiStatusInternal("failed:ssid_too_long");
-                            return;
-                        }
-                        if (ev.password.size() > sizeof(wifi_sta_config_t::password) - 1) {
-                            setWifiStatusInternal("failed:password_too_long");
-                            return;
-                        }
-                        wifi_config_t config = {};
-                        strncpy(reinterpret_cast<char*>(config.sta.ssid), ev.ssid.c_str(), sizeof(config.sta.ssid) - 1);
-                        strncpy(reinterpret_cast<char*>(config.sta.password), ev.password.c_str(), sizeof(config.sta.password) - 1);
-                        ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &config));
-                        setWifiStatusInternal("connecting");
-                        connected = false;
-                        disabled = false;
-                        networkConnecting.clear();
-                        configPortalRunning.clear();
-                        ensureWifiStopped();
-                    },
-                    [&](const EvDisconnectCmd&) {
-                        ensureWifiStopped();
-                    },
-                    [&](const EvDisableCmd&) {
-                        connected = false;
-                        networkConnecting.clear();
-                        disabled = true;
-                        setWifiStatusInternal("disabled");
-                        ensureWifiStopped();
-                    },
-                }, event);
+                    event);
             });
         }
     }
@@ -444,7 +453,7 @@ private:
 
 #ifdef WOKWI
         LOGTD(WIFI, "Skipping provisioning on Wokwi");
-        wifi_config_t wifiConfig = {};
+        wifi_config_t wifiConfig = { };
         strncpy(reinterpret_cast<char*>(wifiConfig.sta.ssid), "Wokwi-GUEST", sizeof(wifiConfig.sta.ssid) - 1);
         wifiConfig.sta.ssid[sizeof(wifiConfig.sta.ssid) - 1] = '\0';
         wifiConfig.sta.password[0] = '\0';
@@ -567,11 +576,20 @@ private:
     struct EvStarted { };
     struct EvGotIp { };
     struct EvLostIp { };
-    struct EvDisconnected { uint8_t reason; };
+    struct EvDisconnected {
+        uint8_t reason;
+    };
     struct EvProvisioningDone { };
-    struct EvScanDone { std::string json; };
-    struct EvScanRequest { std::function<void(std::string)> onComplete; };
-    struct EvCredentials { std::string ssid; std::string password; };
+    struct EvScanDone {
+        std::string json;
+    };
+    struct EvScanRequest {
+        std::function<void(std::string)> onComplete;
+    };
+    struct EvCredentials {
+        std::string ssid;
+        std::string password;
+    };
     struct EvDisconnectCmd { };
     struct EvDisableCmd { };
     using WiFiEvent = std::variant<

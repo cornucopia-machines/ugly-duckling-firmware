@@ -469,10 +469,10 @@ static void startDevice() {
             ble->setScanResults(std::move(json));
         });
     });
-    ble->setOnWifiCredentialsReceived([wifi](std::string ssid, std::string password) {
+    ble->setOnWifiCredentialsReceived([wifi](const std::string& ssid, const std::string& password) {
         wifi->setCredentials(ssid, password);
     });
-    ble->setOnWifiControlReceived([wifi](std::string cmd) {
+    ble->setOnWifiControlReceived([wifi](const std::string& cmd) {
         if (cmd == "disconnect") {
             wifi->disconnect();
         } else if (cmd == "disable") {

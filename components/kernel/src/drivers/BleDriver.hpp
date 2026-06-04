@@ -257,7 +257,7 @@ private:
     static int ctsGetTime(struct ble_svc_cts_curr_time* ct) {
         time_t now = system_clock::to_time_t(system_clock::now());
         struct tm t {};
-        gmtime_r(&now, &t);
+        (void) gmtime_r(&now, &t);
         ct->et_256.d_d_t.d_t = {
             .year = static_cast<uint16_t>(t.tm_year + 1900),
             .month = static_cast<uint8_t>(t.tm_mon + 1),
@@ -283,6 +283,8 @@ private:
                 .tm_mday = d.day,
                 .tm_mon = d.month - 1,
                 .tm_year = d.year - 1900,
+                .tm_wday = 0,    // ignored by mktime
+                .tm_yday = 0,    // ignored by mktime
                 .tm_isdst = 0,
             };
             // mktime treats tm as local time; on ESP-IDF TZ defaults to UTC so this is correct
@@ -353,6 +355,7 @@ private:
         if (ctxt->op != BLE_GATT_ACCESS_OP_WRITE_CHR) {
             return BLE_ATT_ERR_UNLIKELY;
         }
+        // NOLINTNEXTLINE(bugprone-casting-through-void, cppcoreguidelines-pro-type-cstyle-cast)
         uint16_t len = OS_MBUF_PKTLEN(ctxt->om);
         std::string json(len, '\0');
         if (ble_hs_mbuf_to_flat(ctxt->om, json.data(), len, nullptr) != 0) {
@@ -376,6 +379,7 @@ private:
         if (ctxt->op != BLE_GATT_ACCESS_OP_WRITE_CHR) {
             return BLE_ATT_ERR_UNLIKELY;
         }
+        // NOLINTNEXTLINE(bugprone-casting-through-void, cppcoreguidelines-pro-type-cstyle-cast)
         uint16_t len = OS_MBUF_PKTLEN(ctxt->om);
         std::string cmd(len, '\0');
         if (ble_hs_mbuf_to_flat(ctxt->om, cmd.data(), len, nullptr) != 0) {
@@ -498,24 +502,34 @@ private:
         return rc == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
     }
 
+    // Non-const storage required because ble_gatt_dsc_def::arg is void* (no const overload).
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
+    inline static char scanResultsLabel[] = "WiFi Scan Results";
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
+    inline static char wifiStatusLabel[] = "WiFi Status";
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
+    inline static char wifiCredentialsLabel[] = "WiFi Credentials";
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
+    inline static char wifiControlLabel[] = "WiFi Control";
+
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
     inline static ble_gatt_dsc_def scanResultsDscs[] = {
-        { .uuid = &userDescUuid.u, .att_flags = BLE_ATT_F_READ, .min_key_size = 0, .access_cb = userDescAccessCallback, .arg = const_cast<char*>("WiFi Scan Results") },
+        { .uuid = &userDescUuid.u, .att_flags = BLE_ATT_F_READ, .min_key_size = 0, .access_cb = userDescAccessCallback, .arg = scanResultsLabel },
         { },
     };
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
     inline static ble_gatt_dsc_def wifiStatusDscs[] = {
-        { .uuid = &userDescUuid.u, .att_flags = BLE_ATT_F_READ, .min_key_size = 0, .access_cb = userDescAccessCallback, .arg = const_cast<char*>("WiFi Status") },
+        { .uuid = &userDescUuid.u, .att_flags = BLE_ATT_F_READ, .min_key_size = 0, .access_cb = userDescAccessCallback, .arg = wifiStatusLabel },
         { },
     };
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
     inline static ble_gatt_dsc_def wifiCredentialsDscs[] = {
-        { .uuid = &userDescUuid.u, .att_flags = BLE_ATT_F_READ, .min_key_size = 0, .access_cb = userDescAccessCallback, .arg = const_cast<char*>("WiFi Credentials") },
+        { .uuid = &userDescUuid.u, .att_flags = BLE_ATT_F_READ, .min_key_size = 0, .access_cb = userDescAccessCallback, .arg = wifiCredentialsLabel },
         { },
     };
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
     inline static ble_gatt_dsc_def wifiControlDscs[] = {
-        { .uuid = &userDescUuid.u, .att_flags = BLE_ATT_F_READ, .min_key_size = 0, .access_cb = userDescAccessCallback, .arg = const_cast<char*>("WiFi Control") },
+        { .uuid = &userDescUuid.u, .att_flags = BLE_ATT_F_READ, .min_key_size = 0, .access_cb = userDescAccessCallback, .arg = wifiControlLabel },
         { },
     };
 
@@ -529,6 +543,7 @@ private:
             .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_NOTIFY,
             .min_key_size = 0,
             .val_handle = &scanResultsValHandle,
+            .cpfd = nullptr,
         },
         {
             .uuid = &wifiStatusChrUuid.u,
@@ -538,6 +553,7 @@ private:
             .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_NOTIFY,
             .min_key_size = 0,
             .val_handle = &wifiStatusValHandle,
+            .cpfd = nullptr,
         },
         {
             .uuid = &wifiCredentialsChrUuid.u,
@@ -547,6 +563,7 @@ private:
             .flags = BLE_GATT_CHR_F_WRITE_NO_RSP,
             .min_key_size = 0,
             .val_handle = nullptr,
+            .cpfd = nullptr,
         },
         {
             .uuid = &wifiControlChrUuid.u,
@@ -556,6 +573,7 @@ private:
             .flags = BLE_GATT_CHR_F_WRITE_NO_RSP,
             .min_key_size = 0,
             .val_handle = nullptr,
+            .cpfd = nullptr,
         },
         { },    // terminator
     };
