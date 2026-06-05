@@ -413,6 +413,7 @@ static void startDevice() {
     // Init BLE (optional — disabled via settings->bleEnabled)
     std::shared_ptr<BleDriver> ble;
     if (settings->bleEnabled.get()) {
+        LOGI("BLE enabled, starting NimBLE stack");
         auto bleNvs = std::make_shared<NvsStore>("ble");
         ble = std::make_shared<NimBleDriver>(
             networkConfig->getHostname(),
@@ -421,7 +422,7 @@ static void startDevice() {
             macAddress,
             bleNvs);
     } else {
-        // Use a no-op BLE driver that does nothing and reports itself as disabled
+        LOGI("BLE disabled, using no-op driver");
         ble = std::make_shared<BleDriver>();
     }
 
