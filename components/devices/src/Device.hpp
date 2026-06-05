@@ -472,8 +472,8 @@ static void startDevice() {
     auto rtc = std::make_shared<RtcDriver>(wifi->getNetworkReady(), networkConfig->ntp.get(), states->rtcInSync);
     ble->setOnTimeReceived([rtc](time_t utcTime) { rtc->setTime(utcTime); });
     ble->setOnWifiScanRequested([wifi, ble]() {
-        wifi->startWifiScan([ble](std::vector<WifiApRecord> records) {
-            ble->setScanResults(std::move(records));
+        wifi->startWifiScan([ble](const std::vector<WifiApRecord>& records) {
+            ble->setScanResults(records);
         });
     });
     ble->setOnWifiCredentialsReceived([wifi](const std::string& ssid, const std::string& password) {
