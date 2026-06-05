@@ -26,6 +26,7 @@ The kernel provides the shared runtime services every device relies on:
 graph BT
     subgraph Kernel
         direction BT
+        BLE
         WiFi
         NetworkConnected(["Network connected"])
             style NetworkConnected stroke-width:4
@@ -50,6 +51,7 @@ graph BT
 
 Key services:
 
+- **BLE** (`BleDriver`) — starts NimBLE unconditionally at boot; advertises the device and hosts the standard Device Information Service (DIS, UUID 0x180A). Future roles: provisioning and local-only (WiFi-free) operation.
 - **WiFi** — manages the station connection; publishes the `NetworkConnected` event.
 - **MQTT** — connects to the broker once the network is up; publishes `MQTTConnected`.
 - **NTP** — synchronizes the RTC after the network comes up.
@@ -76,7 +78,7 @@ The active device class is selected at boot:
 | Platform | ESP-IDF target | Models |
 | -------- | -------------- | ------ |
 | **Spinach** | `esp32s3` | MK5, MK6 (rev1–rev3), MK7, MK8 (rev1–rev2), MK9 rev1 |
-| **Carrot** | `esp32c6` | MK9 rev2 |
+| **Carrot** | `esp32c6` | MK10 rev1 |
 
 Each platform produces a single firmware binary. The model and revision are reported in boot logs and in the MQTT `init` message.
 

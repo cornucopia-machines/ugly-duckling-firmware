@@ -9,6 +9,7 @@ env:
   CCACHE_MAXSIZE: 256M
   CCACHE_COMPRESS: true
   ESP_IDF_VERSION: v6.0.1
+  TEST_TARGET: esp32s3
 
 jobs:
   build:
@@ -45,10 +46,11 @@ jobs:
           submodules: "recursive"
 
       - name: Restore ccache cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v5
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: ccache-${{ runner.os }}-${{ env.ESP_IDF_VERSION }}-${{ matrix.environment }}
+          key: ccache-${{ env.ESP_IDF_VERSION }}-${{ matrix.target }}-${{ matrix.ud_debug }}-${{ github.run_id }}
+          restore-keys: ccache-${{ env.ESP_IDF_VERSION }}-${{ matrix.target }}-${{ matrix.ud_debug }}-
 
       - name: Create dummy config directory
         run: |
@@ -62,9 +64,12 @@ jobs:
           esp_idf_version: ${{ env.ESP_IDF_VERSION }}
           esp_idf_docker_image: lptr/esp-idf-clang
           target: ${{ matrix.target }}
-          extra_docker_args: -v  ${{ env.CCACHE_DIR }}:/root/.ccache
+          extra_docker_args: >-
+            -v ${{ env.CCACHE_DIR }}:/root/.ccache
+            -e IDF_CCACHE_ENABLE=1
+            -e CCACHE_COMPILERCHECK=content
           command: |
-            ccache --max-size=${{ env.CCACHE_MAXSIZE }} && \
+            ccache --max-size=${{ env.CCACHE_MAXSIZE }} --zero-stats && \
             idf.py build \
               -DUD_DEBUG=${{ matrix.ud_debug }} \
               -DUD_LOG_VERBOSE=${{ env.UD_LOG_VERBOSE }} \
@@ -73,16 +78,37 @@ jobs:
             pyspdxtools --novalidation --infile build/ugly-duckling.spdx --outfile build/ugly-duckling.spdx.json && \
             ccache -s
 
+      - name: Show binary sizes
+        run: |
+          {
+            echo "### Binary sizes — ${{ matrix.environment }}"
+            echo
+            echo '| File | Size |'
+            echo '| --- | ---: |'
+            for f in build/*.bin build/bootloader/bootloader.bin build/partition_table/partition-table.bin; do
+              [ -f "$f" ] || continue
+              size=$(stat -c '%s' "$f")
+              printf '| `%s` | %s B (%s) |\n' "$f" "$size" "$(numfmt --to=iec-i --suffix=B --format='%.1f' "$size")"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+          ls -l build/*.bin build/bootloader/bootloader.bin build/partition_table/partition-table.bin
+
       - name: clang-tidy
+        if: matrix.ud_debug == 0
         uses: espressif/esp-idf-ci-action@v1
         with:
           esp_idf_version: ${{ env.ESP_IDF_VERSION }}
           esp_idf_docker_image: lptr/esp-idf-clang
           target: ${{ matrix.target }}
-          extra_docker_args: -v  ${{ env.CCACHE_DIR }}:/root/.ccache
           command: |
-            ccache --max-size=${{ env.CCACHE_MAXSIZE }} && \
             run-clang-tidy -p build/clang -header-filter="$(pwd)/(main|components)/" $(find main components -type f -name '*.cpp' -not -path '*/test/*' -not -path '*/build/*')
+
+      - name: Save ccache cache
+        if: always()
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache-${{ env.ESP_IDF_VERSION }}-${{ matrix.target }}-${{ matrix.ud_debug }}-${{ github.run_id }}
 
       - name: Collect artifacts
         run: |
@@ -131,20 +157,24 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: Restore ccache cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: ccache-${{ runner.os }}-${{ env.ESP_IDF_VERSION }}-embedded-test
+          key: ccache-${{ env.ESP_IDF_VERSION }}-${{ env.TEST_TARGET }}-embedded-test-${{ github.run_id }}
+          restore-keys: ccache-${{ env.ESP_IDF_VERSION }}-${{ env.TEST_TARGET }}-embedded-test-
 
       - name: esp-idf build
         uses: espressif/esp-idf-ci-action@v1
         with:
           esp_idf_version: ${{ env.ESP_IDF_VERSION }}
-          target: esp32s3
+          target: ${{ env.TEST_TARGET }}
           path: test/embedded-tests
-          extra_docker_args: -v  ${{ env.CCACHE_DIR }}:/root/.ccache
+          extra_docker_args: >-
+            -v ${{ env.CCACHE_DIR }}:/root/.ccache
+            -e IDF_CCACHE_ENABLE=1
+            -e CCACHE_COMPILERCHECK=content
           command: |
-            ccache --max-size=${{ env.CCACHE_MAXSIZE }} && \
+            ccache --max-size=${{ env.CCACHE_MAXSIZE }} --zero-stats && \
             idf.py build && \
             ccache -s
 
@@ -199,20 +229,24 @@ jobs:
           echo "HOSTNAME=$HOSTNAME" >> $GITHUB_ENV
 
       - name: Restore ccache cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: ccache-${{ runner.os }}-${{ env.ESP_IDF_VERSION }}-e2e-test
+          key: ccache-${{ env.ESP_IDF_VERSION }}-${{ env.TEST_TARGET }}-e2e-test-${{ github.run_id }}
+          restore-keys: ccache-${{ env.ESP_IDF_VERSION }}-${{ env.TEST_TARGET }}-e2e-test-
 
       - name: esp-idf build
         uses: espressif/esp-idf-ci-action@v1
         with:
           esp_idf_version: ${{ env.ESP_IDF_VERSION }}
-          target: esp32s3
+          target: ${{ env.TEST_TARGET }}
           path: test/e2e-tests
-          extra_docker_args: -v  ${{ env.CCACHE_DIR }}:/root/.ccache
+          extra_docker_args: >-
+            -v ${{ env.CCACHE_DIR }}:/root/.ccache
+            -e IDF_CCACHE_ENABLE=1
+            -e CCACHE_COMPILERCHECK=content
           command: |
-            ccache --max-size=${{ env.CCACHE_MAXSIZE }} && \
+            ccache --max-size=${{ env.CCACHE_MAXSIZE }} --zero-stats && \
             idf.py -DUD_GEN=MK6_REV3 -DUD_DEBUG=1 -DWOKWI=1 -DWOKWI_MQTT_HOST=${{ env.HOSTNAME }} build && \
             ccache -s
 

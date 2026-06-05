@@ -14,6 +14,9 @@
 VERSION=$(grep -m 1 'version:' main/idf_component.yml | tr -d ' "' | cut -d: -f2)
 . "$HOME/.espressif/tools/activate_idf_v${VERSION}.sh"
 
+export IDF_CCACHE_ENABLE=1
+export CCACHE_COMPILERCHECK=content
+
 case "$1" in
   carrot)  export IDF_TARGET=esp32c6 ;;
   spinach) export IDF_TARGET=esp32s3 ;;

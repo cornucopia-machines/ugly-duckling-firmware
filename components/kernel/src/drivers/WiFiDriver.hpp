@@ -1,13 +1,21 @@
 #pragma once
 
+#include <atomic>
 #include <chrono>
+#include <functional>
+#include <string>
+#include <variant>
+#include <vector>
 
 #include <esp_event.h>
 #include <esp_wifi.h>
 #include <network_provisioning/manager.h>
 #include <network_provisioning/scheme_softap.h>
 
+#include "WifiApRecord.hpp"
+#include <ArduinoJson.h>
 #include <Concurrent.hpp>
+#include <Overloaded.hpp>
 #include <State.hpp>
 #include <StateManager.hpp>
 #include <Task.hpp>
@@ -76,9 +84,35 @@ public:
         });
     }
 
+    void setOnStatusChanged(std::function<void(const std::string&)> callback) {
+        onStatusChanged = std::move(callback);
+    }
+
+    // Validates {ssid, password} and triggers a reconnect via the event queue.
+    // Validation errors are reported via the status callback as "failed:<reason>".
+    void setCredentials(const std::string& ssid, const std::string& password) {
+        eventQueue.offer(EvCredentials { .ssid = ssid, .password = password });
+    }
+
+    // Drops the current connection; the driver will reconnect immediately.
+    void disconnect() {
+        eventQueue.offer(EvDisconnectCmd { });
+    }
+
+    // Turns off WiFi; the driver will not reconnect until new credentials are set.
+    void disable() {
+        eventQueue.offer(EvDisableCmd { });
+    }
+
+    // Starts a WiFi scan and calls onComplete with the discovered APs when done.
+    // If a scan is already in progress the request is ignored.
+    void startWifiScan(std::function<void(std::vector<WifiApRecord>)> onComplete) {
+        eventQueue.offer(EvScanRequest { std::move(onComplete) });
+    }
+
     void populateTelemetry(JsonObject& json) {
         if (networkReady.isSet()) {
-            wifi_ap_record_t apInfo = {};
+            wifi_ap_record_t apInfo = { };
             esp_err_t err = esp_wifi_sta_get_ap_info(&apInfo);
             if (err == ESP_OK) {
                 json["rssi"] = apInfo.rssi;
@@ -102,6 +136,47 @@ public:
     }
 
 private:
+    // Only called from runLoop() — no mutex needed.
+    void setWifiStatusInternal(const std::string& newStatus) {
+        if (wifiStatus != newStatus) {
+            wifiStatus = newStatus;
+            if (onStatusChanged) {
+                onStatusChanged(newStatus);
+            }
+        }
+    }
+
+    static uint8_t wifiGenFromRecord(const wifi_ap_record_t& r) {
+        if (r.phy_11ax) { return 6;
+}
+        if (r.phy_11n) { return 4;
+}
+        if (r.phy_11g) { return 3;
+}
+        return 1;
+    }
+
+    static const char* wifiAuthModeStr(wifi_auth_mode_t mode) {
+        switch (mode) {
+            case WIFI_AUTH_OPEN:
+                return "open";
+            case WIFI_AUTH_WEP:
+                return "wep";
+            case WIFI_AUTH_WPA_PSK:
+                return "wpa_psk";
+            case WIFI_AUTH_WPA2_PSK:
+                return "wpa2_psk";
+            case WIFI_AUTH_WPA_WPA2_PSK:
+                return "wpa_wpa2_psk";
+            case WIFI_AUTH_WPA3_PSK:
+                return "wpa3_psk";
+            case WIFI_AUTH_WPA2_WPA3_PSK:
+                return "wpa2_wpa3_psk";
+            default:
+                return "unknown";
+        }
+    }
+
     static void onEvent(void* arg, esp_event_base_t eventBase, int32_t eventId, void* eventData) {
         auto* driver = static_cast<WiFiDriver*>(arg);
         if (eventBase == WIFI_EVENT) {
@@ -115,10 +190,30 @@ private:
 
     void onWiFiEvent(int32_t eventId, void* eventData) {
         switch (eventId) {
+            case WIFI_EVENT_SCAN_DONE: {
+                uint16_t num = 0;
+                esp_wifi_scan_get_ap_num(&num);
+                std::vector<wifi_ap_record_t> raw(num);
+                esp_wifi_scan_get_ap_records(&num, raw.data());
+
+                std::vector<WifiApRecord> aps;
+                aps.reserve(num);
+                for (uint16_t i = 0; i < num; i++) {
+                    aps.push_back({
+                        .ssid = reinterpret_cast<const char*>(raw[i].ssid),
+                        .rssi = raw[i].rssi,
+                        .authMode = wifiAuthModeStr(raw[i].authmode),
+                        .wifiGen = wifiGenFromRecord(raw[i]),
+                    });
+                }
+                LOGTD(WIFI, "WiFi scan done: %d APs found", num);
+                eventQueue.offer(EvScanDone { std::move(aps) });
+                break;
+            }
             case WIFI_EVENT_STA_START: {
                 LOGTD(WIFI, "Started");
                 stationStarted.set();
-                eventQueue.offer(WiFiEvent::Started);
+                eventQueue.offer(EvStarted { });
                 break;
             }
             case WIFI_EVENT_STA_STOP: {
@@ -144,7 +239,7 @@ private:
                     Lock lock(metadataMutex);
                     ssid.reset();
                 }
-                eventQueue.offer(WiFiEvent::Disconnected);
+                eventQueue.offer(EvDisconnected { event->reason });
                 LOGTD(WIFI, "Disconnected from the AP %.*s, reason: %d",
                     event->ssid_len, reinterpret_cast<const char*>(event->ssid), event->reason);
                 break;
@@ -171,7 +266,7 @@ private:
                     Lock lock(metadataMutex);
                     ip = event->ip_info.ip;
                 }
-                eventQueue.offer(WiFiEvent::Connected);
+                eventQueue.offer(EvGotIp { });
                 // NOLINTNEXTLINE(cppcoreguidelines-pro-type-cstyle-cast)
                 LOGTD(WIFI, "Got IP - " IPSTR, IP2STR(&event->ip_info.ip));
                 break;
@@ -182,7 +277,7 @@ private:
                     Lock lock(metadataMutex);
                     ip.reset();
                 }
-                eventQueue.offer(WiFiEvent::Disconnected);
+                eventQueue.offer(EvLostIp { });
                 LOGTD(WIFI, "Lost IP");
                 break;
             }
@@ -218,7 +313,7 @@ private:
             }
             case NETWORK_PROV_END: {
                 LOGTD(WIFI, "provisioning finished");
-                eventQueue.offer(WiFiEvent::ProvisioningFinished);
+                eventQueue.offer(EvProvisioningDone { });
                 network_prov_mgr_deinit();
                 break;
             }
@@ -227,75 +322,154 @@ private:
         }
     }
 
-    // TODO Refactor this to avoid using goto
-    // NOLINTBEGIN(cppcoreguidelines-avoid-goto)
     void runLoop() {
+        bool disabled = false;
         bool connected = false;
         steady_clock::time_point connectingSince;
+        std::optional<std::function<void(std::vector<WifiApRecord>)>> pendingScanCallback;
         while (true) {
             if (!connected) {
-                if (configPortalRunning.isSet()) {
+                if (disabled) {
+                    // nothing — just drain events
+                } else if (configPortalRunning.isSet()) {
                     // TODO Add some sort of timeout here
                     LOGTV(WIFI, "Provisioning already running");
-                    goto handleEvents;
-                }
-                if (networkConnecting.isSet()) {
+                } else if (networkConnecting.isSet()) {
                     if (steady_clock::now() - connectingSince < WIFI_CONNECTION_TIMEOUT) {
                         LOGTV(WIFI, "Already connecting");
-                        goto handleEvents;
+                    } else {
+                        LOGTI(WIFI, "Connection timed out, retrying");
+                        networkConnecting.clear();
+                        ensureWifiStopped();
+                        connectingSince = steady_clock::now();
+                        connect();
                     }
-
-                    LOGTI(WIFI, "Connection timed out, retrying");
-                    networkConnecting.clear();
-                    ensureWifiStopped();
+                } else {
+                    connectingSince = steady_clock::now();
+                    connect();
                 }
-                connectingSince = steady_clock::now();
-                connect();
             }
 
-        handleEvents:
-            for (auto event = eventQueue.pollIn(WIFI_CHECK_INTERVAL); event.has_value(); event = eventQueue.poll()) {
-                // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-                switch (event.value()) {
-                    case WiFiEvent::Started:
-                        if (!configPortalRunning.isSet()) {
-                            esp_err_t err = esp_wifi_connect();
-                            if (err != ESP_OK) {
-                                LOGTD(WIFI, "Failed to start connecting: %s, stopping", esp_err_to_name(err));
-                                ensureWifiStopped();
+            eventQueue.drainIn(duration_cast<ticks>(WIFI_CHECK_INTERVAL), [&](const auto& event) {
+                std::visit(
+                    overloaded {
+                        [&](const EvStarted&) {
+                            if (!configPortalRunning.isSet()) {
+                                esp_err_t err = esp_wifi_connect();
+                                if (err != ESP_OK) {
+                                    LOGTD(WIFI, "Failed to start connecting: %s, stopping", esp_err_to_name(err));
+                                    ensureWifiStopped();
+                                }
                             }
-                        }
-                        break;
-                    case WiFiEvent::Connected:
-                        connected = true;
-                        networkConnecting.clear();
-                        LOGTD(WIFI, "Connected to the network");
-                        break;
-                    case WiFiEvent::Disconnected:
-                        connected = false;
-                        networkConnecting.clear();
-                        LOGTD(WIFI, "Disconnected from the network");
-                        disconnectCount++;
-                        break;
-                    case WiFiEvent::ProvisioningFinished:
-                        configPortalRunning.clear();
-                        break;
-                }
-            }
+                        },
+                        [&](const EvGotIp&) {
+                            connected = true;
+                            networkConnecting.clear();
+                            setWifiStatusInternal("connected");
+                            LOGTD(WIFI, "Connected to the network");
+                        },
+                        [&](const EvLostIp&) {
+                            connected = false;
+                            networkConnecting.clear();
+                            setWifiStatusInternal("connecting");
+                            disconnectCount++;
+                        },
+                        [&](const EvDisconnected& ev) {
+                            connected = false;
+                            networkConnecting.clear();
+                            if (!disabled) {
+                                if (ev.reason == WIFI_REASON_AUTH_FAIL
+                                    || ev.reason == WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT
+                                    || ev.reason == WIFI_REASON_HANDSHAKE_TIMEOUT) {
+                                    setWifiStatusInternal("failed:auth_failed");
+                                } else if (ev.reason == WIFI_REASON_NO_AP_FOUND) {
+                                    setWifiStatusInternal("failed:ap_not_found");
+                                } else {
+                                    setWifiStatusInternal("connecting");
+                                }
+                            }
+                            disconnectCount++;
+                            LOGTD(WIFI, "Disconnected from the network");
+                        },
+                        [&](const EvProvisioningDone&) {
+                            configPortalRunning.clear();
+                        },
+                        [&](const EvScanDone& ev) {
+                            if (pendingScanCallback.has_value()) {
+                                auto cb = std::move(*pendingScanCallback);
+                                pendingScanCallback.reset();
+                                cb(ev.records);
+                            }
+                        },
+                        [&](const EvScanRequest& ev) {
+                            if (pendingScanCallback.has_value()) {
+                                return;    // scan already in progress, ignore
+                            }
+                            pendingScanCallback = ev.onComplete;
+                            wifi_mode_t mode = WIFI_MODE_NULL;
+                            esp_wifi_get_mode(&mode);
+                            if (mode == WIFI_MODE_NULL) {
+                                auto cb = std::move(*pendingScanCallback);
+                                pendingScanCallback.reset();
+                                cb({});
+                                return;
+                            }
+                            wifi_scan_config_t scanConfig = { };
+                            esp_err_t err = esp_wifi_scan_start(&scanConfig, false);
+                            if (err != ESP_OK) {
+                                LOGTD(WIFI, "Failed to start WiFi scan: %s", esp_err_to_name(err));
+                                auto cb = std::move(*pendingScanCallback);
+                                pendingScanCallback.reset();
+                                cb({});
+                            }
+                        },
+                        [&](const EvCredentials& ev) {
+                            if (ev.ssid.size() > sizeof(wifi_sta_config_t::ssid) - 1) {
+                                setWifiStatusInternal("failed:ssid_too_long");
+                                return;
+                            }
+                            if (ev.password.size() > sizeof(wifi_sta_config_t::password) - 1) {
+                                setWifiStatusInternal("failed:password_too_long");
+                                return;
+                            }
+                            wifi_config_t config = { };
+                            strncpy(reinterpret_cast<char*>(config.sta.ssid), ev.ssid.c_str(), sizeof(config.sta.ssid) - 1);
+                            strncpy(reinterpret_cast<char*>(config.sta.password), ev.password.c_str(), sizeof(config.sta.password) - 1);
+                            ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &config));
+                            setWifiStatusInternal("connecting");
+                            connected = false;
+                            disabled = false;
+                            networkConnecting.clear();
+                            configPortalRunning.clear();
+                            ensureWifiStopped();
+                        },
+                        [&](const EvDisconnectCmd&) {
+                            ensureWifiStopped();
+                        },
+                        [&](const EvDisableCmd&) {
+                            connected = false;
+                            networkConnecting.clear();
+                            disabled = true;
+                            setWifiStatusInternal("disabled");
+                            ensureWifiStopped();
+                        },
+                    },
+                    event);
+            });
         }
     }
-    // NOLINTEND(cppcoreguidelines-avoid-goto)
 
     void connect() {
         networkConnecting.set();
 
 #ifdef WOKWI
         LOGTD(WIFI, "Skipping provisioning on Wokwi");
-        wifi_config_t wifiConfig = {};
+        wifi_config_t wifiConfig = { };
         strncpy(reinterpret_cast<char*>(wifiConfig.sta.ssid), "Wokwi-GUEST", sizeof(wifiConfig.sta.ssid) - 1);
         wifiConfig.sta.ssid[sizeof(wifiConfig.sta.ssid) - 1] = '\0';
         wifiConfig.sta.password[0] = '\0';
         wifiConfig.sta.channel = 6;
+        setWifiStatusInternal("connecting");
         connectToStation(wifiConfig);
 #else
         bool provisioned = false;
@@ -305,9 +479,11 @@ private:
             ESP_ERROR_CHECK(esp_wifi_get_config(WIFI_IF_STA, &wifiConfig));
             LOGTI(WIFI, "Connecting using stored credentials to %s",
                 wifiConfig.sta.ssid);
+            setWifiStatusInternal("connecting");
             connectToStation(wifiConfig);
         } else {
             LOGTI(WIFI, "No stored credentials, starting provisioning");
+            setWifiStatusInternal("unconfigured");
             configPortalRunning.set();
             startProvisioning();
         }
@@ -396,6 +572,10 @@ private:
     static constexpr const char* serviceKey = nullptr;
     static constexpr const bool resetProvisioned = false;
 
+    // Only accessed from runLoop() — no mutex needed.
+    std::string wifiStatus { "unconfigured" };
+    std::function<void(const std::string&)> onStatusChanged;
+
     StateSource& networkConnecting;
     StateSource& networkReady;
     StateSource& configPortalRunning;
@@ -404,14 +584,30 @@ private:
     StateManager internalStates;
     StateSource stationStarted = internalStates.createStateSource("wifi:station-started");
 
-    enum class WiFiEvent : uint8_t {
-        Started,
-        Connected,
-        Disconnected,
-        ProvisioningFinished,
+    struct EvStarted { };
+    struct EvGotIp { };
+    struct EvLostIp { };
+    struct EvDisconnected {
+        uint8_t reason;
     };
+    struct EvProvisioningDone { };
+    struct EvScanDone {
+        std::vector<WifiApRecord> records;
+    };
+    struct EvScanRequest {
+        std::function<void(std::vector<WifiApRecord>)> onComplete;
+    };
+    struct EvCredentials {
+        std::string ssid;
+        std::string password;
+    };
+    struct EvDisconnectCmd { };
+    struct EvDisableCmd { };
+    using WiFiEvent = std::variant<
+        EvStarted, EvGotIp, EvLostIp, EvDisconnected, EvProvisioningDone,
+        EvScanDone, EvScanRequest, EvCredentials, EvDisconnectCmd, EvDisableCmd>;
 
-    CopyQueue<WiFiEvent> eventQueue { "wifi-events", 16 };
+    Queue<WiFiEvent> eventQueue { "wifi-events", 16 };
 
     static constexpr milliseconds WIFI_QUEUE_TIMEOUT = 1s;
     static constexpr milliseconds WIFI_CONNECTION_TIMEOUT = 1min;

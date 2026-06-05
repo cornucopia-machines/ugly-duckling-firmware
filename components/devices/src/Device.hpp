@@ -29,6 +29,7 @@ static const char* const firmwareVersion = reinterpret_cast<const char*>(esp_app
 #include <NvsConfiguration.hpp>
 #include <NvsStore.hpp>
 #include <Strings.hpp>
+#include <drivers/BleDriver.hpp>
 #include <drivers/RtcDriver.hpp>
 #include <mqtt/MqttDriver.hpp>
 #include <mqtt/MqttLog.hpp>
@@ -285,6 +286,8 @@ void initTelemetryPublishTask(
     Task::loop("telemetry", 8192, [publishInterval, watchdog, mqttRoot, batteryManager, powerManager, wifi, telemetryCollector, telemetryPublishQueue](Task& task) {
         task.markWakeTime();
 
+        BleDriver::setBatteryLevel(static_cast<uint8_t>(batteryManager->getPercentage()));
+
         mqttRoot->publish("telemetry", [batteryManager, powerManager, wifi, mqttRoot, telemetryCollector](JsonObject& telemetry) {
             telemetry["uptime"] = duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count();
             telemetry["timestamp"] = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
@@ -406,6 +409,15 @@ static void startDevice() {
     auto states = std::make_shared<ModuleStates>();
     KernelStatusTask::init(statusLed, states);
 
+    // Init BLE
+    auto bleNvs = std::make_shared<NvsStore>("ble");
+    auto ble = std::make_shared<BleDriver>(
+        networkConfig->getHostname(),
+        "Ugly Duckling " + modelWithRevision,
+        firmwareVersion,
+        macAddress,
+        bleNvs);
+
     // Init WiFi
     auto wifi = std::make_shared<WiFiDriver>(
         states->networkConnecting,
@@ -446,11 +458,30 @@ static void startDevice() {
     }
 
 #ifdef UD_DEBUG
-    new DebugConsole(batteryManager, wifi);
+    new DebugConsole(batteryManager, wifi, ble);
 #endif
 
     // Init real time clock
     auto rtc = std::make_shared<RtcDriver>(wifi->getNetworkReady(), networkConfig->ntp.get(), states->rtcInSync);
+    ble->setOnTimeReceived([rtc](time_t utcTime) { rtc->setTime(utcTime); });
+    ble->setOnWifiScanRequested([wifi, ble]() {
+        wifi->startWifiScan([ble](std::vector<WifiApRecord> records) {
+            ble->setScanResults(std::move(records));
+        });
+    });
+    ble->setOnWifiCredentialsReceived([wifi](const std::string& ssid, const std::string& password) {
+        wifi->setCredentials(ssid, password);
+    });
+    ble->setOnWifiControlReceived([wifi](const std::string& cmd) {
+        if (cmd == "disconnect") {
+            wifi->disconnect();
+        } else if (cmd == "disable") {
+            wifi->disable();
+        }
+    });
+    wifi->setOnStatusChanged([ble](const std::string& status) {
+        ble->setWifiStatus(status);
+    });
 
     // Init MQTT connection
     auto clientId = "ugly-duckling-" + macAddress;

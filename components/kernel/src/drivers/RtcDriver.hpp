@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <optional>
+#include <sys/time.h>
 #include <time.h>
 
 #include "esp_netif_sntp.h"
@@ -73,6 +74,13 @@ public:
 
     State& getInSync() {
         return rtcInSync;
+    }
+
+    void setTime(time_t utcTime) {
+        struct timeval tv = { .tv_sec = utcTime, .tv_usec = 0 };
+        settimeofday(&tv, nullptr);
+        rtcInSync.set();
+        LOGTI(RTC, "Time set via BLE CTS");
     }
 
 private:
