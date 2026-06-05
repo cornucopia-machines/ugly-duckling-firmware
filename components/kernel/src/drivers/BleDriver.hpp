@@ -29,11 +29,27 @@ namespace cornucopia::ugly_duckling::kernel::drivers {
 LOGGING_TAG(BLE, "ble")
 
 enum class BleStatus : std::uint8_t {
+    Disabled,
     Idle,
     Resetting,
     Error,
     Advertising,
     Connected
+};
+
+// No-op BLE driver used when BLE is disabled at runtime (settings->bleEnabled = false).
+// All methods are no-ops; getStatus() returns Disabled. Subclassed by NimBleDriver.
+class BleDriver {
+public:
+    virtual ~BleDriver() = default;
+    virtual BleStatus getStatus() { return BleStatus::Disabled; }
+    virtual void setBatteryLevel(uint8_t /*unused*/) {}
+    virtual void setOnTimeReceived(const std::function<void(time_t)>& /*unused*/) {}
+    virtual void setOnWifiScanRequested(const std::function<void()>& /*unused*/) {}
+    virtual void setOnWifiCredentialsReceived(const std::function<void(std::string, std::string)>& /*unused*/) {}
+    virtual void setOnWifiControlReceived(const std::function<void(std::string)>& /*unused*/) {}
+    virtual void setWifiStatus(const std::string& /*unused*/) {}
+    virtual void setScanResults(const std::vector<WifiApRecord>& /*unused*/) {}
 };
 
 // Starts NimBLE, advertises the device, and hosts standard GATT services readable with any BLE
@@ -42,9 +58,9 @@ enum class BleStatus : std::uint8_t {
 //  - Battery Service     (BAS, 0x180F): battery level, updated via setBatteryLevel()
 //  - Current Time Service (CTS, 0x1805): current time; a central can push the time on connect
 //  - Ugly Duckling Service (custom, 128-bit): WiFi provisioning (scan, credentials, status, control)
-class BleDriver final {
+class NimBleDriver final : public BleDriver {
 public:
-    BleDriver(
+    NimBleDriver(
         const std::string& deviceName,
         const std::string& modelName,
         const std::string& firmwareVersion,
@@ -98,36 +114,36 @@ public:
         LOGTD(BLE, "Initialized, will advertise as '%s'", this->deviceName.c_str());
     }
 
-    BleStatus getStatus() {
+    BleStatus getStatus() override {
         return status;
     }
 
-    static void setBatteryLevel(uint8_t percent) {
+    void setBatteryLevel(uint8_t percent) override {
         ble_svc_bas_battery_level_set(percent);
     }
 
-    void setOnTimeReceived(std::function<void(time_t)> callback) {
-        onTimeReceived = std::move(callback);
+    void setOnTimeReceived(const std::function<void(time_t)>& callback) override {
+        onTimeReceived = callback;
     }
 
-    void setOnWifiScanRequested(std::function<void()> callback) {
-        onWifiScanRequested = std::move(callback);
+    void setOnWifiScanRequested(const std::function<void()>& callback) override {
+        onWifiScanRequested = callback;
     }
 
-    void setOnWifiCredentialsReceived(std::function<void(std::string, std::string)> callback) {
-        onWifiCredentialsReceived = std::move(callback);
+    void setOnWifiCredentialsReceived(const std::function<void(std::string, std::string)>& callback) override {
+        onWifiCredentialsReceived = callback;
     }
 
-    void setOnWifiControlReceived(std::function<void(std::string)> callback) {
-        onWifiControlReceived = std::move(callback);
+    void setOnWifiControlReceived(const std::function<void(std::string)>& callback) override {
+        onWifiControlReceived = callback;
     }
 
     // Called by the WiFi driver whenever the WiFi status string changes.
     // Updates the cached value and notifies the connected client (if any).
     // Schedules work on the NimBLE host task so all BLE state is single-threaded.
-    void setWifiStatus(std::string newStatus) {
+    void setWifiStatus(const std::string& newStatus) override {
         LOGTD(BLE, "Publishing new WiFi status: %s", newStatus.c_str());
-        postToHostTask([this, s = std::move(newStatus)]() mutable {
+        postToHostTask([this, s = newStatus]() mutable {
             wifiStatus = std::move(s);
             if (connHandle < 0) {
                 return;
@@ -150,9 +166,9 @@ public:
     // Protocol: one Notify per AP (self-contained JSON object), followed by one empty
     // Notify as an end-of-stream sentinel. The client appends each AP to a list
     // and finalises on the empty sentinel — no string assembly or re-parsing needed.
-    void setScanResults(std::vector<WifiApRecord> results) {
+    void setScanResults(const std::vector<WifiApRecord>& results) override {
         LOGTD(BLE, "Publishing WiFi scan results (%u APs)", static_cast<unsigned>(results.size()));
-        postToHostTask([this, aps = std::move(results)]() mutable {
+        postToHostTask([this, aps = results]() mutable {
             scanInProgress = false;
             if (connHandle < 0) {
                 return;
@@ -254,7 +270,7 @@ private:
     }
 
     static int gapEventCallback(struct ble_gap_event* event, void* driverp) {
-        auto* driver = static_cast<BleDriver*>(driverp);
+        auto* driver = static_cast<NimBleDriver*>(driverp);
         switch (event->type) {
             case BLE_GAP_EVENT_CONNECT:
                 if (event->connect.status == 0) {
@@ -594,7 +610,7 @@ private:
     };
 
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
-    inline static BleDriver* instance = nullptr;
+    inline static NimBleDriver* instance = nullptr;
 };
 
 }    // namespace cornucopia::ugly_duckling::kernel::drivers

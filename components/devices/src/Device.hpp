@@ -281,12 +281,13 @@ void initTelemetryPublishTask(
     const std::shared_ptr<BatteryManager>& batteryManager,
     const std::shared_ptr<PowerManager>& powerManager,
     const std::shared_ptr<WiFiDriver>& wifi,
+    const std::shared_ptr<BleDriver>& ble,
     const std::shared_ptr<TelemetryCollector>& telemetryCollector,
     const std::shared_ptr<CopyQueue<bool>>& telemetryPublishQueue) {
-    Task::loop("telemetry", 8192, [publishInterval, watchdog, mqttRoot, batteryManager, powerManager, wifi, telemetryCollector, telemetryPublishQueue](Task& task) {
+    Task::loop("telemetry", 8192, [publishInterval, watchdog, mqttRoot, batteryManager, powerManager, wifi, ble, telemetryCollector, telemetryPublishQueue](Task& task) {
         task.markWakeTime();
 
-        BleDriver::setBatteryLevel(static_cast<uint8_t>(batteryManager->getPercentage()));
+        ble->setBatteryLevel(static_cast<uint8_t>(batteryManager->getPercentage()));
 
         mqttRoot->publish("telemetry", [batteryManager, powerManager, wifi, mqttRoot, telemetryCollector](JsonObject& telemetry) {
             telemetry["uptime"] = duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count();
@@ -409,14 +410,20 @@ static void startDevice() {
     auto states = std::make_shared<ModuleStates>();
     KernelStatusTask::init(statusLed, states);
 
-    // Init BLE
-    auto bleNvs = std::make_shared<NvsStore>("ble");
-    auto ble = std::make_shared<BleDriver>(
-        networkConfig->getHostname(),
-        "Ugly Duckling " + modelWithRevision,
-        firmwareVersion,
-        macAddress,
-        bleNvs);
+    // Init BLE (optional — disabled via settings->bleEnabled)
+    std::shared_ptr<BleDriver> ble;
+    if (settings->bleEnabled.get()) {
+        auto bleNvs = std::make_shared<NvsStore>("ble");
+        ble = std::make_shared<NimBleDriver>(
+            networkConfig->getHostname(),
+            "Ugly Duckling " + modelWithRevision,
+            firmwareVersion,
+            macAddress,
+            bleNvs);
+    } else {
+        // Use a no-op BLE driver that does nothing and reports itself as disabled
+        ble = std::make_shared<BleDriver>();
+    }
 
     // Init WiFi
     auto wifi = std::make_shared<WiFiDriver>(
@@ -574,7 +581,7 @@ static void startDevice() {
         }
     }
 
-    initTelemetryPublishTask(settings->publishInterval.get(), watchdog, mqttRoot, batteryManager, powerManager, wifi, telemetryCollector, telemetryPublishQueue);
+    initTelemetryPublishTask(settings->publishInterval.get(), watchdog, mqttRoot, batteryManager, powerManager, wifi, ble, telemetryCollector, telemetryPublishQueue);
 
     // Enable power saving once we are done initializing
     WiFiDriver::setPowerSaveMode(settings->sleepWhenIdle.get());
