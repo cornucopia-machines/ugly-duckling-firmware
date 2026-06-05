@@ -37,8 +37,8 @@ public:
             SCL,
             BatteryParameters {
                 .maximumVoltage = 4100,
-                .bootThreshold = 3500,
-                .shutdownThreshold = 3300,
+                .bootThreshold = 3600,
+                .shutdownThreshold = 3500,
             });
     }
 
