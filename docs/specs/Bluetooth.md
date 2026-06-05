@@ -113,9 +113,9 @@ lifecycle:
 
 ---
 
-## Planned: Ugly Duckling Service (Custom GATT)
+## Ugly Duckling Service (Custom GATT)
 
-> Status: **in progress**
+> Phases 1–2 shipped on `bluetooth/enable`. Phases 3–5 pending.
 
 ### Implementation checklist
 

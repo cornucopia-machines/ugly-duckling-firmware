@@ -41,7 +41,7 @@ enum class BleStatus : std::uint8_t {
 //  - Device Information Service (DIS, 0x180A): model, firmware version, serial number
 //  - Battery Service     (BAS, 0x180F): battery level, updated via setBatteryLevel()
 //  - Current Time Service (CTS, 0x1805): current time; a central can push the time on connect
-//  - Ugly Duckling Service (custom, 128-bit): WiFi scan results (Read + Notify)
+//  - Ugly Duckling Service (custom, 128-bit): WiFi provisioning (scan, credentials, status, control)
 class BleDriver final {
 public:
     BleDriver(
