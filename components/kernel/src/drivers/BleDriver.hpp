@@ -435,6 +435,9 @@ private:
         struct ble_gap_adv_params params = { };
         params.conn_mode = BLE_GAP_CONN_MODE_UND;
         params.disc_mode = BLE_GAP_DISC_MODE_GEN;
+        // 2 s interval (3200 × 0.625 ms) — long enough for the CPU to enter light sleep between events
+        params.itvl_min = 3200;
+        params.itvl_max = 3200;
 
         rc = ble_gap_adv_start(BLE_OWN_ADDR_RANDOM, nullptr, BLE_HS_FOREVER, &params, gapEventCallback, this);
         if (rc != 0 && rc != BLE_HS_EALREADY) {

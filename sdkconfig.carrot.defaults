@@ -4,6 +4,11 @@
 CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
 
 #
+# BLE controller sleep — allows light sleep between advertising events (C6-specific config name)
+#
+CONFIG_BT_LE_SLEEP_ENABLE=y
+
+#
 # LP core coprocessor (used for pulse counting during light sleep)
 #
 CONFIG_ULP_COPROC_ENABLED=y
