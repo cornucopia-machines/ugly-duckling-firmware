@@ -12,7 +12,7 @@ struct DeviceSettings : ConfigurationSection {
     ArrayProperty<JsonAsString> functions { this, "functions" };
 
     Property<bool> sleepWhenIdle { this, "sleepWhenIdle", true };
-    Property<bool> bleEnabled { this, "bleEnabled", true };
+    Property<bool> bleEnabled { this, "bleEnabled", false };
 
     /**
      * @brief How often to publish telemetry.
