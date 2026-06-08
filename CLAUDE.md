@@ -52,7 +52,8 @@ Pass `-B build-carrot` (or `-B build-spinach`) to every `idf.py` subcommand
 (`flash`, `monitor`, `set-target`, `update-dependencies`, etc.) to keep the two
 build trees isolated. The platform argument sets `IDF_TARGET`; the build will
 error if the sdkconfig in the specified directory was generated for a different
-target.
+target. `sdkconfig` is generated inside the build directory (e.g.
+`build-carrot/sdkconfig`), not in the project root.
 
 `tools/activate_idf.sh` reads the IDF version from `main/idf_component.yml`. When upgrading IDF, update the version there (and in `components/kernel/idf_component.yml` and `.github/workflows/build.yml`); the script picks it up automatically.
 

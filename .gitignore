@@ -16,9 +16,6 @@ build/
 # Alternative build directories for platforms and for tests
 build-*/
 
-sdkconfig*
-!sdkconfig*.defaults
-
 managed_components/
 dependencies*.lock
 
