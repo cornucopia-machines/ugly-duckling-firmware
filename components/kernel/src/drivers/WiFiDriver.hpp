@@ -191,6 +191,12 @@ private:
     void onWiFiEvent(int32_t eventId, void* eventData) {
         switch (eventId) {
             case WIFI_EVENT_SCAN_DONE: {
+                // network_prov_mgr may trigger its own scans (SoftAP provisioning
+                // AP list); in that case don't consume results — it must read
+                // them from the WiFi stack itself.
+                if (scanTriggeredByProvisioning.exchange(true)) {
+                    break;
+                }
                 uint16_t num = 0;
                 esp_wifi_scan_get_ap_num(&num);
                 std::vector<wifi_ap_record_t> raw(num);
@@ -415,9 +421,11 @@ private:
                                 return;
                             }
                             wifi_scan_config_t scanConfig = { };
+                            scanTriggeredByProvisioning = false;
                             esp_err_t err = esp_wifi_scan_start(&scanConfig, false);
                             if (err != ESP_OK) {
                                 LOGTD(WIFI, "Failed to start WiFi scan: %s", esp_err_to_name(err));
+                                scanTriggeredByProvisioning = true;
                                 auto cb = std::move(*pendingScanCallback);
                                 pendingScanCallback.reset();
                                 cb({});
@@ -618,6 +626,10 @@ private:
     std::optional<esp_ip4_addr_t> ip;
 
     std::atomic<int> disconnectCount { 0 };
+    // True by default (assumed provisioning-owned); cleared to false when we
+    // call esp_wifi_scan_start() so WIFI_EVENT_SCAN_DONE knows to consume the
+    // results, then reset to true via exchange.
+    std::atomic<bool> scanTriggeredByProvisioning { true };
 };
 
 }    // namespace cornucopia::ugly_duckling::kernel::drivers
