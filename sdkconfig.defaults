@@ -63,7 +63,20 @@ CONFIG_PM_RESTORE_CACHE_TAGMEM_AFTER_LIGHT_SLEEP=y
 # TODO Experiment with this
 # CONFIG_PM_POWER_DOWN_PERIPHERAL_IN_LIGHT_SLEEP=y
 
+# Wi-Fi power saving options
+
+# PHY power down saves ~0.5 mA during light sleep, but causes
+# a 310+20us wakeup time penalty as the PHY firmware is reloaded
+# from flash into IRAM on wakeup. This is a good tradeoff for us
+# since we have long sleep intervals (advertising interval is 2s)
+# and want to minimize sleep current.
 CONFIG_ESP_PHY_MAC_BB_PD=y
+
+# This allows the Wi-Fi driver to skip some work when it detects
+# a lost beacon, which can save a few mA during light sleep.
+# We have a long advertising interval (2s) so we can afford
+# to miss a beacon or two without causing connection issues.
+CONFIG_ESP_WIFI_SLP_BEACON_LOST_OPT=y
 
 # Recalibrate the RTC_FAST/SLOW clock less often
 CONFIG_PM_LIGHTSLEEP_RTC_OSC_CAL_INTERVAL=16
