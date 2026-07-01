@@ -1,10 +1,10 @@
 ## IDF Component Manager Manifest File
 dependencies:
   idf:
-    version: "6.0.1"
+    version: "6.0.2"
   espressif/mqtt: "^1.0.0"
-  espressif/network_provisioning: "^1.2.2"
-  espressif/bq27220: "^0.1.0"
+  espressif/network_provisioning: "^1.2.4"
+  espressif/bq27220: "^0.1.1"
   bblanchon/arduinojson: "7.4.3"
   esp-idf-lib/bh1750: "^1.1.7"
   esp-idf-lib/ds18x20: "^1.2.8"
