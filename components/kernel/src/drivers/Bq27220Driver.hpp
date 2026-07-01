@@ -105,6 +105,8 @@ public:
             .cedv = &default_cedv,
         };
         gauge = bq27220_create(&bq27220_cfg);
+
+        LOGI("Battery voltage at boot: %d mV / %.2f%%; temp = %.2f°C", getVoltage(), getPercentage(), getTemperature());
     }
 
     int getVoltage() override {
