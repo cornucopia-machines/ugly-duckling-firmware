@@ -18,6 +18,7 @@
 #elif defined(CONFIG_IDF_TARGET_ESP32C6)
 
 #include <devices/UglyDucklingMk10.hpp>
+#include <devices/UglyDucklingMk11.hpp>
 
 #else
 #error "Unsupported target"
@@ -96,6 +97,12 @@ void startDeviceBasedOnHardware() {
     // MK10 Rev1
     if (macAddressHasPrefix(0xE8, 0xF6, 0x0A)) {
         startDevice<UglyDucklingMk10Rev1>();
+        return;
+    }
+
+    // MK11 Rev1 -- 9c:cc:01
+    if (macAddressHasPrefix(0x9C, 0xCC, 0x01)) {
+        startDevice<UglyDucklingMk11Rev1>();
         return;
     }
 #endif
