@@ -54,33 +54,39 @@ table CSV or codegen step is needed:
 ```c
 typedef struct __attribute__((packed)) {
     uint16_t magic;       // 0x5544 ('UD') — must match before trusting any other field
-    uint8_t  fmt_version; // 0x01
-    uint8_t  hw_gen;      // hardware generation (MK number, e.g. 11 for MK11)
-    uint8_t  hw_rev;      // hardware sub-revision (0 = first release of that generation)
-    uint8_t  mfr_id;      // manufacturer / assembler ID (0x00 = unknown)
-    uint32_t batch;       // manufacturer batch/lot ID; 0 = not recorded
-    uint32_t serial;      // unit serial number
-} ud_hw_identity_t;       // 14 bytes, burned into BLOCK3 (USER_DATA), zero-padded to the full 32-byte block
+    uint16_t fmt_version; // 0x0001
+    uint16_t hw_gen;      // hardware generation (MK number, e.g. 11 for MK11)
+    uint16_t hw_rev;      // hardware sub-revision (0 = first release of that generation)
+    uint16_t mfr_id;      // manufacturer / assembler ID (0x0000 = unknown)
+    uint64_t batch;       // manufacturer batch/lot ID; 0 = not recorded
+    uint64_t serial;      // unit serial number
+} ud_hw_identity_t;       // 26 bytes, burned into BLOCK3 (USER_DATA), zero-padded to the full 32-byte block
 ```
 
+The record only uses 26 of the block's 32 bytes; the remaining 6 bytes are
+zero-padded and unused. Every field beyond `magic` was sized up to the
+widest convenient width that still fits — since an RS-coded block can only be
+burned once (see below), there's no way to widen a field later, so headroom
+is cheap to buy now and expensive to add after the fact.
+
 `mfr_id` values are assigned in a registry as manufacturers come online;
-`0x00` means unknown/unburned.
+`0x0000` means unknown/unburned.
 
 | `mfr_id` | Manufacturer       |
 | -------- | ------------------ |
-| `0x00`   | Unknown / unburned |
-| `0x01`   | JLCPCB             |
+| `0x0000` | Unknown / unburned |
+| `0x0001` | JLCPCB             |
 
 #### `batch`
 
 JLCPCB prints a batch/lot code on assembly labels and QR codes (e.g.
 `70kbl`) — base-36 over `[0-9a-z]`. A 5-character code has up to
 36⁵ ≈ 60.5M possible values (≈ 25.85 bits), which fits comfortably in a
-32-bit field with room to spare for longer codes. `batch` stores this as a
-plain integer (the numeric value of the base-36 string), not the string
-itself; `tools/efuse_burn.py show` prints it as hex. Optional: not every
-manufacturer produces a code like this, so `0` means "not recorded", same
-convention as `mfr_id`.
+64-bit field with plenty of room for longer codes from other manufacturers.
+`batch` stores this as a plain integer (the numeric value of the base-36
+string), not the string itself; `tools/efuse_burn.py show` prints it as hex.
+Optional: not every manufacturer produces a code like this, so `0` means
+"not recorded", same convention as `mfr_id`.
 
 There's no standard prefix for base-36 the way `0x` means hex, so
 `tools/efuse_burn.py` uses `0z` by analogy (e.g. `--batch 0z70kbl`) — handled
@@ -134,11 +140,11 @@ the caching pattern in `MacAddress.hpp`) and exposes:
 
 ```cpp
 struct HardwareVersion {
-    uint8_t hwGen;
-    uint8_t hwRev;
-    uint8_t mfrId;
-    uint32_t batch;
-    uint32_t serial;
+    uint16_t hwGen;
+    uint16_t hwRev;
+    uint16_t mfrId;
+    uint64_t batch;
+    uint64_t serial;
 };
 
 // std::nullopt if the block is unburned, unreadable, or fails its magic/format check.

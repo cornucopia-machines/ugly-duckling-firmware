@@ -62,8 +62,8 @@ class EfuseBurnTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("hw_gen:    11", result.stdout)
         self.assertIn("hw_rev:    0", result.stdout)
-        self.assertIn("mfr_id:    0x01", result.stdout)
-        self.assertIn("batch:     0x00000001", result.stdout)
+        self.assertIn("mfr_id:    0x0001", result.stdout)
+        self.assertIn("batch:     0x0000000000000001", result.stdout)
         self.assertIn("serial:    4242", result.stdout)
 
     def test_identity_burn_round_trips_on_esp32s3_too(self):
@@ -74,7 +74,7 @@ class EfuseBurnTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("hw_gen:    9", result.stdout)
         self.assertIn("hw_rev:    2", result.stdout)
-        self.assertIn("mfr_id:    0x00", result.stdout)
+        self.assertIn("mfr_id:    0x0000", result.stdout)
         self.assertIn("batch:     0 (not recorded)", result.stdout)
         self.assertIn("serial:    7", result.stdout)
 
@@ -89,7 +89,7 @@ class EfuseBurnTest(unittest.TestCase):
 
         result = self.show()
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("mfr_id:    0x01", result.stdout)
+        self.assertIn("mfr_id:    0x0001", result.stdout)
         self.assertIn(f"serial:    {int('70kbl', 36)}", result.stdout)
 
     def test_batch_id_accepts_0z_base36_prefix(self):
@@ -105,7 +105,7 @@ class EfuseBurnTest(unittest.TestCase):
 
         result = self.show()
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn(f"batch:     0x{int('70kbl', 36):08x}", result.stdout)
+        self.assertIn(f"batch:     0x{int('70kbl', 36):016x}", result.stdout)
 
     def test_bare_base36_batch_without_0z_prefix_is_rejected(self):
         # A bare JLCPCB code has no recognized prefix and isn't valid
@@ -163,7 +163,7 @@ class EfuseBurnTest(unittest.TestCase):
     def test_out_of_range_field_is_rejected(self):
         result = run(
             "identity", "--chip", "esp32c6", "--virt", "--path-efuse-file", self.efuse_file,
-            "--hw-gen", "256", "--hw-rev", "0", "--mfr-id", "0x0", "--serial", "0x0",
+            "--hw-gen", "65536", "--hw-rev", "0", "--mfr-id", "0x0", "--serial", "0x0",
         )
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("out of range", result.stderr)

@@ -14,26 +14,26 @@ namespace cornucopia::ugly_duckling::kernel {
 // See docs/specs/Hardware-Version-in-eFuse.md for the full design rationale.
 
 constexpr uint16_t HW_EFUSE_MAGIC = 0x5544;    // 'UD'
-constexpr uint8_t HW_EFUSE_FMT_VERSION = 0x01;
+constexpr uint16_t HW_EFUSE_FMT_VERSION = 0x0001;
 
 struct __attribute__((packed)) HardwareIdentityRecord {
     uint16_t magic;
-    uint8_t fmtVersion;
-    uint8_t hwGen;
-    uint8_t hwRev;
-    uint8_t mfrId;
-    uint32_t batch;    // manufacturer batch/lot ID (e.g. JLCPCB's base-36 code); 0 = not recorded
-    uint32_t serial;
+    uint16_t fmtVersion;
+    uint16_t hwGen;
+    uint16_t hwRev;
+    uint16_t mfrId;
+    uint64_t batch;    // manufacturer batch/lot ID (e.g. JLCPCB's base-36 code); 0 = not recorded
+    uint64_t serial;
 };
 
-static_assert(sizeof(HardwareIdentityRecord) == 14);
+static_assert(sizeof(HardwareIdentityRecord) == 26);
 
 struct HardwareVersion {
-    uint8_t hwGen;
-    uint8_t hwRev;
-    uint8_t mfrId;
-    uint32_t batch;
-    uint32_t serial;
+    uint16_t hwGen;
+    uint16_t hwRev;
+    uint16_t mfrId;
+    uint64_t batch;
+    uint64_t serial;
 };
 
 // Returns std::nullopt if the eFuse record is unburned (expected for MK10 and

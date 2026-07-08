@@ -34,9 +34,9 @@ namespace {
 void startDeviceBasedOnHardware() {
     const auto& hardwareVersion = getHardwareVersion();
     if (hardwareVersion.has_value()) {
-        ESP_LOGI("device", "Hardware identity (eFuse): generation %d, revision %d, manufacturer 0x%02x, batch %lu, serial %lu",
+        ESP_LOGI("device", "Hardware identity (eFuse): generation %d, revision %d, manufacturer 0x%04x, batch %llu, serial %llu",
             hardwareVersion->hwGen, hardwareVersion->hwRev, hardwareVersion->mfrId,
-            static_cast<unsigned long>(hardwareVersion->batch), static_cast<unsigned long>(hardwareVersion->serial));
+            static_cast<unsigned long long>(hardwareVersion->batch), static_cast<unsigned long long>(hardwareVersion->serial));
     } else {
         ESP_LOGI("device", "No hardware identity eFuse record found — hardware version is unknown (expected for MK10 and earlier)");
     }
