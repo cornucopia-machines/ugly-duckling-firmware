@@ -34,7 +34,7 @@ public:
 
     std::shared_ptr<BatteryDriver> createBatteryDriver(const std::shared_ptr<I2CManager>& _i2c) override {
         return std::make_shared<AnalogBatteryDriver>(
-            BATTERY,
+            BAT_LEVEL,
             2,    // RBATL1 (5.6 MΩ) / RBATL2 (5.6 MΩ) voltage divider: V_VBAT = V_BAT_LEVEL × 2
             BatteryParameters {
                 .maximumVoltage = 4100,
@@ -65,8 +65,8 @@ protected:
     DEFINE_PIN(GPIO_NUM_0, XTAL32K_P, "XTAL_32K_P")
     DEFINE_PIN(GPIO_NUM_1, XTAL32K_N, "XTAL_32K_N")
 
-    // Battery fuel gauge interrupt
-    DEFINE_PIN(GPIO_NUM_2, BATTERY)
+    // Battery level behind a voltage divider (RBATL1 = 5.6 MΩ, RBATL2 = 5.6 MΩ)
+    DEFINE_PIN(GPIO_NUM_2, BAT_LEVEL)
 
     // Flow meter A
     DEFINE_PIN(GPIO_NUM_3, IFLOWA)
