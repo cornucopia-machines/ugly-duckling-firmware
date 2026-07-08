@@ -56,7 +56,7 @@ typedef struct __attribute__((packed)) {
     uint16_t magic;       // 0x5544 ('UD') — must match before trusting any other field
     uint16_t fmt_version; // 0x0001
     uint16_t hw_gen;      // hardware generation (MK number, e.g. 11 for MK11)
-    uint16_t hw_rev;      // hardware sub-revision (0 = first release of that generation)
+    uint16_t hw_rev;      // hardware sub-revision (1 = first release of that generation)
     uint16_t mfr_id;      // manufacturer / assembler ID (0x0000 = unknown)
     uint64_t batch;       // manufacturer batch/lot ID; 0 = not recorded
     uint64_t serial;      // unit serial number
@@ -164,9 +164,9 @@ identity before falling back to MAC prefix matching:
 
 1. If `getHardwareVersion()` returns a value, match `(hwGen, hwRev)` against
    the known `(hw_gen, hw_rev)` pairs for each `DeviceDefinition` subclass and
-   instantiate directly. Note `hw_rev` is 0-indexed (`0` = first release of
+   instantiate directly. Note `hw_rev` is 1-indexed (`1` = first release of
    the generation), so e.g. `UglyDucklingMk11Rev1` corresponds to
-   `hw_gen == 11 && hw_rev == 0`.
+   `hw_gen == 11 && hw_rev == 1`.
 2. If the eFuse record is present but doesn't match any known pair, log a
    warning and fall through to step 3 rather than aborting — an unrecognized
    but validly-burned record is more likely a firmware/hardware version skew
@@ -190,7 +190,7 @@ shells out to `esptool`'s NVS partition generator.
 ```sh
 # Post-assembly board test — one-time identity burn
 tools/efuse_burn.py identity --port /dev/ttyUSB0 \
-    --hw-gen 11 --hw-rev 0 --mfr-id 1 --batch 0z70kbl --serial 1042
+    --hw-gen 11 --hw-rev 1 --mfr-id 1 --batch 0z70kbl --serial 1042
 
 # Read back and decode the record for verification
 tools/efuse_burn.py show --port /dev/ttyUSB0

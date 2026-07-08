@@ -38,7 +38,7 @@ class EfuseBurnTest(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.tmp_dir, ignore_errors=True)
 
-    def identity(self, chip="esp32c6", hw_gen=11, hw_rev=0, mfr_id=1, batch=0, serial=1042):
+    def identity(self, chip="esp32c6", hw_gen=11, hw_rev=1, mfr_id=1, batch=0, serial=1042):
         # --mfr-id, --batch, and --serial are passed as hex to exercise parse_int's "0x..." handling.
         return run(
             "identity", "--chip", chip, "--virt", "--path-efuse-file", self.efuse_file,
@@ -55,13 +55,13 @@ class EfuseBurnTest(unittest.TestCase):
         self.assertIn("unburned or pre-dates this scheme", result.stdout)
 
     def test_identity_burn_then_show_round_trips(self):
-        burn = self.identity(hw_gen=11, hw_rev=0, mfr_id=0x1, batch=0x1, serial=0x1092)
+        burn = self.identity(hw_gen=11, hw_rev=1, mfr_id=0x1, batch=0x1, serial=0x1092)
         self.assertEqual(burn.returncode, 0, burn.stderr)
 
         result = self.show()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("hw_gen:    11", result.stdout)
-        self.assertIn("hw_rev:    0", result.stdout)
+        self.assertIn("hw_rev:    1", result.stdout)
         self.assertIn("mfr_id:    0x0001", result.stdout)
         self.assertIn("batch:     0x0000000000000001", result.stdout)
         self.assertIn("serial:    4242", result.stdout)
@@ -83,7 +83,7 @@ class EfuseBurnTest(unittest.TestCase):
         # --batch, so it should work anywhere parse_int() is used.
         burn = run(
             "identity", "--chip", "esp32c6", "--virt", "--path-efuse-file", self.efuse_file,
-            "--hw-gen", "11", "--hw-rev", "0", "--mfr-id", "0z1", "--serial", "0z70kbl", "--yes",
+            "--hw-gen", "11", "--hw-rev", "1", "--mfr-id", "0z1", "--serial", "0z70kbl", "--yes",
         )
         self.assertEqual(burn.returncode, 0, burn.stderr)
 
@@ -98,7 +98,7 @@ class EfuseBurnTest(unittest.TestCase):
         # project uses "0z" by analogy.
         burn = run(
             "identity", "--chip", "esp32c6", "--virt", "--path-efuse-file", self.efuse_file,
-            "--hw-gen", "11", "--hw-rev", "0", "--mfr-id", "0x1", "--batch", "0z70kbl",
+            "--hw-gen", "11", "--hw-rev", "1", "--mfr-id", "0x1", "--batch", "0z70kbl",
             "--serial", "0x1092", "--yes",
         )
         self.assertEqual(burn.returncode, 0, burn.stderr)
@@ -112,7 +112,7 @@ class EfuseBurnTest(unittest.TestCase):
         # decimal, so it must be rejected rather than silently guessed.
         result = run(
             "identity", "--chip", "esp32c6", "--virt", "--path-efuse-file", self.efuse_file,
-            "--hw-gen", "11", "--hw-rev", "0", "--mfr-id", "0x1", "--batch", "70kbl",
+            "--hw-gen", "11", "--hw-rev", "1", "--mfr-id", "0x1", "--batch", "70kbl",
             "--serial", "0x1092", "--yes",
         )
         self.assertNotEqual(result.returncode, 0)
@@ -121,7 +121,7 @@ class EfuseBurnTest(unittest.TestCase):
     def test_batch_defaults_to_not_recorded_when_omitted(self):
         burn = run(
             "identity", "--chip", "esp32c6", "--virt", "--path-efuse-file", self.efuse_file,
-            "--hw-gen", "11", "--hw-rev", "0", "--mfr-id", "0x1", "--serial", "0x1092", "--yes",
+            "--hw-gen", "11", "--hw-rev", "1", "--mfr-id", "0x1", "--serial", "0x1092", "--yes",
         )
         self.assertEqual(burn.returncode, 0, burn.stderr)
 
@@ -129,23 +129,23 @@ class EfuseBurnTest(unittest.TestCase):
         self.assertIn("batch:     0 (not recorded)", result.stdout)
 
     def test_second_differing_burn_is_rejected_and_original_survives(self):
-        first = self.identity(hw_gen=11, hw_rev=0, serial=1)
+        first = self.identity(hw_gen=11, hw_rev=1, serial=1)
         self.assertEqual(first.returncode, 0, first.stderr)
 
-        second = self.identity(hw_gen=11, hw_rev=1, serial=2)
+        second = self.identity(hw_gen=11, hw_rev=2, serial=2)
         self.assertNotEqual(second.returncode, 0)
 
         # RS coding only allows a block to be burned once; espefuse must
         # refuse the second, differing burn without corrupting the first.
         result = self.show()
-        self.assertIn("hw_rev:    0", result.stdout)
+        self.assertIn("hw_rev:    1", result.stdout)
         self.assertIn("serial:    1", result.stdout)
 
     def test_repeating_identical_burn_is_a_harmless_no_op(self):
-        first = self.identity(hw_gen=11, hw_rev=0, serial=1)
+        first = self.identity(hw_gen=11, hw_rev=1, serial=1)
         self.assertEqual(first.returncode, 0, first.stderr)
 
-        second = self.identity(hw_gen=11, hw_rev=0, serial=1)
+        second = self.identity(hw_gen=11, hw_rev=1, serial=1)
         self.assertEqual(second.returncode, 0, second.stderr)
 
     def test_virt_requires_explicit_chip(self):
@@ -163,7 +163,7 @@ class EfuseBurnTest(unittest.TestCase):
     def test_out_of_range_field_is_rejected(self):
         result = run(
             "identity", "--chip", "esp32c6", "--virt", "--path-efuse-file", self.efuse_file,
-            "--hw-gen", "65536", "--hw-rev", "0", "--mfr-id", "0x0", "--serial", "0x0",
+            "--hw-gen", "65536", "--hw-rev", "1", "--mfr-id", "0x0", "--serial", "0x0",
         )
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("out of range", result.stderr)

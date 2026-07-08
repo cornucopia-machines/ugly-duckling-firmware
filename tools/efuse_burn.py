@@ -168,7 +168,7 @@ def main():
     p_identity = subparsers.add_parser("identity", help="Burn the one-time hardware identity record")
     add_common_args(p_identity)
     p_identity.add_argument("--hw-gen", type=int, required=True, help="Hardware generation, e.g. 11 for MK11")
-    p_identity.add_argument("--hw-rev", type=int, required=True, help="Hardware sub-revision, 0 = first release")
+    p_identity.add_argument("--hw-rev", type=int, required=True, help="Hardware sub-revision, 1 = first release")
     p_identity.add_argument("--mfr-id", type=parse_int, required=True, help="Manufacturer/assembler ID (0x0000 = unknown)")
     p_identity.add_argument("--batch", type=parse_int, default=0,
                              help="Manufacturer batch/lot ID, e.g. JLCPCB's printed code with a 0z prefix (0z70kbl); decimal/hex also accepted; 0 = not recorded")

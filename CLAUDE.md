@@ -89,7 +89,7 @@ Quick reference — burn/verify at board test (`--chip` auto-detects; `--port`
 is always required, `espefuse` has no auto-detection for it):
 
 ```sh
-tools/efuse_burn.py identity --port /dev/ttyUSB0 --hw-gen 11 --hw-rev 0 --mfr-id 0x01 --batch 0z70kbl --serial 0x1042
+tools/efuse_burn.py identity --port /dev/ttyUSB0 --hw-gen 11 --hw-rev 1 --mfr-id 0x01 --batch 0z70kbl --serial 0x1042
 tools/efuse_burn.py show --port /dev/ttyUSB0
 ```
 
