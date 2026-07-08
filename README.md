@@ -34,9 +34,15 @@ There are currently two platforms:
   * MK9 (rev1)
 * `carrot` is based on ESP32-C6
   * MK10 (rev1)
+  * MK11 (rev1)
 
 Each platform produces a single firmware binary that covers all models on that platform.
-The correct model is selected at runtime based on the device's MAC address.
+The correct model is selected at runtime, preferring a hardware identity record burned
+into eFuse at board test (Carrot / MK11 onward) and falling back to the device's MAC
+address prefix when that record isn't present — see
+[docs/specs/Hardware-Version-in-eFuse.md](docs/specs/Hardware-Version-in-eFuse.md) for
+the eFuse record layout, the burn/verify CLI, and why MAC-only detection stopped being
+reliable once MK11 shipped with MAC ranges overlapping MK10's.
 
 ### Models
 
@@ -238,6 +244,23 @@ mosquitto_pub -t "$DEVICE_ROOT/commands/nvs/write" -m '{"key":"device-config","v
 mosquitto_pub -t "$DEVICE_ROOT/commands/nvs/write" -m '{"key":"network-config","value":{...}}'
 ```
 
+### Hardware identity (eFuse)
+
+Carrot boards (MK11 onward) get a one-time hardware identity record burned into
+eFuse at board test — generation, revision, manufacturer ID, and serial number.
+This is what device selection prefers over MAC address matching (see
+[Platforms](#platforms) above). Burn and verify it with `tools/efuse_burn.py`,
+which auto-detects `--chip` from the connected board if not given (`--port` is
+always required — `espefuse` doesn't auto-detect it):
+
+```bash
+tools/efuse_burn.py identity --port /dev/ttyUSB0 --hw-gen 11 --hw-rev 0 --mfr-id 0x01 --serial 0x1042
+tools/efuse_burn.py show --port /dev/ttyUSB0
+```
+
+See [docs/specs/Hardware-Version-in-eFuse.md](docs/specs/Hardware-Version-in-eFuse.md)
+for the record layout and design rationale.
+
 ### Monitoring
 
 ```bash
@@ -262,7 +285,7 @@ After that from the "Run and Debug" panel select the "Wokwi GDB" configuration a
 
 ### Testing
 
-There are three test suites:
+There are four test suites:
 
 #### Unit tests (native, no hardware required)
 
@@ -296,4 +319,12 @@ If `pytest` is not available, install it using the ESP-IDF Python environment:
 ```bash
 ./install.sh --enable-pytest
 pip install pytest-embedded-wokwi
+```
+
+#### Tools tests (native, no hardware required)
+
+Tests for scripts under `tools/`, e.g. `tools/efuse_burn.py` (run against `espefuse --virt`):
+
+```bash
+python3 -m unittest discover -s tools/test -v
 ```

@@ -7,10 +7,16 @@ Wraps `espefuse burn-block-data`, following the same "shell out to the ESP-IDF
 tool" approach as scripts/gen_config_nvs.py. Requires IDF_PATH to be set
 (source tools/activate_idf.sh first).
 
+--chip is auto-detected from the connected board if omitted (this is
+espefuse's own behavior, not something this script implements) — but must be
+given explicitly when using --virt, since there's no hardware to probe.
+--port has no such auto-detection in espefuse and is always required unless
+--virt is set.
+
 Usage:
-  efuse_burn.py identity --port PORT --chip {esp32s3,esp32c6} \\
+  efuse_burn.py identity --port PORT [--chip {esp32s3,esp32c6}] \\
       --hw-gen N --hw-rev N --mfr-id N --serial N [--virt --path-efuse-file F]
-  efuse_burn.py show --port PORT --chip {esp32s3,esp32c6} \\
+  efuse_burn.py show --port PORT [--chip {esp32s3,esp32c6}] \\
       [--virt --path-efuse-file F]
 """
 
@@ -29,6 +35,11 @@ BLOCK_SIZE = 32    # bytes; eFuse blocks on ESP32-S3/C6 are 256 bits
 IDENTITY_BLOCK = "BLOCK_USR_DATA"
 
 
+def parse_int(value):
+    # base=0 autodetects "0x..." (hex), "0o..." (octal), "0b..." (binary), else decimal.
+    return int(value, 0)
+
+
 def find_espefuse():
     idf_python_env = os.environ.get("IDF_PYTHON_ENV_PATH")
     if not idf_python_env:
@@ -43,7 +54,9 @@ def find_espefuse():
 
 def run_espefuse(args, extra_espefuse_args):
     espefuse = find_espefuse()
-    cmd = [sys.executable, espefuse, "--chip", args.chip]
+    cmd = [sys.executable, espefuse]
+    if args.chip:
+        cmd += ["--chip", args.chip]
     if extra_espefuse_args:
         cmd += extra_espefuse_args
     if args.virt:
@@ -134,7 +147,8 @@ def cmd_show(args):
 
 
 def add_common_args(parser):
-    parser.add_argument("--chip", required=True, choices=["esp32s3", "esp32c6"])
+    parser.add_argument("--chip", choices=["esp32s3", "esp32c6"],
+                         help="Target chip (auto-detected via the serial port if omitted; required with --virt)")
     parser.add_argument("--port", help="Serial port (required unless --virt)")
     parser.add_argument("--virt", action="store_true", help="Dry-run against a virtual eFuse file, no hardware")
     parser.add_argument("--path-efuse-file", help="Virtual eFuse state file (used with --virt)")
@@ -149,8 +163,8 @@ def main():
     add_common_args(p_identity)
     p_identity.add_argument("--hw-gen", type=int, required=True, help="Hardware generation, e.g. 11 for MK11")
     p_identity.add_argument("--hw-rev", type=int, required=True, help="Hardware sub-revision, 0 = first release")
-    p_identity.add_argument("--mfr-id", type=int, required=True, help="Manufacturer/assembler ID (0 = unknown)")
-    p_identity.add_argument("--serial", type=int, required=True, help="Unit serial number")
+    p_identity.add_argument("--mfr-id", type=parse_int, required=True, help="Manufacturer/assembler ID (0x00 = unknown)")
+    p_identity.add_argument("--serial", type=parse_int, required=True, help="Unit serial number, 32-bit, e.g. 0x12345678")
     p_identity.set_defaults(func=cmd_identity)
 
     p_show = subparsers.add_parser("show", help="Read back and decode the hardware identity record")
@@ -159,6 +173,8 @@ def main():
 
     args = parser.parse_args()
 
+    if args.virt and not args.chip:
+        parser.error("--chip is required with --virt (there's no hardware to auto-detect it from)")
     if not args.virt and not args.port:
         parser.error("--port is required unless --virt is set")
     for field in ("hw_gen", "hw_rev", "mfr_id", "serial"):

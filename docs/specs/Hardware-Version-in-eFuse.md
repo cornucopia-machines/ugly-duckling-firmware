@@ -163,20 +163,37 @@ shells out to `esptool`'s NVS partition generator.
 
 ```sh
 # Post-assembly board test — one-time identity burn
-tools/efuse_burn.py identity --port /dev/ttyUSB0 --chip esp32c6 \
-    --hw-gen 11 --hw-rev 0 --mfr-id 1 --serial 1042
+tools/efuse_burn.py identity --port /dev/ttyUSB0 --hw-gen 11 --hw-rev 0 --mfr-id 1 --serial 1042
 
 # Read back and decode the record for verification
-tools/efuse_burn.py show --port /dev/ttyUSB0 --chip esp32c6
+tools/efuse_burn.py show --port /dev/ttyUSB0
 ```
+
+`--chip` is optional — if omitted, `espefuse` auto-detects it from whatever
+board is connected, same as running `espefuse` directly. `--port` has no such
+auto-detection in `espefuse` and is always required (unless `--virt` is set,
+where it's meaningless anyway) — omitting it fails fast with a clear error
+rather than silently guessing a port.
 
 Serial numbers are supplied by the caller (`--serial`); this tool has no
 opinion on how they're issued or tracked — that's board-test process, not
 firmware.
 
-Add `--virt --path-efuse-file <file>` to any subcommand to dry-run against a
-virtual eFuse file with no hardware attached (useful for testing the tool
-itself; this is also how the RS single-shot behavior above was verified).
+Add `--virt --chip {esp32s3,esp32c6} --path-efuse-file <file>` to any
+subcommand to dry-run against a virtual eFuse file with no hardware attached
+(useful for testing the tool itself; this is also how the RS single-shot
+behavior above was verified). `--chip` must be given explicitly in this
+mode — there's no board to auto-detect it from.
+
+`tools/test/test_efuse_burn.py` exercises the tool end-to-end against `--virt`
+(round-tripping a burn through `show`, the unburned/no-record case, the
+rejected-second-burn case, and CLI argument validation). Run it locally with
+`python3 -m unittest discover -s tools/test -v` after sourcing
+`tools/activate_idf.sh`; CI runs it as a step in the `embedded-test` job
+(chosen to avoid spinning up a separate job/runner just for this) via
+`espressif/esp-idf-ci-action`, the same ESP-IDF Docker image the `build` job
+uses — so `espefuse` is exactly the version bundled with `ESP_IDF_VERSION`,
+with no separate Python/esptool version to pin or keep in sync.
 
 ## Deferred: mutable flags (e.g. RMA tracking)
 
@@ -213,4 +230,6 @@ no current consumer for it.
 - [x] Device selection (`startDeviceBasedOnHardware()` in `main.cpp`) prefers
       the eFuse identity over MAC prefix matching when present, on the
       ESP32-C6 (Carrot) target.
+- [x] `tools/test/test_efuse_burn.py` covers the burn tool against `--virt`
+      and runs in CI (`embedded-test` job).
 - [ ] `flags` / `FLAG_RMA` — deferred, see above.
