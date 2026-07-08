@@ -65,7 +65,7 @@ private:
                 uint16_t rawTemp = static_cast<uint16_t>(buf[0]) | (static_cast<uint16_t>(buf[1]) << 8);
                 uint16_t rawHum  = static_cast<uint16_t>(buf[2]) | (static_cast<uint16_t>(buf[3]) << 8);
                 // Datasheet §8.3.4: maps 0–65535 to -40…+125 °C (range = 165 °C)
-                double temp = static_cast<double>(rawTemp) / 65536.0 * 165.0 - 40.0;
+                double temp = (static_cast<double>(rawTemp) / 65536.0 * 165.0) - 40.0;
                 // Datasheet §8.3.4: maps 0–65535 to 0…100 %RH
                 double hum  = static_cast<double>(rawHum)  / 65536.0 * 100.0;
                 LOGTV(ENV, "Measured temperature: %.2f °C, humidity: %.2f %%", temp, hum);

@@ -2,9 +2,10 @@
 
 #include <memory>
 
+#include <soc/rtc.h>
+
 #include <MacAddress.hpp>
 #include <Pin.hpp>
-#include <soc/rtc.h>
 #include <drivers/Bq27220Driver.hpp>
 #include <drivers/Drv8848Driver.hpp>
 #include <drivers/LedDriver.hpp>
