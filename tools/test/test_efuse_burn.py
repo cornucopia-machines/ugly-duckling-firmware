@@ -168,6 +168,74 @@ class EfuseBurnTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("out of range", result.stderr)
 
+    def test_jlcpcb_qr_burns_parsed_fields_and_defaults_mfr_id_to_jlcpcb(self):
+        burn = run(
+            "identity", "--chip", "esp32c6", "--virt", "--path-efuse-file", self.efuse_file,
+            "--jlcpcb-qr", "UD11R01_70kbl_0005", "--yes",
+        )
+        self.assertEqual(burn.returncode, 0, burn.stderr)
+
+        result = self.show()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("hw_gen:    11", result.stdout)
+        self.assertIn("hw_rev:    1", result.stdout)
+        self.assertIn("mfr_id:    0x0001", result.stdout)
+        self.assertIn(f"batch:     0x{int('70kbl', 36):016x}", result.stdout)
+        self.assertIn("serial:    5", result.stdout)
+
+    def test_jlcpcb_qr_batch_and_serial_are_not_fixed_width(self):
+        # Batch/serial widths vary between labels (e.g. "z" vs "70kbl",
+        # "000123" vs "0005") -- neither should be assumed to be 5 characters.
+        burn = run(
+            "identity", "--chip", "esp32c6", "--virt", "--path-efuse-file", self.efuse_file,
+            "--jlcpcb-qr", "UD9R2_z_000123", "--yes",
+        )
+        self.assertEqual(burn.returncode, 0, burn.stderr)
+
+        result = self.show()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("hw_gen:    9", result.stdout)
+        self.assertIn("hw_rev:    2", result.stdout)
+        self.assertIn(f"batch:     0x{int('z', 36):016x}", result.stdout)
+        self.assertIn("serial:    123", result.stdout)
+
+    def test_jlcpcb_qr_mfr_id_can_be_overridden(self):
+        burn = run(
+            "identity", "--chip", "esp32c6", "--virt", "--path-efuse-file", self.efuse_file,
+            "--jlcpcb-qr", "UD11R01_70kbl_0005", "--mfr-id", "0x02", "--yes",
+        )
+        self.assertEqual(burn.returncode, 0, burn.stderr)
+
+        result = self.show()
+        self.assertIn("mfr_id:    0x0002", result.stdout)
+
+    def test_jlcpcb_qr_rejects_combination_with_individual_flags(self):
+        result = run(
+            "identity", "--chip", "esp32c6", "--virt", "--path-efuse-file", self.efuse_file,
+            "--jlcpcb-qr", "UD11R01_70kbl_0005", "--hw-gen", "11",
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("cannot be combined with", result.stderr)
+
+    def test_jlcpcb_qr_invalid_format_is_rejected(self):
+        result = run(
+            "identity", "--chip", "esp32c6", "--virt", "--path-efuse-file", self.efuse_file,
+            "--jlcpcb-qr", "not-a-valid-qr-code",
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("invalid --jlcpcb-qr value", result.stderr)
+
+    def test_missing_fields_without_jlcpcb_qr_is_rejected(self):
+        result = run(
+            "identity", "--chip", "esp32c6", "--virt", "--path-efuse-file", self.efuse_file,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("required unless --jlcpcb-qr is given", result.stderr)
+        self.assertIn("--hw-gen", result.stderr)
+        self.assertIn("--hw-rev", result.stderr)
+        self.assertIn("--mfr-id", result.stderr)
+        self.assertIn("--serial", result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

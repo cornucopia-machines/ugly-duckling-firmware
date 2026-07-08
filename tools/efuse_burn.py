@@ -17,12 +17,15 @@ Usage:
   efuse_burn.py identity --port PORT [--chip {esp32s3,esp32c6}] \\
       --hw-gen N --hw-rev N --mfr-id N --serial N [--batch N] \\
       [--virt --path-efuse-file F]
+  efuse_burn.py identity --port PORT [--chip {esp32s3,esp32c6}] \\
+      --jlcpcb-qr STR [--mfr-id N] [--virt --path-efuse-file F]
   efuse_burn.py show --port PORT [--chip {esp32s3,esp32c6}] \\
       [--virt --path-efuse-file F]
 """
 
 import argparse
 import os
+import re
 import struct
 import subprocess
 import sys
@@ -35,6 +38,14 @@ BLOCK_SIZE = 32    # bytes; eFuse blocks on ESP32-S3/C6 are 256 bits
 
 IDENTITY_BLOCK = "BLOCK_USR_DATA"
 
+JLCPCB_MFR_ID = 0x0001
+
+# JLCPCB assembly labels print a QR code of the form "UD11R01_70kbl_0005":
+# "UD" (a human-readable echo of the eFuse magic), generation, "R" + revision,
+# batch/lot code (base-36), and serial — batch and serial aren't a fixed
+# width (e.g. "0005" vs "000005"), so both are matched as variable-length.
+JLCPCB_QR_RE = re.compile(r"^UD(?P<hw_gen>\d+)R(?P<hw_rev>\d+)_(?P<batch>[0-9a-zA-Z]+)_(?P<serial>\d+)$")
+
 
 def parse_int(value):
     # base=0 autodetects "0x..." (hex), "0o..." (octal), "0b..." (binary), else decimal.
@@ -45,14 +56,26 @@ def parse_int(value):
     return int(value, 0)
 
 
+def parse_jlcpcb_qr(value):
+    match = JLCPCB_QR_RE.match(value)
+    if not match:
+        raise ValueError(f"invalid --jlcpcb-qr value {value!r} (expected format like 'UD11R01_70kbl_0005')")
+    return (
+        int(match.group("hw_gen")),
+        int(match.group("hw_rev")),
+        int(match.group("batch"), 36),
+        int(match.group("serial")),
+    )
+
+
 def find_espefuse():
     idf_python_env = os.environ.get("IDF_PYTHON_ENV_PATH")
     if not idf_python_env:
         print("Error: IDF_PYTHON_ENV_PATH is not set. Run '. tools/activate_idf.sh' first.", file=sys.stderr)
         sys.exit(1)
-    espefuse = os.path.join(idf_python_env, "bin", "espefuse.py")
+    espefuse = os.path.join(idf_python_env, "bin", "espefuse")
     if not os.path.isfile(espefuse):
-        print(f"Error: espefuse.py not found at {espefuse}", file=sys.stderr)
+        print(f"Error: espefuse not found at {espefuse}", file=sys.stderr)
         sys.exit(1)
     return espefuse
 
@@ -167,12 +190,18 @@ def main():
 
     p_identity = subparsers.add_parser("identity", help="Burn the one-time hardware identity record")
     add_common_args(p_identity)
-    p_identity.add_argument("--hw-gen", type=int, required=True, help="Hardware generation, e.g. 11 for MK11")
-    p_identity.add_argument("--hw-rev", type=int, required=True, help="Hardware sub-revision, 1 = first release")
-    p_identity.add_argument("--mfr-id", type=parse_int, required=True, help="Manufacturer/assembler ID (0x0000 = unknown)")
-    p_identity.add_argument("--batch", type=parse_int, default=0,
-                             help="Manufacturer batch/lot ID, e.g. JLCPCB's printed code with a 0z prefix (0z70kbl); decimal/hex also accepted; 0 = not recorded")
-    p_identity.add_argument("--serial", type=parse_int, required=True, help="Unit serial number, 64-bit, e.g. 0x12345678")
+    p_identity.add_argument("--hw-gen", type=int, help="Hardware generation, e.g. 11 for MK11 (required unless --jlcpcb-qr is given)")
+    p_identity.add_argument("--hw-rev", type=int, help="Hardware sub-revision, 1 = first release (required unless --jlcpcb-qr is given)")
+    p_identity.add_argument("--mfr-id", type=parse_int,
+                             help="Manufacturer/assembler ID (0x0000 = unknown); required unless --jlcpcb-qr is given, "
+                                  f"in which case it defaults to 0x{JLCPCB_MFR_ID:04x} (JLCPCB)")
+    p_identity.add_argument("--batch", type=parse_int,
+                             help="Manufacturer batch/lot ID, e.g. JLCPCB's printed code with a 0z prefix (0z70kbl); decimal/hex also accepted; 0/omitted = not recorded")
+    p_identity.add_argument("--serial", type=parse_int, help="Unit serial number, 64-bit, e.g. 0x12345678 (required unless --jlcpcb-qr is given)")
+    p_identity.add_argument("--jlcpcb-qr",
+                             help="Parse hw-gen, hw-rev, batch, and serial from a JLCPCB assembly label QR code, "
+                                  "e.g. 'UD11R01_70kbl_0005' — alternative to passing --hw-gen/--hw-rev/--batch/--serial "
+                                  "individually; cannot be combined with them")
     p_identity.set_defaults(func=cmd_identity)
 
     p_show = subparsers.add_parser("show", help="Read back and decode the hardware identity record")
@@ -185,6 +214,27 @@ def main():
         parser.error("--chip is required with --virt (there's no hardware to auto-detect it from)")
     if not args.virt and not args.port:
         parser.error("--port is required unless --virt is set")
+
+    if args.command == "identity":
+        if args.jlcpcb_qr is not None:
+            if any(v is not None for v in (args.hw_gen, args.hw_rev, args.batch, args.serial)):
+                parser.error("--jlcpcb-qr cannot be combined with --hw-gen/--hw-rev/--batch/--serial")
+            try:
+                args.hw_gen, args.hw_rev, args.batch, args.serial = parse_jlcpcb_qr(args.jlcpcb_qr)
+            except ValueError as e:
+                parser.error(str(e))
+            if args.mfr_id is None:
+                args.mfr_id = JLCPCB_MFR_ID
+        else:
+            missing = [f"--{name}" for name, value in (
+                ("hw-gen", args.hw_gen), ("hw-rev", args.hw_rev),
+                ("mfr-id", args.mfr_id), ("serial", args.serial),
+            ) if value is None]
+            if missing:
+                parser.error(f"{', '.join(missing)} required unless --jlcpcb-qr is given")
+            if args.batch is None:
+                args.batch = 0
+
     field_max = {"batch": 2**64 - 1, "serial": 2**64 - 1}
     for field in ("hw_gen", "hw_rev", "mfr_id", "batch", "serial"):
         if hasattr(args, field) and not (0 <= getattr(args, field) <= field_max.get(field, 2**16 - 1)):

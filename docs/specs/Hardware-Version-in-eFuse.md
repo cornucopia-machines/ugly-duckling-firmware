@@ -192,6 +192,9 @@ shells out to `esptool`'s NVS partition generator.
 tools/efuse_burn.py identity --port /dev/ttyUSB0 \
     --hw-gen 11 --hw-rev 1 --mfr-id 1 --batch 0z70kbl --serial 1042
 
+# Equivalent, scanning JLCPCB's assembly label QR code instead
+tools/efuse_burn.py identity --port /dev/ttyUSB0 --jlcpcb-qr UD11R01_70kbl_1042
+
 # Read back and decode the record for verification
 tools/efuse_burn.py show --port /dev/ttyUSB0
 ```
@@ -205,6 +208,25 @@ rather than silently guessing a port.
 Serial numbers are supplied by the caller (`--serial`); this tool has no
 opinion on how they're issued or tracked — that's board-test process, not
 firmware.
+
+### `--jlcpcb-qr`
+
+JLCPCB's assembly labels print a QR code of the form `UD11R01_70kbl_0005` —
+generation, `R` + revision, batch/lot code, and serial, underscore-separated.
+`--jlcpcb-qr` parses all four fields out of that string in one shot, instead
+of requiring the board-test operator to key in `--hw-gen`/`--hw-rev`/`--batch`/
+`--serial` individually (and risk a transcription error). It's mutually
+exclusive with those four flags — combine `--jlcpcb-qr` with either all of
+them or none of them, not some.
+
+Neither the batch nor the serial segment is assumed to be a fixed width (e.g.
+`70kbl` vs a single-character code, or `0005` vs `000123`), since neither
+JLCPCB's own codes nor future manufacturers' are guaranteed to match the
+5-character example above.
+
+Since the QR format is JLCPCB-specific, `--jlcpcb-qr` also defaults `--mfr-id`
+to `0x0001` (JLCPCB) — pass `--mfr-id` explicitly alongside it to override
+that (e.g. a different assembler relabeling JLCPCB-made boards).
 
 Add `--virt --chip {esp32s3,esp32c6} --path-efuse-file <file>` to any
 subcommand to dry-run against a virtual eFuse file with no hardware attached
