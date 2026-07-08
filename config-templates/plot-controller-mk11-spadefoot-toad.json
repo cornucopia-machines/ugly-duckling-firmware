@@ -17,10 +17,11 @@
     },
     {
       "name": "air",
-      "type": "environment:sht3x",
+      "type": "environment:hdc2010",
       "params": {
         "sda": "SDA",
-        "scl": "SCL"
+        "scl": "SCL",
+        "address": "0x41"
       }
     },
     {
@@ -28,8 +29,7 @@
       "type": "soil:spadefoot-toad-bb",
       "params": {
         "sda": "EXT_SDA",
-        "scl": "EXT_SCL",
-        "logRawValues": true
+        "scl": "EXT_SCL"
       }
     }
   ],

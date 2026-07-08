@@ -9,6 +9,8 @@
 
 #include <driver/gpio.h>
 #include <driver/gpio_filter.h>
+#include <esp_adc/adc_cali.h>
+#include <esp_adc/adc_cali_scheme.h>
 #include <esp_adc/adc_oneshot.h>
 #include <hal/adc_types.h>
 
@@ -201,21 +203,42 @@ class AnalogPin {
 public:
     static constexpr double MAX_ANALOG_VALUE = 4096.0;
 
-    AnalogPin(const InternalPinPtr& pin)
+    AnalogPin(
+        const InternalPinPtr& pin,
+        adc_atten_t atten = ADC_ATTEN_DB_12,
+        adc_bitwidth_t bitwidth = ADC_BITWIDTH_DEFAULT)
         : pin(pin) {
         adc_unit_t unit;
         ESP_ERROR_THROW(adc_oneshot_io_to_channel(pin->getGpio(), &unit, &channel));
 
         handle = getUnitHandle(unit);
 
+        LOGI("Initializing analog pin %s (GPIO %d) with attenuation %d and bitwidth %d",
+            pin->getName().c_str(), static_cast<int>(pin->getGpio()), static_cast<int>(atten), static_cast<int>(bitwidth));
+
         adc_oneshot_chan_cfg_t config = {
-            .atten = ADC_ATTEN_DB_12,
-            .bitwidth = ADC_BITWIDTH_DEFAULT,
+            .atten = atten,
+            .bitwidth = bitwidth,
         };
         ESP_ERROR_THROW(adc_oneshot_config_channel(handle, channel, &config));
+
+        adc_cali_curve_fitting_config_t caliConfig = {
+            .unit_id = unit,
+            .chan = channel,
+            .atten = atten,
+            .bitwidth = bitwidth,
+        };
+        esp_err_t ret = adc_cali_create_scheme_curve_fitting(&caliConfig, &caliHandle);
+        if (ret != ESP_OK) {
+            LOGW("ADC calibration unavailable for pin %s (%s)",
+                pin->getName().c_str(), esp_err_to_name(ret));
+        }
     }
 
     ~AnalogPin() {
+        if (caliHandle != nullptr) {
+            ESP_ERROR_CHECK(adc_cali_delete_scheme_curve_fitting(caliHandle));
+        }
         ESP_ERROR_CHECK(adc_oneshot_del_unit(handle));
     }
 
@@ -258,6 +281,25 @@ public:
         }
     }
 
+    /**
+     * @brief Read calibrated voltage in millivolts. Returns `std::nullopt` if the read fails
+     * , or when eFuse curve-fitting calibration is not available.
+     */
+    std::optional<int> tryAnalogReadMillivolts() const {
+        if (caliHandle == nullptr) {
+            return std::nullopt;
+        }
+        auto raw = tryAnalogRead();
+        if (!raw.has_value()) {
+            return std::nullopt;
+        }
+        int mv;
+        ESP_ERROR_THROW(adc_cali_raw_to_voltage(caliHandle, *raw, &mv));
+        LOGV("Analog read on pin %s (GPIO %d): raw=%d, voltage=%d mV",
+            pin->getName().c_str(), static_cast<int>(pin->getGpio()), *raw, mv);
+        return mv;
+    }
+
     constexpr const std::string& getName() const {
         return pin->getName();
     }
@@ -277,8 +319,9 @@ private:
     static std::vector<adc_oneshot_unit_handle_t> ANALOG_UNITS;
 
     const InternalPinPtr pin;
-    adc_oneshot_unit_handle_t handle;
     adc_channel_t channel {};
+    adc_oneshot_unit_handle_t handle;
+    adc_cali_handle_t caliHandle = nullptr;
 };
 
 

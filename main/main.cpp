@@ -5,6 +5,7 @@
 #include <esp_log.h>
 
 #include <Device.hpp>
+#include <HardwareVersion.hpp>
 #include <MacAddress.hpp>
 
 #if defined(CONFIG_IDF_TARGET_ESP32S3)
@@ -18,6 +19,7 @@
 #elif defined(CONFIG_IDF_TARGET_ESP32C6)
 
 #include <devices/UglyDucklingMk10.hpp>
+#include <devices/UglyDucklingMk11.hpp>
 
 #else
 #error "Unsupported target"
@@ -30,6 +32,15 @@ using namespace cornucopia::ugly_duckling::kernel;
 
 namespace {
 void startDeviceBasedOnHardware() {
+    const auto& hardwareVersion = getHardwareVersion();
+    if (hardwareVersion.has_value()) {
+        ESP_LOGI("device", "Hardware identity (eFuse): generation %d, revision %d, manufacturer 0x%04x, batch %llu, serial %llu",
+            hardwareVersion->hwGen, hardwareVersion->hwRev, hardwareVersion->mfrId,
+            static_cast<unsigned long long>(hardwareVersion->batch), static_cast<unsigned long long>(hardwareVersion->serial));
+    } else {
+        ESP_LOGI("device", "No hardware identity eFuse record found — hardware version is unknown (expected for MK10 and earlier)");
+    }
+
 #if defined(CONFIG_IDF_TARGET_ESP32S3)
 #if defined(MK5_REV2)
     startDevice<UglyDucklingMk5>();
@@ -92,7 +103,33 @@ void startDeviceBasedOnHardware() {
 #elif defined(CONFIG_IDF_TARGET_ESP32C6)
 #if defined(MK10_REV1)
     startDevice<UglyDucklingMk10Rev1>();
+#elif defined(MK11_REV1)
+    startDevice<UglyDucklingMk11Rev1>();
 #else
+    // Prefer the eFuse-burned hardware identity over MAC matching when it's
+    // present — it's authoritative by construction, unlike MAC prefixes,
+    // which can't reliably distinguish MK10 from newer MK11 batches. See
+    // docs/specs/Hardware-Version-in-eFuse.md. hw_rev is 1-indexed (1 = first
+    // release of the generation), hence hw_rev == 1 for each *Rev1 class below.
+    if (hardwareVersion.has_value()) {
+        // MK10 Rev1
+        if (hardwareVersion->hwGen == 10 && hardwareVersion->hwRev == 1) {
+            startDevice<UglyDucklingMk10Rev1>();
+            return;
+        }
+
+        // MK11 Rev1
+        if (hardwareVersion->hwGen == 11 && hardwareVersion->hwRev == 1) {
+            startDevice<UglyDucklingMk11Rev1>();
+            return;
+        }
+
+        ESP_LOGW("device", "Unrecognized hardware identity (generation %d, revision %d) — falling back to MAC-based detection",
+            hardwareVersion->hwGen, hardwareVersion->hwRev);
+    }
+
+    // MAC-based fallback for boards without a burned hardware identity (all MK10s, and MK11s built before board test started burning eFuse)
+
     // MK10 Rev1
     if (macAddressHasPrefix(0xE8, 0xF6, 0x0A)) {
         startDevice<UglyDucklingMk10Rev1>();

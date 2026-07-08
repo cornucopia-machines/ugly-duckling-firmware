@@ -23,6 +23,7 @@
 #include <peripherals/environment/ChirpSoilSensor.hpp>
 #include <peripherals/environment/Ds18B20SoilSensor.hpp>
 #include <peripherals/environment/Environment.hpp>
+#include <peripherals/environment/Hdc2010Sensor.hpp>
 #include <peripherals/environment/Hw390SoilMoistureSensor.hpp>
 #include <peripherals/environment/KalmanFilterSoilSensor.hpp>
 #include <peripherals/environment/NtcTemperatureSensor.hpp>
@@ -72,6 +73,7 @@ public:
     virtual ~DeviceDefinition() = default;
 
     void registerPeripheralFactories(const std::shared_ptr<PeripheralManager>& peripheralManager, const PeripheralServices& services, const std::shared_ptr<DeviceSettings>& settings) {
+        peripheralManager->registerFactory(environment::makeFactoryForHdc2010());
         peripheralManager->registerFactory(environment::makeFactoryForSht3x());
         // TODO Unify these two factories
         peripheralManager->registerFactory(environment::makeFactoryForSht2x("sht2x"));

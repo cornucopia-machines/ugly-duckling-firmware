@@ -3,7 +3,7 @@
 ## Project Structure
 
 ```text
-main/               # App entry point (main.cpp); MAC-based device selection
+main/               # App entry point (main.cpp); device selection (eFuse identity, MAC fallback)
 components/
   kernel/           # BLE, WiFi, MQTT, NTP, RTC, telemetry, NVS, power management
   devices/          # Hardware model definitions (pin assignments, on-board drivers)
@@ -22,7 +22,8 @@ config-templates/   # Config templates by device type (never commit real credent
 wokwi/              # Wokwi diagrams and local dev-env (docker-compose + Mosquitto)
 docs/               # Architecture, component, coding standards, and spec documents
 scripts/            # Build helpers (gen_config_nvs.py)
-tools/              # Development tools
+tools/              # Development tools (eFuse burn/verify CLI, kalman notebook, …)
+  test/             # Python tests for tools/ scripts (stdlib unittest, no ESP-IDF build required)
 ```
 
 See [docs/Architecture.md](docs/Architecture.md) for system-level architecture and the platform/model matrix.
@@ -77,11 +78,31 @@ Quick reference — build a custom chip after editing its `.c` file:
 wokwi-cli chip compile chips/<name>.chip.c -o chips/<name>.chip.wasm
 ```
 
+## Hardware Identity (eFuse)
+
+See [docs/specs/Hardware-Version-in-eFuse.md](docs/specs/Hardware-Version-in-eFuse.md)
+for the full design: record layout, endianness, why there's no app-level CRC,
+and how device selection prefers the eFuse identity over MAC prefix matching
+when present (Carrot / ESP32-C6 only; applies to MK11 onward).
+
+Quick reference — burn/verify at board test (`--chip` auto-detects; `--port`
+is always required, `espefuse` has no auto-detection for it):
+
+```sh
+tools/efuse_burn.py identity --port /dev/ttyUSB0 --hw-gen 11 --hw-rev 1 --mfr-id 0x01 --batch 0z70kbl --serial 0x1042
+# or, from JLCPCB's assembly label QR code (defaults --mfr-id to JLCPCB):
+tools/efuse_burn.py identity --port /dev/ttyUSB0 --jlcpcb-qr UD11R01_70kbl_1042
+tools/efuse_burn.py show --port /dev/ttyUSB0
+```
+
 ## Testing Guidelines
 
 - Fast logic goes in `test/unit-tests/` (native Catch2, no hardware required).
 - IDF-integrated flows go in `test/embedded-tests/` (runs on Wokwi).
 - MQTT/WiFi behavior goes in `test/e2e-tests/` (full Wokwi + Mosquitto).
+- Python CLI tooling tests go in `tools/test/` (stdlib `unittest`; for
+  `efuse_burn.py` this runs against `espefuse --virt`, no real hardware or
+  ESP-IDF build required — just `espefuse` on `IDF_PYTHON_ENV_PATH`).
 - Prefer deterministic Wokwi fixtures over physical hardware.
 - Use test names that mirror the behavior under test.
 - Keep payload samples in `config-templates/` or dedicated fixtures, not inline strings.

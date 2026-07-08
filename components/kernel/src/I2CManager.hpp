@@ -199,6 +199,8 @@ private:
     i2c_port_t selectPort(const InternalPinPtr& sda, const InternalPinPtr& scl) {
 #if SOC_LP_I2C_SUPPORTED
         if (sda->getGpio() == GPIO_NUM_6 && scl->getGpio() == GPIO_NUM_7) {
+            LOGTI(I2C, "Using LP I2C bus #%d for SDA: %s, SCL: %s",
+                static_cast<int>(LP_I2C_NUM_0), sda->getName().c_str(), scl->getName().c_str());
             return LP_I2C_NUM_0;
         }
         for (const auto& b : buses) {
@@ -206,6 +208,8 @@ private:
                 throw std::runtime_error("Maximum number of I2C buses reached");
             }
         }
+        LOGTI(I2C, "Using HP I2C bus #%d for SDA: %s, SCL: %s",
+            static_cast<int>(I2C_NUM_0), sda->getName().c_str(), scl->getName().c_str());
         return I2C_NUM_0;
 #else
         if (static_cast<int>(buses.size()) >= SOC_HP_I2C_NUM) {

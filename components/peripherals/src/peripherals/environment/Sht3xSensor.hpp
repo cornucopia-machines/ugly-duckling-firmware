@@ -1,21 +1,18 @@
 #pragma once
 
-#include <chrono>
 #include <limits>
 #include <utility>
 
 #include <sht3x.h>
 
-#include <Concurrent.hpp>
 #include <I2CManager.hpp>
+#include <utils/DebouncedMeasurement.hpp>
 
 #include <peripherals/I2CSettings.hpp>
 #include <peripherals/Peripheral.hpp>
 
 #include "Environment.hpp"
 
-using namespace std::chrono;
-using namespace cornucopia::ugly_duckling::kernel;
 using namespace cornucopia::ugly_duckling::peripherals;
 
 namespace cornucopia::ugly_duckling::peripherals::environment {
@@ -44,47 +41,36 @@ public:
     }
 
     double getTemperature() override {
-        Lock lock(mutex);
-        updateMeasurement();
-        return temperature;
+        return measurement.getValue().first;
     }
 
     double getMoisture() override {
-        Lock lock(mutex);
-        updateMeasurement();
-        return humidity;
+        return measurement.getValue().second;
     }
 
 private:
-    void updateMeasurement() {
-        auto now = steady_clock::now();
-        if (now - this->lastMeasurementTime < 1s) {
-            // Do not measure more often than once per second
-            return;
-        }
-        float fTemp;
-        float fHumidity;
-        esp_err_t res = sht3x_measure(&sensor, &fTemp, &fHumidity);
-        if (res == ESP_OK) {
-            LOGTV(ENV, "Measured temperature: %.2f °C, humidity: %.2f %%",
-                fTemp, fHumidity);
-            temperature = fTemp;
-            humidity = fHumidity;
-        } else {
-            LOGTD(ENV, "Could not measure temperature: %s", esp_err_to_name(res));
-            temperature = std::numeric_limits<double>::quiet_NaN();
-            humidity = std::numeric_limits<double>::quiet_NaN();
-        }
-        this->lastMeasurementTime = now;
-    }
+    using Reading = std::pair<double, double>;
+    static constexpr double NaN = std::numeric_limits<double>::quiet_NaN();
 
     std::shared_ptr<I2CBus> bus;
     sht3x_t sensor {};
 
-    Mutex mutex;
-    std::chrono::steady_clock::time_point lastMeasurementTime;
-    double temperature = std::numeric_limits<double>::quiet_NaN();
-    double humidity = std::numeric_limits<double>::quiet_NaN();
+    utils::DebouncedMeasurement<Reading> measurement {
+        [this](const utils::DebouncedParams<Reading>) -> std::optional<Reading> {
+            float fTemp;
+            float fHumidity;
+            esp_err_t res = sht3x_measure(&sensor, &fTemp, &fHumidity);
+            if (res == ESP_OK) {
+                LOGTV(ENV, "Measured temperature: %.2f °C, humidity: %.2f %%",
+                    fTemp, fHumidity);
+                return Reading { fTemp, fHumidity };
+            }
+            LOGTD(ENV, "Could not measure temperature: %s", esp_err_to_name(res));
+            return Reading { NaN, NaN };
+        },
+        std::chrono::seconds(1),
+        { NaN, NaN }
+    };
 };
 
 inline PeripheralFactory makeFactoryForSht3x() {

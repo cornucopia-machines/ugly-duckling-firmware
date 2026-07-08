@@ -178,6 +178,13 @@ jobs:
             idf.py build && \
             ccache -s
 
+      - name: Run tools tests
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: ${{ env.ESP_IDF_VERSION }}
+          target: ${{ env.TEST_TARGET }}
+          command: python3 -m unittest discover -s tools/test -v
+
       - name: Run a Wokwi CI server
         uses: wokwi/wokwi-ci-server-action@v1
 

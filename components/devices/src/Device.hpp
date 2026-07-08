@@ -23,6 +23,7 @@ static const char* const firmwareVersion = reinterpret_cast<const char*>(esp_app
 #include <Console.hpp>
 #include <CrashManager.hpp>
 #include <DebugConsole.hpp>
+#include <HardwareVersion.hpp>
 #include <HttpUpdate.hpp>
 #include <KernelStatus.hpp>
 #include <Log.hpp>
@@ -390,6 +391,7 @@ static void startDevice() {
     ConsoleProvider::init(logRecords, settings->publishLogs.get());
 
     const auto& macAddress = getMacAddress();
+    const auto& hardwareVersion = getHardwareVersion();
 
     LOGD("\n"
          "   _   _       _         ____             _    _ _\n"
@@ -589,12 +591,16 @@ static void startDevice() {
 
     mqttRoot->publish(
         "init",
-        [resetReason, settings, macAddress, networkConfig, initState, peripheralsInitJson, functionsInitJson, powerManager, deviceDefinition](JsonObject& json) {
+        [resetReason, settings, macAddress, networkConfig, initState, peripheralsInitJson, functionsInitJson, powerManager, deviceDefinition, hardwareVersion](JsonObject& json) {
             json["model"] = deviceDefinition->model;
             json["revision"] = deviceDefinition->revision;
             json["platform"] = UD_PLATFORM;
             json["instance"] = networkConfig->instance.get();
             json["mac"] = macAddress;
+            if (hardwareVersion.has_value()) {
+                json["batch"] = hardwareVersion->batch;
+                json["serial"] = hardwareVersion->serial;
+            }
             auto device = json["settings"].to<JsonObject>();
             settings->store(device);
             json["version"] = firmwareVersion;
