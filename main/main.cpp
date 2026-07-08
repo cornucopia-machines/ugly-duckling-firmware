@@ -135,12 +135,6 @@ void startDeviceBasedOnHardware() {
         startDevice<UglyDucklingMk10Rev1>();
         return;
     }
-
-    // MK11 Rev1 -- 9c:cc:01
-    if (macAddressHasPrefix(0x9C, 0xCC, 0x01)) {
-        startDevice<UglyDucklingMk11Rev1>();
-        return;
-    }
 #endif
 #endif
 
