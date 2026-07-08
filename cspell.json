@@ -8,6 +8,7 @@
     "Catch2",
     "ccache",
     "clangd",
+    "COEX",
     "constexpr",
     "COPROC",
     "cornucopia",
