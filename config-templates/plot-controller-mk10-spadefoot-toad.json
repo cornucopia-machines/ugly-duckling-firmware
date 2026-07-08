@@ -27,7 +27,8 @@
       "type": "soil:spadefoot-toad-bb",
       "params": {
         "sda": "EXT_SDA",
-        "scl": "EXT_SCL"
+        "scl": "EXT_SCL",
+        "logRawValues": true
       }
     }
   ],

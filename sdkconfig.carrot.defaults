@@ -4,6 +4,27 @@
 CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
 
 #
+# Wi-Fi
+#
+
+# Hardware-assisted beacon reception during light sleep: the WiFi modem wakes autonomously
+# for each beacon interval, keeping the CPU in light sleep until actual data arrives.
+# C6-specific (requires SOC_PM_SUPPORT_BEACON_WAKEUP, not available on S3).
+# Mutually exclusive with SLP_SAMPLE_BEACON_FEATURE (beacon timing calibration).
+CONFIG_ESP_WIFI_ENHANCED_LIGHT_SLEEP=y
+
+#
+# BLE controller sleep — allows light sleep between advertising events (C6-specific config name).
+# We keep BT_LE_LP_CLK_SRC_MAIN_XTAL (ESP-IDF default): the main XTAL stays powered during light
+# sleep, which keeps clock accuracy within the BLE-spec 500 PPM limit needed for phone connections.
+# Switching to BT_LE_LP_CLK_SRC_DEFAULT (136 kHz RC) would save a little more power but the RC
+# exceeds 500 PPM, making connections to non-ESP peers (e.g. phones) unreliable.
+# When CONFIG_RTC_CLK_SRC_EXT_CRYS=y is set (32.768 kHz crystal on GPIO4/5, MK11+),
+# switch to BT_LE_LP_CLK_SRC_DEFAULT for both lower power and spec-compliant connections. See issue #576.
+#
+CONFIG_BT_LE_SLEEP_ENABLE=y
+
+#
 # LP core coprocessor (used for pulse counting during light sleep)
 #
 CONFIG_ULP_COPROC_ENABLED=y

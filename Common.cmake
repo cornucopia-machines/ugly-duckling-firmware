@@ -1,6 +1,8 @@
 list(APPEND EXTRA_COMPONENT_DIRS "${CMAKE_CURRENT_LIST_DIR}/components")
 list(APPEND EXTRA_COMPONENT_DIRS "${CMAKE_CURRENT_LIST_DIR}/vendored-components")
 
+set(SDKCONFIG "${CMAKE_BINARY_DIR}/sdkconfig")
+
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 
 add_compile_options("-Wno-missing-field-initializers")

@@ -29,7 +29,7 @@ hostname (e.g. `ugly-duckling-aabbcc`).
 
 ## Advertising
 
-Two PDUs are sent on each advertising interval:
+Two PDUs are sent on each advertising interval (2 s, fixed):
 
 | PDU           | Contents                              |
 | ------------- | ------------------------------------- |
