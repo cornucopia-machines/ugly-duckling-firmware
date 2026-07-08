@@ -208,6 +208,7 @@ public:
         adc_atten_t atten = ADC_ATTEN_DB_12,
         adc_bitwidth_t bitwidth = ADC_BITWIDTH_DEFAULT)
         : pin(pin) {
+        adc_unit_t unit;
         ESP_ERROR_THROW(adc_oneshot_io_to_channel(pin->getGpio(), &unit, &channel));
 
         handle = getUnitHandle(unit);
@@ -294,7 +295,7 @@ public:
         }
         int mv;
         ESP_ERROR_THROW(adc_cali_raw_to_voltage(caliHandle, *raw, &mv));
-        LOGI("Analog read on pin %s (GPIO %d): raw=%d, voltage=%d mV",
+        LOGV("Analog read on pin %s (GPIO %d): raw=%d, voltage=%d mV",
             pin->getName().c_str(), static_cast<int>(pin->getGpio()), *raw, mv);
         return mv;
     }
@@ -318,7 +319,6 @@ private:
     static std::vector<adc_oneshot_unit_handle_t> ANALOG_UNITS;
 
     const InternalPinPtr pin;
-    adc_unit_t unit {};
     adc_channel_t channel {};
     adc_oneshot_unit_handle_t handle;
     adc_cali_handle_t caliHandle = nullptr;
