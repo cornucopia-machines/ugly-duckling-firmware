@@ -32,7 +32,7 @@ public:
     std::shared_ptr<BatteryDriver> createBatteryDriver(const std::shared_ptr<I2CManager>& _i2c) override {
         return std::make_shared<AnalogBatteryDriver>(
             BATTERY,
-            1.2424,
+            1,
             BatteryParameters {
                 .maximumVoltage = 4100,
                 .bootThreshold = 3600,

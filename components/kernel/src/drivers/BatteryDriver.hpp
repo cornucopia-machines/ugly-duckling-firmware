@@ -89,12 +89,12 @@ public:
 
     int getVoltage() override {
         for (int trial = 0; trial < 5; trial++) {
-            auto batteryLevel = analogPin.tryAnalogRead();
-            if (!batteryLevel.has_value()) {
+            auto mv = analogPin.tryAnalogReadMillivolts();
+            if (!mv.has_value()) {
                 LOGE("Failed to read battery level");
                 continue;
             }
-            return static_cast<int>(batteryLevel.value() * 3.3 / 4096 * voltageDividerRatio * 1000);
+            return static_cast<int>(*mv * voltageDividerRatio);
         }
         return -1;
     }
