@@ -22,15 +22,17 @@ struct __attribute__((packed)) HardwareIdentityRecord {
     uint8_t hwGen;
     uint8_t hwRev;
     uint8_t mfrId;
+    uint32_t batch;    // manufacturer batch/lot ID (e.g. JLCPCB's base-36 code); 0 = not recorded
     uint32_t serial;
 };
 
-static_assert(sizeof(HardwareIdentityRecord) == 10);
+static_assert(sizeof(HardwareIdentityRecord) == 14);
 
 struct HardwareVersion {
     uint8_t hwGen;
     uint8_t hwRev;
     uint8_t mfrId;
+    uint32_t batch;
     uint32_t serial;
 };
 
@@ -60,6 +62,7 @@ static const std::optional<HardwareVersion>& getHardwareVersion() {
         .hwGen = identity.hwGen,
         .hwRev = identity.hwRev,
         .mfrId = identity.mfrId,
+        .batch = identity.batch,
         .serial = identity.serial,
     };
 

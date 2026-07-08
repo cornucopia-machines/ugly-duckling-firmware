@@ -15,7 +15,8 @@ given explicitly when using --virt, since there's no hardware to probe.
 
 Usage:
   efuse_burn.py identity --port PORT [--chip {esp32s3,esp32c6}] \\
-      --hw-gen N --hw-rev N --mfr-id N --serial N [--virt --path-efuse-file F]
+      --hw-gen N --hw-rev N --mfr-id N --serial N [--batch N] \\
+      [--virt --path-efuse-file F]
   efuse_burn.py show --port PORT [--chip {esp32s3,esp32c6}] \\
       [--virt --path-efuse-file F]
 """
@@ -37,6 +38,10 @@ IDENTITY_BLOCK = "BLOCK_USR_DATA"
 
 def parse_int(value):
     # base=0 autodetects "0x..." (hex), "0o..." (octal), "0b..." (binary), else decimal.
+    # "0z..." isn't a standard prefix, but this project uses it by analogy
+    # for base-36, e.g. JLCPCB's printed batch codes (0z70kbl).
+    if value.lower().startswith("0z"):
+        return int(value[2:], 36)
     return int(value, 0)
 
 
@@ -90,9 +95,9 @@ def burn_block(args, block_name, payload, extra_espefuse_args):
 
 
 def cmd_identity(args):
-    payload = struct.pack("<HBBBBI", MAGIC, FMT_VERSION, args.hw_gen, args.hw_rev, args.mfr_id, args.serial)
+    payload = struct.pack("<HBBBBII", MAGIC, FMT_VERSION, args.hw_gen, args.hw_rev, args.mfr_id, args.batch, args.serial)
     print(f"Burning hardware identity: hw_gen={args.hw_gen} hw_rev={args.hw_rev} "
-          f"mfr_id=0x{args.mfr_id:02x} serial={args.serial}")
+          f"mfr_id=0x{args.mfr_id:02x} batch=0x{args.batch:08x} serial={args.serial}")
     burn_block(args, IDENTITY_BLOCK, payload, ["--do-not-confirm"] if args.yes else [])
 
 
@@ -133,7 +138,7 @@ def cmd_show(args):
         print(summary_text, file=sys.stderr)
         sys.exit(1)
 
-    magic, fmt_version, hw_gen, hw_rev, mfr_id, serial = struct.unpack("<HBBBBI", identity_bytes[:10])
+    magic, fmt_version, hw_gen, hw_rev, mfr_id, batch, serial = struct.unpack("<HBBBBII", identity_bytes[:14])
 
     if magic != MAGIC or fmt_version != FMT_VERSION:
         print(f"No valid hardware identity record found (magic=0x{magic:04x}, fmt_version={fmt_version}) "
@@ -143,6 +148,7 @@ def cmd_show(args):
     print(f"hw_gen:    {hw_gen}")
     print(f"hw_rev:    {hw_rev}")
     print(f"mfr_id:    0x{mfr_id:02x}")
+    print(f"batch:     0x{batch:08x}" if batch else "batch:     0 (not recorded)")
     print(f"serial:    {serial}")
 
 
@@ -164,6 +170,8 @@ def main():
     p_identity.add_argument("--hw-gen", type=int, required=True, help="Hardware generation, e.g. 11 for MK11")
     p_identity.add_argument("--hw-rev", type=int, required=True, help="Hardware sub-revision, 0 = first release")
     p_identity.add_argument("--mfr-id", type=parse_int, required=True, help="Manufacturer/assembler ID (0x00 = unknown)")
+    p_identity.add_argument("--batch", type=parse_int, default=0,
+                             help="Manufacturer batch/lot ID, e.g. JLCPCB's printed code with a 0z prefix (0z70kbl); decimal/hex also accepted; 0 = not recorded")
     p_identity.add_argument("--serial", type=parse_int, required=True, help="Unit serial number, 32-bit, e.g. 0x12345678")
     p_identity.set_defaults(func=cmd_identity)
 
@@ -177,8 +185,9 @@ def main():
         parser.error("--chip is required with --virt (there's no hardware to auto-detect it from)")
     if not args.virt and not args.port:
         parser.error("--port is required unless --virt is set")
-    for field in ("hw_gen", "hw_rev", "mfr_id", "serial"):
-        if hasattr(args, field) and not (0 <= getattr(args, field) <= (2**32 - 1 if field == "serial" else 255)):
+    field_max = {"batch": 2**32 - 1, "serial": 2**32 - 1}
+    for field in ("hw_gen", "hw_rev", "mfr_id", "batch", "serial"):
+        if hasattr(args, field) and not (0 <= getattr(args, field) <= field_max.get(field, 255)):
             parser.error(f"--{field.replace('_', '-')} out of range")
 
     args.func(args)

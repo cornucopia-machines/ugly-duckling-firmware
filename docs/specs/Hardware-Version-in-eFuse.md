@@ -40,8 +40,8 @@ forbidden (RS coding scheme does not allow this)`) unless the caller passes
 skips the tool's own guardrail.
 
 That's a fine constraint for this record: every field (`hw_gen`, `hw_rev`,
-`mfr_id`, `serial`) is known and fixed at post-assembly board test time, so
-one atomic burn is all that's needed. The record lives in `BLOCK3`, which
+`mfr_id`, `batch`, `serial`) is known and fixed at post-assembly board test
+time, so one atomic burn is all that's needed. The record lives in `BLOCK3`, which
 ESP-IDF already exposes through its common eFuse table — no custom eFuse
 table CSV or codegen step is needed:
 
@@ -58,8 +58,9 @@ typedef struct __attribute__((packed)) {
     uint8_t  hw_gen;      // hardware generation (MK number, e.g. 11 for MK11)
     uint8_t  hw_rev;      // hardware sub-revision (0 = first release of that generation)
     uint8_t  mfr_id;      // manufacturer / assembler ID (0x00 = unknown)
+    uint32_t batch;       // manufacturer batch/lot ID; 0 = not recorded
     uint32_t serial;      // unit serial number
-} ud_hw_identity_t;       // 10 bytes, burned into BLOCK3 (USER_DATA), zero-padded to the full 32-byte block
+} ud_hw_identity_t;       // 14 bytes, burned into BLOCK3 (USER_DATA), zero-padded to the full 32-byte block
 ```
 
 `mfr_id` values are assigned in a registry as manufacturers come online;
@@ -69,6 +70,24 @@ typedef struct __attribute__((packed)) {
 | -------- | ------------------ |
 | `0x00`   | Unknown / unburned |
 | `0x01`   | JLCPCB             |
+
+#### `batch`
+
+JLCPCB prints a batch/lot code on assembly labels and QR codes (e.g.
+`70kbl`) — base-36 over `[0-9a-z]`. A 5-character code has up to
+36⁵ ≈ 60.5M possible values (≈ 25.85 bits), which fits comfortably in a
+32-bit field with room to spare for longer codes. `batch` stores this as a
+plain integer (the numeric value of the base-36 string), not the string
+itself; `tools/efuse_burn.py show` prints it as hex. Optional: not every
+manufacturer produces a code like this, so `0` means "not recorded", same
+convention as `mfr_id`.
+
+There's no standard prefix for base-36 the way `0x` means hex, so
+`tools/efuse_burn.py` uses `0z` by analogy (e.g. `--batch 0z70kbl`) — handled
+by the tool's shared `parse_int()` helper, so it also works for `--mfr-id`
+and `--serial` if that's ever useful, not just `--batch`. A bare code without
+the `0z` prefix is rejected rather than silently guessed, since e.g. `abc12`
+would otherwise be ambiguous between hex and base-36.
 
 ### Endianness
 
@@ -118,6 +137,7 @@ struct HardwareVersion {
     uint8_t hwGen;
     uint8_t hwRev;
     uint8_t mfrId;
+    uint32_t batch;
     uint32_t serial;
 };
 
@@ -163,7 +183,8 @@ shells out to `esptool`'s NVS partition generator.
 
 ```sh
 # Post-assembly board test — one-time identity burn
-tools/efuse_burn.py identity --port /dev/ttyUSB0 --hw-gen 11 --hw-rev 0 --mfr-id 1 --serial 1042
+tools/efuse_burn.py identity --port /dev/ttyUSB0 \
+    --hw-gen 11 --hw-rev 0 --mfr-id 1 --batch 0z70kbl --serial 1042
 
 # Read back and decode the record for verification
 tools/efuse_burn.py show --port /dev/ttyUSB0
@@ -221,8 +242,8 @@ no current consumer for it.
 
 - [x] `ud_hw_identity_t` struct and a read helper are defined in firmware
       (`HardwareVersion.hpp`).
-- [x] Firmware logs hardware generation, revision, manufacturer ID, and
-      serial at boot.
+- [x] Firmware logs hardware generation, revision, manufacturer ID, batch,
+      and serial at boot.
 - [x] A burn tool (`tools/efuse_burn.py`) is added for board test; it wraps a
       documented `espefuse burn-block-data` invocation.
 - [x] Unburned boards: magic mismatch → log message, hardware version treated

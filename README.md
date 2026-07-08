@@ -254,7 +254,7 @@ which auto-detects `--chip` from the connected board if not given (`--port` is
 always required — `espefuse` doesn't auto-detect it):
 
 ```bash
-tools/efuse_burn.py identity --port /dev/ttyUSB0 --hw-gen 11 --hw-rev 0 --mfr-id 0x01 --serial 0x1042
+tools/efuse_burn.py identity --port /dev/ttyUSB0 --hw-gen 11 --hw-rev 0 --mfr-id 0x01 --batch 0z70kbl --serial 0x1042
 tools/efuse_burn.py show --port /dev/ttyUSB0
 ```
 

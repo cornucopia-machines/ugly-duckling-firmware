@@ -38,12 +38,12 @@ class EfuseBurnTest(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.tmp_dir, ignore_errors=True)
 
-    def identity(self, chip="esp32c6", hw_gen=11, hw_rev=0, mfr_id=1, serial=1042):
-        # --mfr-id and --serial are passed as hex to exercise parse_int's "0x..." handling.
+    def identity(self, chip="esp32c6", hw_gen=11, hw_rev=0, mfr_id=1, batch=0, serial=1042):
+        # --mfr-id, --batch, and --serial are passed as hex to exercise parse_int's "0x..." handling.
         return run(
             "identity", "--chip", chip, "--virt", "--path-efuse-file", self.efuse_file,
             "--hw-gen", str(hw_gen), "--hw-rev", str(hw_rev),
-            "--mfr-id", hex(mfr_id), "--serial", hex(serial), "--yes",
+            "--mfr-id", hex(mfr_id), "--batch", hex(batch), "--serial", hex(serial), "--yes",
         )
 
     def show(self, chip="esp32c6"):
@@ -55,7 +55,7 @@ class EfuseBurnTest(unittest.TestCase):
         self.assertIn("unburned or pre-dates this scheme", result.stdout)
 
     def test_identity_burn_then_show_round_trips(self):
-        burn = self.identity(hw_gen=11, hw_rev=0, mfr_id=0x1, serial=0x1092)
+        burn = self.identity(hw_gen=11, hw_rev=0, mfr_id=0x1, batch=0x1, serial=0x1092)
         self.assertEqual(burn.returncode, 0, burn.stderr)
 
         result = self.show()
@@ -63,6 +63,7 @@ class EfuseBurnTest(unittest.TestCase):
         self.assertIn("hw_gen:    11", result.stdout)
         self.assertIn("hw_rev:    0", result.stdout)
         self.assertIn("mfr_id:    0x01", result.stdout)
+        self.assertIn("batch:     0x00000001", result.stdout)
         self.assertIn("serial:    4242", result.stdout)
 
     def test_identity_burn_round_trips_on_esp32s3_too(self):
@@ -74,7 +75,58 @@ class EfuseBurnTest(unittest.TestCase):
         self.assertIn("hw_gen:    9", result.stdout)
         self.assertIn("hw_rev:    2", result.stdout)
         self.assertIn("mfr_id:    0x00", result.stdout)
+        self.assertIn("batch:     0 (not recorded)", result.stdout)
         self.assertIn("serial:    7", result.stdout)
+
+    def test_0z_base36_prefix_works_for_mfr_id_and_serial_too(self):
+        # "0z" is handled by parse_int() itself, not something specific to
+        # --batch, so it should work anywhere parse_int() is used.
+        burn = run(
+            "identity", "--chip", "esp32c6", "--virt", "--path-efuse-file", self.efuse_file,
+            "--hw-gen", "11", "--hw-rev", "0", "--mfr-id", "0z1", "--serial", "0z70kbl", "--yes",
+        )
+        self.assertEqual(burn.returncode, 0, burn.stderr)
+
+        result = self.show()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("mfr_id:    0x01", result.stdout)
+        self.assertIn(f"serial:    {int('70kbl', 36)}", result.stdout)
+
+    def test_batch_id_accepts_0z_base36_prefix(self):
+        # JLCPCB prints batch/lot codes in base-36, e.g. "70kbl" -- there's
+        # no standard prefix for base-36 the way "0x" means hex, so this
+        # project uses "0z" by analogy.
+        burn = run(
+            "identity", "--chip", "esp32c6", "--virt", "--path-efuse-file", self.efuse_file,
+            "--hw-gen", "11", "--hw-rev", "0", "--mfr-id", "0x1", "--batch", "0z70kbl",
+            "--serial", "0x1092", "--yes",
+        )
+        self.assertEqual(burn.returncode, 0, burn.stderr)
+
+        result = self.show()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(f"batch:     0x{int('70kbl', 36):08x}", result.stdout)
+
+    def test_bare_base36_batch_without_0z_prefix_is_rejected(self):
+        # A bare JLCPCB code has no recognized prefix and isn't valid
+        # decimal, so it must be rejected rather than silently guessed.
+        result = run(
+            "identity", "--chip", "esp32c6", "--virt", "--path-efuse-file", self.efuse_file,
+            "--hw-gen", "11", "--hw-rev", "0", "--mfr-id", "0x1", "--batch", "70kbl",
+            "--serial", "0x1092", "--yes",
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("invalid parse_int value", result.stderr)
+
+    def test_batch_defaults_to_not_recorded_when_omitted(self):
+        burn = run(
+            "identity", "--chip", "esp32c6", "--virt", "--path-efuse-file", self.efuse_file,
+            "--hw-gen", "11", "--hw-rev", "0", "--mfr-id", "0x1", "--serial", "0x1092", "--yes",
+        )
+        self.assertEqual(burn.returncode, 0, burn.stderr)
+
+        result = self.show()
+        self.assertIn("batch:     0 (not recorded)", result.stdout)
 
     def test_second_differing_burn_is_rejected_and_original_survives(self):
         first = self.identity(hw_gen=11, hw_rev=0, serial=1)
