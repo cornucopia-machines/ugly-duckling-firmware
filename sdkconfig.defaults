@@ -58,10 +58,19 @@ CONFIG_PM_RTOS_IDLE_OPT=y
 
 # Power down stuff
 CONFIG_PM_SLP_DISABLE_GPIO=y
+CONFIG_ESP_SLEEP_POWER_DOWN_FLASH=y
 CONFIG_PM_POWER_DOWN_CPU_IN_LIGHT_SLEEP=y
 CONFIG_PM_RESTORE_CACHE_TAGMEM_AFTER_LIGHT_SLEEP=y
-# TODO Experiment with this
+# TODO Experiment with this separately — see issue TBD. Untested since it got pulled in
+# alongside CONFIG_ESP_WIFI_ENHANCED_LIGHT_SLEEP (which turned out to break light sleep
+# entirely with BLE active, see sdkconfig.carrot.defaults) and we haven't isolated its
+# own effect yet.
 # CONFIG_PM_POWER_DOWN_PERIPHERAL_IN_LIGHT_SLEEP=y
+
+# Enable DFS auto-init at startup. Harmless either way for us — PowerManager already
+# calls esp_pm_configure() explicitly at boot regardless of this setting — but avoids
+# briefly running at default (non-DFS) power settings before that call happens.
+CONFIG_PM_DFS_INIT_AUTO=y
 
 # Wi-Fi power saving options
 
@@ -152,37 +161,40 @@ CONFIG_BT_NIMBLE_SVC_DIS_MANUFACTURER_NAME=y
 CONFIG_BT_NIMBLE_SVC_DIS_FIRMWARE_REVISION=y
 CONFIG_BT_NIMBLE_SVC_DIS_SERIAL_NUMBER=y
 
+# Extended advertising (ble_gap_ext_adv_* in BleDriver::startAdvertising) instead of legacy
+# (ble_gap_adv_*) — matches Espressif's power_save reference example, which uses this by
+# default on ESP32-C6. A single extended AD payload fits everything (flags, name, all
+# service UUIDs) without needing a separate scan response.
+CONFIG_BT_NIMBLE_EXT_ADV=y
+
 # Wi-Fi + BLE coexistence
 CONFIG_ESP_COEX_SW_COEXIST_ENABLE=y
 # Power management for Wi-Fi + BLE coexistence
 CONFIG_ESP_COEX_POWER_MANAGEMENT=y
 
+# We only ever act as a BLE peripheral (advertising DIS, future Wi-Fi provisioning) —
+# never scan for or connect to other BLE devices. Dropping Central/Observer also
+# rules out any background scanning as a contributor to the light-sleep wakeup
+# storm under investigation (see PowerManager's diagnostic dump loop).
+# NOTE: if devices later need to talk to BLE peripherals of their own (e.g. soil
+# sensors), CENTRAL must be re-enabled — without it we can advertise but not
+# initiate connections or scan.
+CONFIG_BT_NIMBLE_ROLE_CENTRAL=n
+CONFIG_BT_NIMBLE_ROLE_OBSERVER=n
+
 # --- Optional NimBLE size-reduction knobs (review before enabling) -------------
 # Default NimBLE config compiles in all four roles, BLE5 features, and supports
 # up to 3 simultaneous connections — together this is ~235 KB in libble_app.a.
-# As of now we only use BLE as a *peripheral* (advertising DIS, future Wi-Fi
-# provisioning). If devices later need to scan or connect to BLE peripherals
-# of their own (e.g. soil sensors), they must keep the CENTRAL role enabled
-# — disabling CENTRAL means we can advertise but cannot initiate connections.
 #
 # Estimated savings (combined ~60–100 KB in libble_app.a; verify with `idf.py size`):
-#
-# # Drop the Central role (no outgoing connections, no scanning for connectable peers).
-# # Required if we later want to talk to BLE soil sensors as a client.
-# # CONFIG_BT_NIMBLE_ROLE_CENTRAL=n
-#
-# # Drop the Observer role (no passive scanning for beacons / advertisements).
-# # CONFIG_BT_NIMBLE_ROLE_OBSERVER=n
 #
 # # Cap simultaneous connections at 1 — we only ever talk to one phone/provisioner.
 # # Each extra slot costs ~1–2 KB RAM + some flash.
 # # CONFIG_BT_NIMBLE_MAX_CONNECTIONS=1
 #
-# # Disable BLE 5.0 extended/periodic advertising and 2M/Coded PHY. Phones do
-# # provisioning over legacy 1M PHY; we don't need extended adv for DIS.
-# # CONFIG_BT_NIMBLE_EXT_ADV=n
+# # Disable periodic advertising (we don't use it; separate from CONFIG_BT_NIMBLE_EXT_ADV,
+# # which we do use — see above).
 # # CONFIG_BT_NIMBLE_PERIODIC_ADV=n
-# # CONFIG_BT_NIMBLE_50_FEATURE_SUPPORT=n
 #
 # # Disable L2CAP connection-oriented channels (we only use ATT/GATT).
 # # CONFIG_BT_NIMBLE_L2CAP_COC_MAX_NUM=0

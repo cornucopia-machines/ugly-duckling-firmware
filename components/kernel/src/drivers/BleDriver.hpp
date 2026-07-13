@@ -410,52 +410,75 @@ private:
         return 0;
     }
 
+    // Extended advertising (ble_gap_ext_adv_*, BLE 5.0) instead of legacy (ble_gap_adv_*).
+    // Matches Espressif's power_save reference example, which uses this by default on
+    // ESP32-C6. A single extended AD payload has room for up to 1650 bytes, so unlike the
+    // old legacy-advertising implementation there's no need to split fields between a
+    // primary ad and a separate scan response — flags, name, and all service UUIDs fit
+    // in one ble_hs_adv_fields / ble_gap_ext_adv_set_data call.
     void startAdvertising() {
+        constexpr uint8_t instance = 0;
+        if (ble_gap_ext_adv_active(instance)) {
+            return;
+        }
+
         static const std::array<ble_uuid16_t, 3> serviceUuids16 = { {
             { .u = { .type = BLE_UUID_TYPE_16 }, .value = 0x180A },
             { .u = { .type = BLE_UUID_TYPE_16 }, .value = 0x180F },
             { .u = { .type = BLE_UUID_TYPE_16 }, .value = 0x1805 },
         } };
 
-        // Primary ad: flags + name (26 bytes available after flags' 3B + name header 2B).
         const char* name = ble_svc_gap_device_name();
         struct ble_hs_adv_fields adFields = { };
         adFields.flags = BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP;
         adFields.name = reinterpret_cast<const uint8_t*>(name);
-        adFields.name_len = static_cast<uint8_t>(strnlen(name, 26));
-        adFields.name_is_complete = (strnlen(name, 27) <= 26) ? 1 : 0;
+        adFields.name_len = static_cast<uint8_t>(strlen(name));
+        adFields.name_is_complete = 1;
+        adFields.uuids16 = serviceUuids16.data();
+        adFields.num_uuids16 = serviceUuids16.size();
+        adFields.uuids16_is_complete = 1;
+        adFields.uuids128 = &uglyDucklingServiceUuid;
+        adFields.num_uuids128 = 1;
+        adFields.uuids128_is_complete = 1;
 
-        int rc = ble_gap_adv_set_fields(&adFields);
-        if (rc != 0) {
-            LOGTE(BLE, "Failed to set advertising fields: 0x%02x", rc);
-            status = BleStatus::Error;
-            return;
-        }
-
-        // Scan response: 3 × 16-bit UUIDs (8 B) + 1 × 128-bit UUID (18 B) = 26 B of 31 B available.
-        struct ble_hs_adv_fields rspFields = { };
-        rspFields.uuids16 = serviceUuids16.data();
-        rspFields.num_uuids16 = serviceUuids16.size();
-        rspFields.uuids16_is_complete = 1;
-        rspFields.uuids128 = &uglyDucklingServiceUuid;
-        rspFields.num_uuids128 = 1;
-        rspFields.uuids128_is_complete = 1;
-
-        rc = ble_gap_adv_rsp_set_fields(&rspFields);
-        if (rc != 0) {
-            LOGTE(BLE, "Failed to set scan response fields: 0x%02x", rc);
-            status = BleStatus::Error;
-            return;
-        }
-
-        struct ble_gap_adv_params params = { };
-        params.conn_mode = BLE_GAP_CONN_MODE_UND;
-        params.disc_mode = BLE_GAP_DISC_MODE_GEN;
+        struct ble_gap_ext_adv_params params = { };
+        params.connectable = 1;    // must accept CONNECT_IND for phone-based WiFi provisioning
+        params.own_addr_type = BLE_OWN_ADDR_RANDOM;
+        params.primary_phy = BLE_HCI_LE_PHY_1M;
+        params.secondary_phy = BLE_HCI_LE_PHY_1M;
+        params.tx_power = 127;    // let the stack pick
+        params.sid = 0;
         // 2 s interval (3200 × 0.625 ms) — long enough for the CPU to enter light sleep between events
         params.itvl_min = 3200;
         params.itvl_max = 3200;
 
-        rc = ble_gap_adv_start(BLE_OWN_ADDR_RANDOM, nullptr, BLE_HS_FOREVER, &params, gapEventCallback, this);
+        int rc = ble_gap_ext_adv_configure(instance, &params, nullptr, gapEventCallback, this);
+        if (rc != 0) {
+            LOGTE(BLE, "Failed to configure extended advertising: 0x%02x", rc);
+            status = BleStatus::Error;
+            return;
+        }
+
+        struct os_mbuf* data = os_msys_get_pkthdr(0, 0);
+        if (data == nullptr) {
+            LOGTE(BLE, "Failed to allocate mbuf for advertising data");
+            status = BleStatus::Error;
+            return;
+        }
+        rc = ble_hs_adv_set_fields_mbuf(&adFields, data);
+        if (rc != 0) {
+            LOGTE(BLE, "Failed to encode advertising fields: 0x%02x", rc);
+            status = BleStatus::Error;
+            return;
+        }
+        rc = ble_gap_ext_adv_set_data(instance, data);
+        if (rc != 0) {
+            LOGTE(BLE, "Failed to set advertising data: 0x%02x", rc);
+            status = BleStatus::Error;
+            return;
+        }
+
+        rc = ble_gap_ext_adv_start(instance, 0, 0);
         if (rc != 0 && rc != BLE_HS_EALREADY) {
             LOGTE(BLE, "Failed to start advertising: 0x%02x", rc);
             status = BleStatus::Error;
