@@ -224,7 +224,7 @@ private:
     static void throwOnBleError(int rc, const char* what) {
         if (rc != 0) {
             char message[80];
-            snprintf(message, sizeof(message), "%s failed: 0x%02x", what, rc);
+            (void) snprintf(message, sizeof(message), "%s failed: 0x%02x", what, rc);
             throw std::runtime_error(message);
         }
     }
@@ -476,7 +476,7 @@ private:
     // ~3 mA bursty with WiFi station + BLE both active.
     void startAdvertising() {
         constexpr uint8_t instance = 0;
-        if (ble_gap_ext_adv_active(instance)) {
+        if (ble_gap_ext_adv_active(instance) != 0) {
             return;
         }
 
