@@ -167,6 +167,14 @@ CONFIG_BT_NIMBLE_SVC_DIS_SERIAL_NUMBER=y
 # service UUIDs) without needing a separate scan response.
 CONFIG_BT_NIMBLE_EXT_ADV=y
 
+# Headroom for the NPL/HCI event pool (defaults: COUNT=30, DISCARD_COUNT=8). Not the fix for
+# the burst-advertising crash documented in BleDriver::startAdvertising (that's the
+# configure-once change) — this is insurance against the same failure mode (apparent event
+# pool exhaustion under sustained WiFi+MQTT+TLS load) recurring under other bursts of HCI
+# activity we haven't hit yet.
+CONFIG_BT_NIMBLE_TRANSPORT_EVT_COUNT=60
+CONFIG_BT_NIMBLE_TRANSPORT_EVT_DISCARD_COUNT=16
+
 # Wi-Fi + BLE coexistence
 CONFIG_ESP_COEX_SW_COEXIST_ENABLE=y
 # Power management for Wi-Fi + BLE coexistence
