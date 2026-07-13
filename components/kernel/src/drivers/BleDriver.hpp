@@ -70,12 +70,14 @@ public:
         const std::string& modelName,
         const std::string& firmwareVersion,
         const std::string& serialNumber,
-        const std::shared_ptr<NvsStore>& nvs)
+        const std::shared_ptr<NvsStore>& nvs,
+        milliseconds advBurstInterval)
         : deviceName(deviceName)
         , modelName(modelName)
         , firmwareVersion(firmwareVersion)
         , serialNumber(serialNumber)
-        , bleAddr(loadOrGenerateAddress(*nvs)) {
+        , bleAddr(loadOrGenerateAddress(*nvs))
+        , advBurstInterval(advBurstInterval) {
         instance = this;
 
         // Errors from here through the end of the constructor throw (see throwOnBleError):
@@ -122,7 +124,8 @@ public:
 
         nimble_port_freertos_init(hostTask);
 
-        LOGTD(BLE, "Initialized, will advertise as '%s'", this->deviceName.c_str());
+        LOGTD(BLE, "Initialized, will advertise as '%s' every %lld ms",
+            this->deviceName.c_str(), this->advBurstInterval.count());
     }
 
     BleStatus getStatus() override {
@@ -326,7 +329,7 @@ private:
                 // startAdvertising() for why. ble_npl_callout_reset both (re)arms the callout
                 // and is safe to call while already pending, so no separate stop-first step.
                 ble_npl_error_t err = ble_npl_callout_reset(
-                    &driver->advRestartCallout, ble_npl_time_ms_to_ticks32(duration_cast<milliseconds>(advBurstInterval).count()));
+                    &driver->advRestartCallout, ble_npl_time_ms_to_ticks32(driver->advBurstInterval.count()));
                 if (err != BLE_NPL_OK) {
                     LOGTE(BLE, "Failed to arm advertising restart callout: 0x%02x", err);
                 }
@@ -572,6 +575,8 @@ private:
     const std::string firmwareVersion;
     const std::string serialNumber;
     const std::array<uint8_t, 6> bleAddr;
+    // Gap between advertising bursts; see startAdvertising()
+    const milliseconds advBurstInterval;
 
     std::function<void(time_t)> onTimeReceived;
     std::function<void()> onWifiScanRequested;
@@ -579,9 +584,6 @@ private:
     std::function<void(std::string)> onWifiControlReceived;
 
     BleStatus status { BleStatus::Idle };
-
-    // Gap between advertising bursts; see startAdvertising().
-    static constexpr auto advBurstInterval = 2s;
 
     // All fields below are only accessed from the NimBLE host task (GAP/GATT callbacks
     // and postToHostTask closures), so no synchronisation is needed.

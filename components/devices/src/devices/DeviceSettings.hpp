@@ -15,6 +15,13 @@ struct DeviceSettings : ConfigurationSection {
     Property<bool> bleEnabled { this, "bleEnabled", true };
 
     /**
+     * @brief Gap between BLE advertising bursts. See BleDriver::startAdvertising() —
+     * shorter values increase discoverability/reconnect speed at the cost of power
+     * (each burst re-engages the WiFi/BLE coexistence scheduler briefly).
+     */
+    Property<milliseconds> bleAdvInterval { this, "bleAdvInterval", 2000ms };
+
+    /**
      * @brief How often to publish telemetry.
      */
     Property<seconds> publishInterval { this, "publishInterval", 5min };

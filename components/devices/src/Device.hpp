@@ -422,7 +422,8 @@ static void startDevice() {
             "Ugly Duckling " + modelWithRevision,
             firmwareVersion,
             macAddress,
-            bleNvs);
+            bleNvs,
+            settings->bleAdvInterval.get());
     } else {
         LOGI("BLE disabled, using no-op driver");
         ble = std::make_shared<BleDriver>();
