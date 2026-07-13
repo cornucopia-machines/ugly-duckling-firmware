@@ -61,7 +61,7 @@ CONFIG_PM_SLP_DISABLE_GPIO=y
 CONFIG_ESP_SLEEP_POWER_DOWN_FLASH=y
 CONFIG_PM_POWER_DOWN_CPU_IN_LIGHT_SLEEP=y
 CONFIG_PM_RESTORE_CACHE_TAGMEM_AFTER_LIGHT_SLEEP=y
-# TODO Experiment with this separately — see issue TBD. Untested since it got pulled in
+# TODO Experiment with this separately — see issue #593. Untested since it got pulled in
 # alongside CONFIG_ESP_WIFI_ENHANCED_LIGHT_SLEEP (which turned out to break light sleep
 # entirely with BLE active, see sdkconfig.carrot.defaults) and we haven't isolated its
 # own effect yet.
