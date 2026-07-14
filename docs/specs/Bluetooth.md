@@ -8,10 +8,52 @@ disconnect it immediately restarts advertising.
 
 Platforms:
 
-| Platform | SoC      | BLE Support |
-| -------- | -------- | ----------- |
-| Carrot   | ESP32-C6 | Yes         |
-| Spinach  | ESP32-S3 | Yes         |
+| Platform | SoC      | BLE Support    |
+| -------- | -------- | -------------- |
+| Carrot   | ESP32-C6 | Yes            |
+| Spinach  | ESP32-S3 | No (see below) |
+
+### Platform support decision
+
+BLE is **fully disabled on Spinach** (pre-MK10 devices — MK5 through MK9), both
+at the sdkconfig level (`CONFIG_BT_ENABLED=n` in `sdkconfig.spinach.defaults`,
+overriding `sdkconfig.defaults`' `CONFIG_BT_ENABLED=y` for this platform only)
+and in application code (everything depending on NimBLE is compiled out under
+`#ifdef CONFIG_BT_NIMBLE_ENABLED` — see [Driver Architecture](#driver-architecture)).
+
+Rationale: proper BLE support (WiFi provisioning, local-only mode, etc.) matters
+for **new** devices going forward — Carrot (MK10+). Pre-MK10 devices keep their
+existing provisioning path (SoftAP/USB) and data transfer path (WiFi/MQTT) and
+don't need BLE at all, so there's no reason to carry it — including debugging
+ESP32-S3-specific BLE controller quirks (community reports suggest its BLE
+controller shares lineage with the older, more constrained ESP32-C3 rather than
+the newer C6/H2 stack, and that connectable extended advertising is less
+reliable there — not confirmed on this codebase, since the investigation was
+abandoned in favor of this decision). Disabling BLE at compile time also
+recovers flash/RAM otherwise spent on `libble_app.a` and the NimBLE host task on
+these older, more resource-constrained boards.
+
+If a pre-MK10 device ever needs BLE after all, re-enable
+`CONFIG_BT_ENABLED`/`CONFIG_BT_NIMBLE_ENABLED` (and the rest of the Bluetooth
+block from `sdkconfig.defaults`) in `sdkconfig.spinach.defaults`, then revisit
+the ESP32-S3 connectable-extended-advertising question above before shipping.
+
+**Alternative considered — drop back to legacy advertising:** switching from
+BLE 5.0 extended advertising to legacy advertising (`ble_gap_adv_*` instead of
+`ble_gap_ext_adv_*` — see the [compatibility note](#advertising) above) is a
+separate option, not chosen here but still open, primarily to address Android
+extended-advertising support being a per-chipset hardware property rather than
+guaranteed by API level. It would mean reintroducing the primary-ad/scan-response
+split (31 bytes each) since legacy PDUs can't carry today's merged payload
+(name + 3×16-bit UUIDs + 1×128-bit UUID). It's also plausible (though
+unconfirmed — see above) that legacy PDUs sidestep the ESP32-S3
+connectable-extended-advertising reliability question entirely, since that
+issue is specific to the extended, non-legacy PDU path. **If we do make this
+switch, Spinach/ESP32-S3 BLE support is worth reconsidering** — the S3
+rationale for staying with extended advertising falls away once legacy PDUs
+are back in play, though the "why bother, older devices don't need it"
+argument from the decision above would still need to be re-evaluated
+independently.
 
 ---
 
@@ -35,9 +77,9 @@ to 1650 bytes, so — unlike legacy advertising's 31-byte primary + 31-byte
 scan-response split — flags, device name, and all service UUIDs fit in one
 payload; there is no separate scan response.
 
-| PDU                      | Contents                                                          |
-| ------------------------ | ------------------------------------------------------------------ |
-| Extended advertising ad  | Flags + device name + complete list of 16-bit and 128-bit UUIDs   |
+| PDU                     | Contents                                                        |
+| ----------------------- | --------------------------------------------------------------- |
+| Extended advertising ad | Flags + device name + complete list of 16-bit and 128-bit UUIDs |
 
 Service UUIDs included:
 
@@ -51,7 +93,7 @@ Service UUIDs included:
 > **Compatibility note:** extended advertising is a real BLE 5.0 controller
 > capability, not universally supported by every phone or scanner app. iOS
 > requires **iPhone XS or later, iOS 13+** (iPhone X, released the same year
-> as BT5 hardware shipped, is *not* included — the cutover is specifically
+> as BT5 hardware shipped, is _not_ included — the cutover is specifically
 > XS/XR); Apple caps extended AD data it reads at 124 bytes. Android has the
 > scanning API since 8.0 (API 26), but actual support is a **per-chipset
 > hardware property** (`BluetoothAdapter.isLeExtendedAdvertisingSupported()`)
@@ -71,7 +113,7 @@ Advertising fires in **single-event bursts** roughly every 2 s, rather than
 advertising continuously with a 2 s interval. See
 [WiFi/BLE Coexistence & Power](#wifible-coexistence--power) below for why —
 in short, the ESP32-C6's WiFi/BLE coexistence scheduler picks its (expensive)
-scheme based on whether the controller's advertising *state* is enabled at
+scheme based on whether the controller's advertising _state_ is enabled at
 all, not on the actual on-air event cadence, so continuous advertising (even
 at a slow interval) keeps the coexistence scheduler engaged and the chip
 waking from light sleep constantly.
@@ -95,7 +137,7 @@ Mechanics (`BleDriver::startAdvertising()` /
 
 Net over-the-air behavior is unchanged from continuous 2 s-interval
 advertising — one connectable event roughly every 2 s — only the controller's
-state *between* events differs (idle instead of continuously enabled).
+state _between_ events differs (idle instead of continuously enabled).
 
 ---
 
@@ -148,6 +190,15 @@ Callbacks wired in `Device.hpp`:
 `BleDriver` (`components/kernel/src/drivers/BleDriver.hpp`) owns the NimBLE
 lifecycle:
 
+- `BleDriver` itself is a no-op base class (`getStatus()` always returns
+  `Disabled`) with no NimBLE dependency, so it's always available. Its subclass
+  `NimBleDriver` — and every NimBLE header it needs — is compiled only under
+  `#ifdef CONFIG_BT_NIMBLE_ENABLED`, since on platforms where the option is off
+  (Spinach — see [Platform support decision](#platform-support-decision)) the
+  `bt` component doesn't even expose the nimble/host include paths. `Device.hpp`
+  mirrors the same `#ifdef`: it only instantiates `NimBleDriver` (gated further
+  by `settings->bleEnabled` at runtime) inside the guard, falling back to the
+  no-op `BleDriver` unconditionally outside it.
 - Constructed in `Device.hpp` before WiFi, passing device name, model, firmware
   version, serial number, and an `NvsStore` for address persistence.
 - Constructor errors (NimBLE init, GATT service registration, GAP/DIS field
@@ -207,13 +258,13 @@ rather than hardware wakeup) is an untested, separate avenue for the same
 "receive beacons without a full CPU wake" goal — worth investigating if beacon
 lost handling ever needs improving, but do not assume it has the same problem.
 
-### Root cause 2 — coexistence scheduler keyed on advertising *state*, not on-air activity
+### Root cause 2 — coexistence scheduler keyed on advertising _state_, not on-air activity
 
 With root cause 1 fixed, WiFi-only and BLE-only were both cheap (~2 mA and
 ~1.3 mA respectively, even with BLE's 2 s advertising interval) — but WiFi
 **and** BLE together still drew ~13 mA. The deciding experiment: BLE advertising
 alone was cheap regardless of interval, so the expense wasn't about how often
-an actual advertising PDU went out — it was specifically about having *both*
+an actual advertising PDU went out — it was specifically about having _both_
 radios active together. That pointed at the coexistence (coex) scheduler.
 
 Espressif's coexistence documentation confirms the mechanism: when WiFi STA is
@@ -222,7 +273,7 @@ Transmission Time — the AP's beacon interval, typically ~100 ms) —
 independent of BLE's `listen_interval` or advertising interval. This matched
 a periodic ETSTimer pair found via `esp_timer_dump()` firing roughly every
 ~105 ms. The controller was, in effect, choosing its (expensive) coexistence
-scheme based on whether BLE advertising was *enabled at all*, not on the
+scheme based on whether BLE advertising was _enabled at all_, not on the
 actual cadence of advertising events — so even a slow, infrequent advertiser
 kept the coex scheduler engaged continuously, waking the chip from light sleep
 every ~2.8 ms to service RF time slices.
@@ -236,7 +287,7 @@ advertising vs. ~3-3.25 mA bursty, WiFi + BLE both active in both cases.
 
 ### A crash along the way — NimBLE host crash under WiFi+MQTT+TLS load
 
-The first burst-mode implementation re-ran the *entire* advertising setup
+The first burst-mode implementation re-ran the _entire_ advertising setup
 (`ble_gap_ext_adv_configure()` + mbuf alloc + `ble_gap_ext_adv_set_data()` +
 `ble_gap_ext_adv_start()`) on every ~2 s burst. `ble_gap_ext_adv_configure()`
 and `ble_gap_ext_adv_set_data()` are real HCI round-trips to the controller,
@@ -280,7 +331,7 @@ from the redundant per-burst reconfiguration.
 Ruled out during root cause 2's investigation, on this codebase:
 
 - WiFi/coexistence in general — reproduces identically with WiFi driver never
-  initialized at all (rules out coexistence as *root cause 1*'s mechanism;
+  initialized at all (rules out coexistence as _root cause 1_'s mechanism;
   root cause 2 specifically requires both radios active, see above).
 - NimBLE `Central`/`Observer` roles — disabling both (`CONFIG_BT_NIMBLE_ROLE_CENTRAL=n`,
   `CONFIG_BT_NIMBLE_ROLE_OBSERVER=n`; kept disabled regardless, since we never
@@ -292,7 +343,7 @@ Ruled out during root cause 2's investigation, on this codebase:
   problem (extended advertising was kept anyway, for larger-payload headroom;
   see the compatibility note above).
 - `CONFIG_PM_LIGHTSLEEP_RTC_OSC_CAL_INTERVAL` (16 vs. default 1) — changed the
-  *shape* of the numbers (fewer wakeups, worse sleep ratio) but not the
+  _shape_ of the numbers (fewer wakeups, worse sleep ratio) but not the
   underlying problem.
 - `CONFIG_PM_LIGHT_SLEEP_CALLBACKS` — disabling entirely made no difference.
 - A deliberately slow `esp_pm` light-sleep callback (busy-wait in `enter_cb`,
@@ -321,7 +372,7 @@ from `sdkconfig`):
   effect (lock/sleep numbers stayed within noise of the default
   `PREFER_BALANCE`).
 - Lowering max CPU frequency 160→80 MHz — negligible effect; wakeup
-  *frequency* is what mattered, not clock speed during each wake.
+  _frequency_ is what mattered, not clock speed during each wake.
 - Espressif's coexistence doc's "Wi-Fi Connectionless Modules Coexistence"
   section (Window/Interval parameters) looked promising but turned out to be
   about ESP-NOW/DPP/FTM, not a plain WiFi-STA + BLE-advertising setup — a red
@@ -333,7 +384,7 @@ from `sdkconfig`):
   `CONFIG_PM_POWER_DOWN_PERIPHERAL_IN_LIGHT_SLEEP` was pulled in alongside
   `ESP_WIFI_ENHANCED_LIGHT_SLEEP` during the original investigation and never
   isolated on its own; still commented out (`# TODO Experiment with this
-  separately`) in `sdkconfig.defaults`.
+separately`) in `sdkconfig.defaults`.
 - File an upstream ESP-IDF issue for the `ESP_WIFI_ENHANCED_LIGHT_SLEEP` +
   BLE interaction once reproduced on a minimal example.
 - `SLP_SAMPLE_BEACON_FEATURE` (see root cause 1) as an alternative to the

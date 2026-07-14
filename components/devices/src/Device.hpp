@@ -412,8 +412,11 @@ static void startDevice() {
     auto states = std::make_shared<ModuleStates>();
     KernelStatusTask::init(statusLed, states);
 
-    // Init BLE (optional — disabled via settings->bleEnabled)
+    // Init BLE (optional — disabled via settings->bleEnabled; compiled out entirely on
+    // platforms without CONFIG_BT_NIMBLE_ENABLED, e.g. Spinach — see docs/specs/Bluetooth.md
+    // "Platform support decision")
     std::shared_ptr<BleDriver> ble;
+#ifdef CONFIG_BT_NIMBLE_ENABLED
     if (settings->bleEnabled.get()) {
         LOGI("BLE enabled, starting NimBLE stack");
         auto bleNvs = std::make_shared<NvsStore>("ble");
@@ -428,6 +431,9 @@ static void startDevice() {
         LOGI("BLE disabled, using no-op driver");
         ble = std::make_shared<BleDriver>();
     }
+#else
+    ble = std::make_shared<BleDriver>();
+#endif
 
     // Init WiFi
     auto wifi = std::make_shared<WiFiDriver>(

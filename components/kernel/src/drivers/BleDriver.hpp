@@ -8,6 +8,15 @@
 #include <string>
 #include <time.h>
 
+#include "WifiApRecord.hpp"
+#include <Log.hpp>
+#include <NvsStore.hpp>
+
+// NimBleDriver and everything it needs from the "bt" component are only available when
+// CONFIG_BT_NIMBLE_ENABLED is set. Spinach (pre-MK10 devices) disables CONFIG_BT_ENABLED
+// entirely — see docs/specs/Bluetooth.md ("Platform support decision") — which drops the
+// bt component's nimble/host include paths, so these headers wouldn't even resolve there.
+#ifdef CONFIG_BT_NIMBLE_ENABLED
 #include <esp_random.h>
 #include <host/ble_gatt.h>
 #include <host/ble_hs.h>    // NOLINT(misc-header-include-cycle) -- ble_hs.h and ble_gap.h include each other; cycle is in ESP-IDF, not our code
@@ -21,17 +30,13 @@
 #include <services/gap/ble_svc_gap.h>
 #include <services/gatt/ble_svc_gatt.h>
 
-#include "WifiApRecord.hpp"
 #include <ArduinoJson.h>
 #include <EspException.hpp>
-#include <Log.hpp>
-#include <NvsStore.hpp>
+#endif
 
 using namespace std::chrono;
 
 namespace cornucopia::ugly_duckling::kernel::drivers {
-
-LOGGING_TAG(BLE, "ble")
 
 enum class BleStatus : std::uint8_t {
     Disabled,
@@ -42,8 +47,10 @@ enum class BleStatus : std::uint8_t {
     Connected
 };
 
-// No-op BLE driver used when BLE is disabled at runtime (settings->bleEnabled = false).
-// All methods are no-ops; getStatus() returns Disabled. Subclassed by NimBleDriver.
+// No-op BLE driver used when BLE is disabled — either at runtime (settings->bleEnabled =
+// false) or entirely at compile time on platforms without CONFIG_BT_NIMBLE_ENABLED (e.g.
+// Spinach, see docs/specs/Bluetooth.md). All methods are no-ops; getStatus() returns
+// Disabled. Subclassed by NimBleDriver where BLE is compiled in.
 class BleDriver {
 public:
     virtual ~BleDriver() = default;
@@ -56,6 +63,10 @@ public:
     virtual void setWifiStatus(const std::string& /*unused*/) {}
     virtual void setScanResults(const std::vector<WifiApRecord>& /*unused*/) {}
 };
+
+#ifdef CONFIG_BT_NIMBLE_ENABLED
+
+LOGGING_TAG(BLE, "ble")
 
 // Starts NimBLE, advertises the device, and hosts standard GATT services readable with any BLE
 // scanner app (nRF Connect, LightBlue, etc.) without a custom client:
@@ -721,5 +732,7 @@ private:
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
     inline static NimBleDriver* instance = nullptr;
 };
+
+#endif    // CONFIG_BT_NIMBLE_ENABLED
 
 }    // namespace cornucopia::ugly_duckling::kernel::drivers
