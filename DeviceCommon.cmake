@@ -90,6 +90,20 @@ if(UD_DEBUG)
     add_compile_definitions(DUMP_MQTT)
 endif()
 
+# UD_PM_DIAGNOSTICS — separate from UD_DEBUG since debug builds already disable light sleep
+# entirely (see PowerManager::shouldSleepWhenIdle), which would make PM diagnostics useless.
+
+if(NOT DEFINED UD_PM_DIAGNOSTICS)
+    set(UD_PM_DIAGNOSTICS "$ENV{UD_PM_DIAGNOSTICS}")
+endif()
+if(UD_PM_DIAGNOSTICS STREQUAL "")
+    set(UD_PM_DIAGNOSTICS 0)
+endif()
+
+if(UD_PM_DIAGNOSTICS)
+    add_compile_definitions(UD_PM_DIAGNOSTICS)
+endif()
+
 # WOKWI
 
 if(NOT DEFINED WOKWI)
@@ -110,12 +124,17 @@ if(WOKWI)
     endif()
 endif()
 
-# Make sure we reconfigure if UD_DEBUG changes
-set_property(DIRECTORY PROPERTY UD_DEBUG_TRACKER "${UD_DEBUG}")
+# Make sure we reconfigure if UD_DEBUG or UD_PM_DIAGNOSTICS changes
+set_property(DIRECTORY PROPERTY UD_DEBUG_TRACKER "${UD_DEBUG} ${UD_PM_DIAGNOSTICS}")
 
 set(SDKCONFIG_FILES)
 list(APPEND SDKCONFIG_FILES "${CMAKE_CURRENT_LIST_DIR}/sdkconfig.defaults")
 list(APPEND SDKCONFIG_FILES "${CMAKE_CURRENT_LIST_DIR}/sdkconfig.${_ud_platform}.defaults")
+
+if (UD_PM_DIAGNOSTICS)
+    message("Building with PM diagnostics")
+    list(APPEND SDKCONFIG_FILES "${CMAKE_CURRENT_LIST_DIR}/sdkconfig.pm_diagnostics.defaults")
+endif()
 
 # Check if UD_DEBUG is defined
 if (UD_DEBUG)

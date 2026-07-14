@@ -12,7 +12,22 @@ struct DeviceSettings : ConfigurationSection {
     ArrayProperty<JsonAsString> functions { this, "functions" };
 
     Property<bool> sleepWhenIdle { this, "sleepWhenIdle", true };
-    Property<bool> bleEnabled { this, "bleEnabled", false };
+
+    /**
+     * @brief Runtime BLE on/off switch. Only takes effect on platforms compiled with
+     * CONFIG_BT_NIMBLE_ENABLED (Carrot/MK10+) — see docs/specs/Bluetooth.md "Platform
+     * support decision". On platforms without it (Spinach), BLE is compiled out
+     * entirely and this setting has no effect.
+     */
+    Property<bool> bleEnabled { this, "bleEnabled", true };
+
+    /**
+     * @brief Gap between BLE advertising bursts. See BleDriver::startAdvertising() —
+     * shorter values increase discoverability/reconnect speed at the cost of power
+     * (each burst re-engages the WiFi/BLE coexistence scheduler briefly). Only relevant
+     * where BLE is compiled in — see bleEnabled above.
+     */
+    Property<milliseconds> bleAdvInterval { this, "bleAdvInterval", 2000ms };
 
     /**
      * @brief How often to publish telemetry.

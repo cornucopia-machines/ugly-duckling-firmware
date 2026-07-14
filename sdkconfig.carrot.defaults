@@ -3,26 +3,44 @@
 #
 CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
 
+# Use external 32.768 kHz crystal on GPIO0/1 (MK11+) for RTC clock source. This is what
+# lets BT_LE_LP_CLK_SRC_DEFAULT below use the RTC slow clock (accurate, low-power) as BLE's
+# low-power clock instead of keeping the main XTAL powered during light sleep.
+# For MK10 the firmware will fall back to the internal 136 kHz RC oscillator.
+CONFIG_RTC_CLK_SRC_EXT_CRYS=y
+
 #
 # Wi-Fi
 #
 
-# Hardware-assisted beacon reception during light sleep: the WiFi modem wakes autonomously
-# for each beacon interval, keeping the CPU in light sleep until actual data arrives.
-# C6-specific (requires SOC_PM_SUPPORT_BEACON_WAKEUP, not available on S3).
-# Mutually exclusive with SLP_SAMPLE_BEACON_FEATURE (beacon timing calibration).
-CONFIG_ESP_WIFI_ENHANCED_LIGHT_SLEEP=y
+# DO NOT ENABLE CONFIG_ESP_WIFI_ENHANCED_LIGHT_SLEEP. Its own description sounds
+# harmless/beneficial ("hardware-assisted beacon reception during light sleep: the WiFi
+# modem wakes autonomously for each beacon interval, keeping the CPU in light sleep until
+# actual data arrives"; C6-specific, requires SOC_PM_SUPPORT_BEACON_WAKEUP), but when BLE
+# is also enabled it silently breaks light sleep entirely: esp_light_sleep_start() starts
+# rejecting ~100% of attempts (confirmed via esp_pm's light_sleep_counts/
+# light_sleep_reject_counts, CONFIG_PM_PROFILING=y), even with WiFi never connected —
+# apparently this option's hardware beacon-wakeup registration collides with BT's own
+# esp_sleep_enable_bt_wakeup() RTC/PMU wakeup source. Measured impact on MK11: ~33 mA
+# average with this enabled vs ~4 mA with it disabled, BLE advertising in both cases.
+# Root-caused 2026-07-13 by bisecting a full sdkconfig diff against Espressif's
+# nimble/power_save example, which does not enable this option. Not filed upstream yet —
+# TODO: file an ESP-IDF issue once reproduced on a minimal example.
+# Mutually exclusive with SLP_SAMPLE_BEACON_FEATURE (beacon timing calibration) — that
+# option remains an open, separate avenue for the same "receive beacons without a full
+# CPU wake" goal and hasn't been tested; do not assume it has the same problem.
+# CONFIG_ESP_WIFI_ENHANCED_LIGHT_SLEEP=y
 
 #
 # BLE controller sleep — allows light sleep between advertising events (C6-specific config name).
-# We keep BT_LE_LP_CLK_SRC_MAIN_XTAL (ESP-IDF default): the main XTAL stays powered during light
-# sleep, which keeps clock accuracy within the BLE-spec 500 PPM limit needed for phone connections.
-# Switching to BT_LE_LP_CLK_SRC_DEFAULT (136 kHz RC) would save a little more power but the RC
-# exceeds 500 PPM, making connections to non-ESP peers (e.g. phones) unreliable.
-# When CONFIG_RTC_CLK_SRC_EXT_CRYS=y is set (32.768 kHz crystal on GPIO4/5, MK11+),
-# switch to BT_LE_LP_CLK_SRC_DEFAULT for both lower power and spec-compliant connections. See issue #576.
+# ESP-IDF defaults to BT_LE_LP_CLK_SRC_MAIN_XTAL (keeps the main XTAL powered during light sleep),
+# recommended when no external 32.768 kHz crystal is available. Since CONFIG_RTC_CLK_SRC_EXT_CRYS=y
+# above gives us one (MK11+), we use BT_LE_LP_CLK_SRC_DEFAULT (the RTC slow clock, i.e. that same
+# crystal) instead — lower power than the main XTAL, and still within the BLE-spec 500 PPM sleep
+# clock accuracy limit needed for reliable connections to phones/non-ESP peers. See issue #576.
 #
 CONFIG_BT_LE_SLEEP_ENABLE=y
+CONFIG_BT_LE_LP_CLK_SRC_DEFAULT=y
 
 #
 # LP core coprocessor (used for pulse counting during light sleep)

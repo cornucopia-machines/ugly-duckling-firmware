@@ -198,6 +198,17 @@ You can add `-DUD_DEBUG=1` to enable debug output:
 idf.py build -DUD_DEBUG=1
 ```
 
+You can add `-DUD_PM_DIAGNOSTICS=1` to enable power-management diagnostics — a periodic
+(every 2.5s) dump of PM lock hold times, `esp_timer` stats, light-sleep wakeup count/causes,
+and per-task CPU time to the console. Real overhead (~9% CPU in testing), not for production
+builds. Separate from `UD_DEBUG` since debug builds disable light sleep entirely, which would
+make PM diagnostics pointless. See `components/kernel/src/PowerManager.hpp` and
+`sdkconfig.pm_diagnostics.defaults`:
+
+```bash
+idf.py build -DUD_PM_DIAGNOSTICS=1
+```
+
 #### Pinning to a specific model (development / simulation)
 
 Pass `UD_GEN` to skip MAC detection and force a specific model.

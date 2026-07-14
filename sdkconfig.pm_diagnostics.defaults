@@ -1,0 +1,16 @@
+# Power-management diagnostics build (UD_PM_DIAGNOSTICS=1). Adds the instrumentation used to
+# root-cause the BLE/light-sleep wakeup storm fixed by disabling CONFIG_ESP_WIFI_ENHANCED_LIGHT_SLEEP
+# (see sdkconfig.carrot.defaults). Not for production: real, measurable overhead (the dump task
+# alone was ~9% CPU time in testing).
+
+# Cumulative held-time tracking (not just point-in-time active/inactive) for esp_pm_dump_locks —
+# needed because a lock acquired/released very briefly within a single dump interval would be
+# missed by a point-in-time snapshot alone.
+CONFIG_PM_PROFILING=y
+
+# Named period/count/exec-time stats in esp_timer_dump()
+CONFIG_ESP_TIMER_PROFILING=y
+
+# Per-task CPU time via vTaskGetRunTimeStats() (auto-selects FREERTOS_USE_TRACE_FACILITY +
+# FREERTOS_USE_STATS_FORMATTING_FUNCTIONS)
+CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS=y

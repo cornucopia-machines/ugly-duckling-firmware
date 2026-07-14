@@ -1,11 +1,22 @@
 #pragma once
 
 #include <array>
+#include <chrono>
 #include <functional>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <time.h>
 
+#include "WifiApRecord.hpp"
+#include <Log.hpp>
+#include <NvsStore.hpp>
+
+// NimBleDriver and everything it needs from the "bt" component are only available when
+// CONFIG_BT_NIMBLE_ENABLED is set. Spinach (pre-MK10 devices) disables CONFIG_BT_ENABLED
+// entirely — see docs/specs/Bluetooth.md ("Platform support decision") — which drops the
+// bt component's nimble/host include paths, so these headers wouldn't even resolve there.
+#ifdef CONFIG_BT_NIMBLE_ENABLED
 #include <esp_random.h>
 #include <host/ble_gatt.h>
 #include <host/ble_hs.h>    // NOLINT(misc-header-include-cycle) -- ble_hs.h and ble_gap.h include each other; cycle is in ESP-IDF, not our code
@@ -19,14 +30,13 @@
 #include <services/gap/ble_svc_gap.h>
 #include <services/gatt/ble_svc_gatt.h>
 
-#include "WifiApRecord.hpp"
 #include <ArduinoJson.h>
-#include <Log.hpp>
-#include <NvsStore.hpp>
+#include <EspException.hpp>
+#endif
+
+using namespace std::chrono;
 
 namespace cornucopia::ugly_duckling::kernel::drivers {
-
-LOGGING_TAG(BLE, "ble")
 
 enum class BleStatus : std::uint8_t {
     Disabled,
@@ -37,8 +47,10 @@ enum class BleStatus : std::uint8_t {
     Connected
 };
 
-// No-op BLE driver used when BLE is disabled at runtime (settings->bleEnabled = false).
-// All methods are no-ops; getStatus() returns Disabled. Subclassed by NimBleDriver.
+// No-op BLE driver used when BLE is disabled — either at runtime (settings->bleEnabled =
+// false) or entirely at compile time on platforms without CONFIG_BT_NIMBLE_ENABLED (e.g.
+// Spinach, see docs/specs/Bluetooth.md). All methods are no-ops; getStatus() returns
+// Disabled. Subclassed by NimBleDriver where BLE is compiled in.
 class BleDriver {
 public:
     virtual ~BleDriver() = default;
@@ -51,6 +63,10 @@ public:
     virtual void setWifiStatus(const std::string& /*unused*/) {}
     virtual void setScanResults(const std::vector<WifiApRecord>& /*unused*/) {}
 };
+
+#ifdef CONFIG_BT_NIMBLE_ENABLED
+
+LOGGING_TAG(BLE, "ble")
 
 // Starts NimBLE, advertises the device, and hosts standard GATT services readable with any BLE
 // scanner app (nRF Connect, LightBlue, etc.) without a custom client:
@@ -65,15 +81,20 @@ public:
         const std::string& modelName,
         const std::string& firmwareVersion,
         const std::string& serialNumber,
-        const std::shared_ptr<NvsStore>& nvs)
+        const std::shared_ptr<NvsStore>& nvs,
+        milliseconds advBurstInterval)
         : deviceName(deviceName)
         , modelName(modelName)
         , firmwareVersion(firmwareVersion)
         , serialNumber(serialNumber)
-        , bleAddr(loadOrGenerateAddress(*nvs)) {
+        , bleAddr(loadOrGenerateAddress(*nvs))
+        , advBurstInterval(advBurstInterval) {
         instance = this;
 
-        nimble_port_init();
+        // Errors from here through the end of the constructor throw (see throwOnBleError):
+        // a device that can't stand up its GATT server or advertise isn't usable, so fail
+        // fast at boot instead of continuing in a silently broken state.
+        ESP_ERROR_THROW(nimble_port_init());
 
         ble_hs_cfg.reset_cb = onReset;
         ble_hs_cfg.sync_cb = onSync;
@@ -92,26 +113,30 @@ public:
         });
 
         // Register the Ugly Duckling custom GATT service (must be before nimble_port_freertos_init)
-        int rc = ble_gatts_count_cfg(gattSvcs);
-        if (rc != 0) {
-            LOGTE(BLE, "ble_gatts_count_cfg failed: 0x%02x", rc);
-        }
-        rc = ble_gatts_add_svcs(gattSvcs);
-        if (rc != 0) {
-            LOGTE(BLE, "ble_gatts_add_svcs failed: 0x%02x", rc);
-        }
+        throwOnBleError(ble_gatts_count_cfg(gattSvcs), "ble_gatts_count_cfg");
+        throwOnBleError(ble_gatts_add_svcs(gattSvcs), "ble_gatts_add_svcs");
 
         // NimBLE DIS stores these pointers directly (no copy), so the strings must remain alive
         // for the device lifetime. They are stored as members below.
-        ble_svc_gap_device_name_set(this->deviceName.c_str());
-        ble_svc_dis_manufacturer_name_set("Cornucopia Machines");
-        ble_svc_dis_model_number_set(this->modelName.c_str());
-        ble_svc_dis_firmware_revision_set(this->firmwareVersion.c_str());
-        ble_svc_dis_serial_number_set(this->serialNumber.c_str());
+        throwOnBleError(ble_svc_gap_device_name_set(this->deviceName.c_str()), "ble_svc_gap_device_name_set");
+        throwOnBleError(ble_svc_dis_manufacturer_name_set("Cornucopia Machines"), "ble_svc_dis_manufacturer_name_set");
+        throwOnBleError(ble_svc_dis_model_number_set(this->modelName.c_str()), "ble_svc_dis_model_number_set");
+        throwOnBleError(ble_svc_dis_firmware_revision_set(this->firmwareVersion.c_str()), "ble_svc_dis_firmware_revision_set");
+        throwOnBleError(ble_svc_dis_serial_number_set(this->serialNumber.c_str()), "ble_svc_dis_serial_number_set");
+
+        // Burst-mode advertising restart — see startAdvertising() and the BLE_GAP_EVENT_ADV_COMPLETE
+        // case in gapEventCallback() for why this exists. A ble_npl_callout (rather than an
+        // esp_timer) runs its callback directly on the NimBLE host's own event queue, so the
+        // restart needs no cross-task marshaling (contrast setWifiStatus/setScanResults, which
+        // use postToHostTask because they're invoked from other drivers' tasks).
+        throwOnBleError(
+            ble_npl_callout_init(&advRestartCallout, nimble_port_get_dflt_eventq(), advRestartCalloutCb, this),
+            "ble_npl_callout_init");
 
         nimble_port_freertos_init(hostTask);
 
-        LOGTD(BLE, "Initialized, will advertise as '%s'", this->deviceName.c_str());
+        LOGTD(BLE, "Initialized, will advertise as '%s' every %lld ms",
+            this->deviceName.c_str(), this->advBurstInterval.count());
     }
 
     BleStatus getStatus() override {
@@ -201,6 +226,20 @@ public:
     }
 
 private:
+    // NimBLE host functions return their own int error codes (BLE_HS_*), not esp_err_t, so
+    // ESP_ERROR_THROW (which calls esp_err_to_name()) doesn't apply. Used only for one-time
+    // initialization in the constructor: a failure there means the device can't function as
+    // designed (no GATT server, no advertising, etc.), so fail fast at boot rather than limp
+    // along silently — unlike runtime paths (notify, restart advertising after disconnect),
+    // which log-and-continue since a transient failure there is expected and recoverable.
+    static void throwOnBleError(int rc, const char* what) {
+        if (rc != 0) {
+            char message[80];
+            (void) snprintf(message, sizeof(message), "%s failed: 0x%02x", what, rc);
+            throw std::runtime_error(message);
+        }
+    }
+
     // Posts a callable onto the NimBLE host task's event queue. All BLE state
     // (wifiStatus, wifiScanResults, connHandle, scanInProgress) is owned by the
     // host task, so this is the only safe way to mutate it from another task.
@@ -259,6 +298,13 @@ private:
         nimble_port_freertos_deinit();
     }
 
+    // Fires advBurstInterval after each advertising burst completes (see
+    // BLE_GAP_EVENT_ADV_COMPLETE). Already runs on the NimBLE host task, since advRestartCallout
+    // was initialized against nimble_port_get_dflt_eventq() — no postToHostTask marshaling needed.
+    static void advRestartCalloutCb(struct ble_npl_event* ev) {
+        static_cast<NimBleDriver*>(ble_npl_event_get_arg(ev))->startAdvertising();
+    }
+
     void handleSync() {
         ble_hs_id_set_rnd(bleAddr.data());
         startAdvertising();
@@ -288,6 +334,18 @@ private:
                     event->disconnect.reason);
                 driver->startAdvertising();
                 break;
+            case BLE_GAP_EVENT_ADV_COMPLETE: {
+                // The single burst event (max_events=1 in startAdvertising) just finished.
+                // Re-arm after advBurstInterval instead of restarting immediately — see
+                // startAdvertising() for why. ble_npl_callout_reset both (re)arms the callout
+                // and is safe to call while already pending, so no separate stop-first step.
+                ble_npl_error_t err = ble_npl_callout_reset(
+                    &driver->advRestartCallout, ble_npl_time_ms_to_ticks32(driver->advBurstInterval.count()));
+                if (err != BLE_NPL_OK) {
+                    LOGTE(BLE, "Failed to arm advertising restart callout: 0x%02x", err);
+                }
+                break;
+            }
             default:
                 break;
         }
@@ -410,59 +468,117 @@ private:
         return 0;
     }
 
+    // Extended advertising (ble_gap_ext_adv_*, BLE 5.0) instead of legacy (ble_gap_adv_*).
+    // Matches Espressif's power_save reference example, which uses this by default on
+    // ESP32-C6. A single extended AD payload has room for up to 1650 bytes, so unlike the
+    // old legacy-advertising implementation there's no need to split fields between a
+    // primary ad and a separate scan response — flags, name, and all service UUIDs fit
+    // in one ble_hs_adv_fields / ble_gap_ext_adv_set_data call.
+    //
+    // Burst mode: fires a single advertising event (max_events=1 below) instead of advertising
+    // continuously, then re-arms advRestartCallout after advBurstInterval (see
+    // BLE_GAP_EVENT_ADV_COMPLETE in gapEventCallback). Net over-the-air behavior is the same
+    // as continuous 2s-interval advertising — one event every ~2s, still connectable — but the
+    // WiFi/BLE coexistence scheduler on ESP32-C6 selects its scheme based on the BLE controller's
+    // *advertising state*, not actual radio activity: while advertising is enabled at all (even
+    // between 2s-spaced events), coex wakes the chip from light sleep every ~2.8ms to service RF
+    // time slices. Idle-between-bursts avoids that entirely. Measured: ~13 mA continuous vs
+    // ~3 mA bursty with WiFi station + BLE both active.
+    //
+    // configureAndSetData() below (params + advertising data) runs once, guarded by advConfigured
+    // — every burst after the first calls ONLY ble_gap_ext_adv_start(). Neither the params nor the
+    // AD payload (name/UUIDs) ever change between bursts, and both ble_gap_ext_adv_configure() and
+    // ble_gap_ext_adv_set_data() are real HCI round-trips to the controller, not local struct
+    // updates — repeating them every ~2s was pure waste and, worse, piled extra HCI command/event
+    // traffic onto an already-busy path. Doing that on every burst caused a NimBLE host crash
+    // (npl_freertos_event_init / ble_hs_event_rx_hci_ev, apparent NPL/HCI event pool exhaustion
+    // under sustained WiFi+MQTT+TLS load) a few cycles after boot; configuring once removes the
+    // redundant HCI exchanges regardless of whether that's the full story.
     void startAdvertising() {
-        static const std::array<ble_uuid16_t, 3> serviceUuids16 = { {
-            { .u = { .type = BLE_UUID_TYPE_16 }, .value = 0x180A },
-            { .u = { .type = BLE_UUID_TYPE_16 }, .value = 0x180F },
-            { .u = { .type = BLE_UUID_TYPE_16 }, .value = 0x1805 },
-        } };
-
-        // Primary ad: flags + name (26 bytes available after flags' 3B + name header 2B).
-        const char* name = ble_svc_gap_device_name();
-        struct ble_hs_adv_fields adFields = { };
-        adFields.flags = BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP;
-        adFields.name = reinterpret_cast<const uint8_t*>(name);
-        adFields.name_len = static_cast<uint8_t>(strnlen(name, 26));
-        adFields.name_is_complete = (strnlen(name, 27) <= 26) ? 1 : 0;
-
-        int rc = ble_gap_adv_set_fields(&adFields);
-        if (rc != 0) {
-            LOGTE(BLE, "Failed to set advertising fields: 0x%02x", rc);
-            status = BleStatus::Error;
+        constexpr uint8_t instance = 0;
+        if (ble_gap_ext_adv_active(instance) != 0) {
             return;
         }
 
-        // Scan response: 3 × 16-bit UUIDs (8 B) + 1 × 128-bit UUID (18 B) = 26 B of 31 B available.
-        struct ble_hs_adv_fields rspFields = { };
-        rspFields.uuids16 = serviceUuids16.data();
-        rspFields.num_uuids16 = serviceUuids16.size();
-        rspFields.uuids16_is_complete = 1;
-        rspFields.uuids128 = &uglyDucklingServiceUuid;
-        rspFields.num_uuids128 = 1;
-        rspFields.uuids128_is_complete = 1;
-
-        rc = ble_gap_adv_rsp_set_fields(&rspFields);
-        if (rc != 0) {
-            LOGTE(BLE, "Failed to set scan response fields: 0x%02x", rc);
-            status = BleStatus::Error;
+        if (!advConfigured && !configureAndSetData(instance)) {
             return;
         }
 
-        struct ble_gap_adv_params params = { };
-        params.conn_mode = BLE_GAP_CONN_MODE_UND;
-        params.disc_mode = BLE_GAP_DISC_MODE_GEN;
-        // 2 s interval (3200 × 0.625 ms) — long enough for the CPU to enter light sleep between events
-        params.itvl_min = 3200;
-        params.itvl_max = 3200;
-
-        rc = ble_gap_adv_start(BLE_OWN_ADDR_RANDOM, nullptr, BLE_HS_FOREVER, &params, gapEventCallback, this);
+        int rc = ble_gap_ext_adv_start(instance, 0, 1);    // max_events=1: stop after this one burst
         if (rc != 0 && rc != BLE_HS_EALREADY) {
             LOGTE(BLE, "Failed to start advertising: 0x%02x", rc);
             status = BleStatus::Error;
             return;
         }
         status = BleStatus::Advertising;
-        LOGTD(BLE, "Advertising as '%s'", name);
+        LOGTD(BLE, "Advertising as '%s'", ble_svc_gap_device_name());
+    }
+
+    // One-time setup for startAdvertising(): advertising params + AD payload (flags, name, all
+    // service UUIDs — a single extended AD payload has room for up to 1650 bytes, so unlike the
+    // old legacy-advertising implementation there's no need to split fields between a primary ad
+    // and a separate scan response). Returns false (and sets status = Error) on failure.
+    bool configureAndSetData(uint8_t instance) {
+        struct ble_gap_ext_adv_params params = { };
+        params.connectable = 1;    // must accept CONNECT_IND for phone-based WiFi provisioning
+        params.own_addr_type = BLE_OWN_ADDR_RANDOM;
+        params.primary_phy = BLE_HCI_LE_PHY_1M;
+        params.secondary_phy = BLE_HCI_LE_PHY_1M;
+        params.tx_power = 127;    // let the stack pick
+        params.sid = 0;
+        // Standard "fast advertising interval 1" (30-60ms) so each burst's single event
+        // (max_events=1 in startAdvertising) fires promptly; the ~2s spacing between bursts
+        // comes from advRestartCallout instead.
+        params.itvl_min = BLE_GAP_ADV_FAST_INTERVAL1_MIN;
+        params.itvl_max = BLE_GAP_ADV_FAST_INTERVAL1_MAX;
+
+        int rc = ble_gap_ext_adv_configure(instance, &params, nullptr, gapEventCallback, this);
+        if (rc != 0) {
+            LOGTE(BLE, "Failed to configure extended advertising: 0x%02x", rc);
+            status = BleStatus::Error;
+            return false;
+        }
+
+        static const std::array<ble_uuid16_t, 3> serviceUuids16 = { {
+            { .u = { .type = BLE_UUID_TYPE_16 }, .value = 0x180A },
+            { .u = { .type = BLE_UUID_TYPE_16 }, .value = 0x180F },
+            { .u = { .type = BLE_UUID_TYPE_16 }, .value = 0x1805 },
+        } };
+
+        const char* name = ble_svc_gap_device_name();
+        struct ble_hs_adv_fields adFields = { };
+        adFields.flags = BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP;
+        adFields.name = reinterpret_cast<const uint8_t*>(name);
+        adFields.name_len = static_cast<uint8_t>(strlen(name));
+        adFields.name_is_complete = 1;
+        adFields.uuids16 = serviceUuids16.data();
+        adFields.num_uuids16 = serviceUuids16.size();
+        adFields.uuids16_is_complete = 1;
+        adFields.uuids128 = &uglyDucklingServiceUuid;
+        adFields.num_uuids128 = 1;
+        adFields.uuids128_is_complete = 1;
+
+        struct os_mbuf* data = os_msys_get_pkthdr(0, 0);
+        if (data == nullptr) {
+            LOGTE(BLE, "Failed to allocate mbuf for advertising data");
+            status = BleStatus::Error;
+            return false;
+        }
+        rc = ble_hs_adv_set_fields_mbuf(&adFields, data);
+        if (rc != 0) {
+            LOGTE(BLE, "Failed to encode advertising fields: 0x%02x", rc);
+            status = BleStatus::Error;
+            return false;
+        }
+        rc = ble_gap_ext_adv_set_data(instance, data);
+        if (rc != 0) {
+            LOGTE(BLE, "Failed to set advertising data: 0x%02x", rc);
+            status = BleStatus::Error;
+            return false;
+        }
+
+        advConfigured = true;
+        return true;
     }
 
     const std::string deviceName;
@@ -470,6 +586,8 @@ private:
     const std::string firmwareVersion;
     const std::string serialNumber;
     const std::array<uint8_t, 6> bleAddr;
+    // Gap between advertising bursts; see startAdvertising()
+    const milliseconds advBurstInterval;
 
     std::function<void(time_t)> onTimeReceived;
     std::function<void()> onWifiScanRequested;
@@ -483,6 +601,8 @@ private:
     int connHandle { -1 };
     bool scanInProgress { false };
     std::string wifiStatus;
+    struct ble_npl_callout advRestartCallout { };
+    bool advConfigured { false };    // see startAdvertising(): configure/set-data only needed once
 
     // Ugly Duckling Service — UUID: 100D32C7-A4E6-4F72-8D7A-A61871CE4FD6
     // Bytes stored little-endian (LSB first) as required by NimBLE.
@@ -612,5 +732,7 @@ private:
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
     inline static NimBleDriver* instance = nullptr;
 };
+
+#endif    // CONFIG_BT_NIMBLE_ENABLED
 
 }    // namespace cornucopia::ugly_duckling::kernel::drivers

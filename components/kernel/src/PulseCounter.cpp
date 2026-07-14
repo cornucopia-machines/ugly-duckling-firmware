@@ -230,6 +230,7 @@ std::shared_ptr<PulseCounter> PulseCounterManager::createGpio(const PulseCounter
     if (!gpioInitialized) {
         gpioInitialized = true;
 
+#ifdef CONFIG_PM_LIGHT_SLEEP_CALLBACKS
         // Make sure we handle any state changes when the device wakes up due to a GPIO interrupt
         esp_pm_sleep_cbs_register_config_t sleepCallbackConfig = {
             .enter_cb = [](int64_t /*timeToSleepInUs*/, void* arg) {
@@ -250,6 +251,7 @@ std::shared_ptr<PulseCounter> PulseCounterManager::createGpio(const PulseCounter
             .exit_cb_prior = 0,
         };
         ESP_ERROR_THROW(esp_pm_light_sleep_register_cbs(&sleepCallbackConfig));
+#endif
     }
 
     auto counter = std::make_shared<GpioPulseCounter>(config.pin, config.debounceTime);
