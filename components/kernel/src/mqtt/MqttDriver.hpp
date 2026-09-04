@@ -60,6 +60,11 @@ class MqttDriver {
 public:
     class Config : public ConfigurationSection {
     public:
+        // Preferred: a full URI like "mqtts://broker.example.com:8883"
+        // that encodes scheme, host, port, and path in one string.
+        Property<std::string> url { this, "url", "" };
+        // Deprecated: use "url" instead. Kept for backward compatibility;
+        // ignored when "url" is set.
         Property<std::string> host { this, "host", "" };
         Property<unsigned int> port { this, "port", 1883 };
         Property<size_t> queueSize { this, "queueSize", 128 };
@@ -74,6 +79,7 @@ public:
         const std::string& clientId,
         StateSource& ready)
         : networkReady(networkReady)
+        , configUrl(config->url.get())
         , configHostname(config->host.get())
         , configPort(config->port.get())
         , configServerCert(joinStrings(config->serverCert.get()))
@@ -120,7 +126,14 @@ public:
     }
 
     void configMqttClient(esp_mqtt_client_config_t& config) {
-        if (configHostname.empty()) {
+        if (!configUrl.empty()) {
+            // URI mode: the esp_mqtt_client parses scheme, host, port, and path from the URI
+            url = configUrl;
+        } else if (!configHostname.empty()) {
+            // Legacy host/port mode (deprecated)
+            hostname = configHostname;
+            port = configPort;
+        } else {
 #ifdef WOKWI
 #ifdef WOKWI_MQTT_HOST
             hostname = WOKWI_MQTT_HOST;
@@ -131,19 +144,16 @@ public:
 #else
             throw std::runtime_error("No MQTT server specified in configuration");
 #endif
-        } else {
-            hostname = configHostname;
-            port = configPort;
         }
 
         config = {
             .broker {
                 .address {
-                    .uri = nullptr,
-                    .hostname = hostname.c_str(),
+                    .uri = url.empty() ? nullptr : url.c_str(),
+                    .hostname = url.empty() ? hostname.c_str() : nullptr,
                     .transport = MQTT_TRANSPORT_OVER_TCP,
                     .path = nullptr,
-                    .port = port,
+                    .port = url.empty() ? port : 0,
                 },
                 .verification {},
             },
@@ -179,13 +189,22 @@ public:
             .outbox {},
         };
 
-        LOGTD(MQTT, "server: %s:%" PRIu32 ", client ID is '%s'",
-            config.broker.address.hostname,
-            config.broker.address.port,
-            config.credentials.client_id);
+        if (!url.empty()) {
+            LOGTD(MQTT, "server: %s, client ID is '%s'",
+                url.c_str(),
+                config.credentials.client_id);
+        } else {
+            LOGTD(MQTT, "server: %s:%" PRIu32 ", client ID is '%s'",
+                config.broker.address.hostname,
+                config.broker.address.port,
+                config.credentials.client_id);
+        }
 
         if (!configServerCert.empty()) {
-            config.broker.address.transport = MQTT_TRANSPORT_OVER_SSL;
+            if (url.empty()) {
+                // In URI mode the scheme already selects the transport
+                config.broker.address.transport = MQTT_TRANSPORT_OVER_SSL;
+            }
             config.broker.verification.certificate = configServerCert.c_str();
             LOGTV(MQTT, "Server cert:\n%s",
                 config.broker.verification.certificate);
@@ -472,8 +491,13 @@ private:
         }
         mqttConfig.session.disable_clean_session = !startCleanSession;
         esp_mqtt_set_config(client, &mqttConfig);
-        LOGTI(MQTT, "Connecting to %s:%" PRIu32 ", clean session: %d",
-            mqttConfig.broker.address.hostname, mqttConfig.broker.address.port, startCleanSession);
+        if (!url.empty()) {
+            LOGTI(MQTT, "Connecting to %s, clean session: %d",
+                url.c_str(), startCleanSession);
+        } else {
+            LOGTI(MQTT, "Connecting to %s:%" PRIu32 ", clean session: %d",
+                mqttConfig.broker.address.hostname, mqttConfig.broker.address.port, startCleanSession);
+        }
         ESP_ERROR_CHECK(esp_mqtt_client_start(client));
         clientRunning = true;
     }
@@ -509,7 +533,11 @@ private:
     void handleMqttEvent(int eventId, esp_mqtt_event_handle_t event) {
         switch (eventId) {
             case MQTT_EVENT_BEFORE_CONNECT: {
-                LOGTD(MQTT, "Connecting to MQTT server %s:%" PRIu32, hostname.c_str(), port);
+                if (!url.empty()) {
+                    LOGTD(MQTT, "Connecting to MQTT server %s", url.c_str());
+                } else {
+                    LOGTD(MQTT, "Connecting to MQTT server %s:%" PRIu32, hostname.c_str(), port);
+                }
                 break;
             }
             case MQTT_EVENT_CONNECTED: {
@@ -728,6 +756,7 @@ private:
 
     State& networkReady;
 
+    const std::string configUrl;
     const std::string configHostname;
     const unsigned int configPort;
     const std::string configServerCert;
@@ -737,6 +766,7 @@ private:
 
     StateSource& ready;
 
+    std::string url;
     std::string hostname;
     uint32_t port {};
     esp_mqtt_client_handle_t client;
