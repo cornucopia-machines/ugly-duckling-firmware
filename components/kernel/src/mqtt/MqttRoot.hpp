@@ -26,7 +26,7 @@ public:
                 auto response = responseDoc.to<JsonObject>();
                 it->second(request, response);
                 if (response.size() > 0) {
-                    publish("responses/" + command, responseDoc, Retention::NoRetain, QoS::ExactlyOnce);
+                    publish("responses/" + command, responseDoc, Retention::NoRetain, QoS::AtLeastOnce);
                 }
             } else {
                 std::string knownCommands;
@@ -47,18 +47,18 @@ public:
         return child;
     }
 
-    PublishStatus publish(const std::string& suffix, const JsonDocument& json, Retention retain = Retention::NoRetain, QoS qos = QoS::AtMostOnce, ticks timeout = MqttDriver::MQTT_NETWORK_TIMEOUT, LogPublish log = LogPublish::Log) {
+    PublishStatus publish(const std::string& suffix, const JsonDocument& json, Retention retain = Retention::NoRetain, QoS qos = QoS::AtMostOnce, ticks timeout = MqttDriver::MQTT_PUBLISH_TIMEOUT, LogPublish log = LogPublish::Log) {
         return mqtt->publish(fullTopic(suffix), json, retain, qos, timeout, log);
     }
 
-    PublishStatus publish(const std::string& suffix, const std::function<void(JsonObject&)>& populate, Retention retain = Retention::NoRetain, QoS qos = QoS::AtMostOnce, ticks timeout = MqttDriver::MQTT_NETWORK_TIMEOUT, LogPublish log = LogPublish::Log) {
+    PublishStatus publish(const std::string& suffix, const std::function<void(JsonObject&)>& populate, Retention retain = Retention::NoRetain, QoS qos = QoS::AtMostOnce, ticks timeout = MqttDriver::MQTT_PUBLISH_TIMEOUT, LogPublish log = LogPublish::Log) {
         JsonDocument doc;
         JsonObject root = doc.to<JsonObject>();
         populate(root);
         return publish(suffix, doc, retain, qos, timeout, log);
     }
 
-    PublishStatus clear(const std::string& suffix, Retention retain = Retention::NoRetain, QoS qos = QoS::AtMostOnce, ticks timeout = MqttDriver::MQTT_NETWORK_TIMEOUT) {
+    PublishStatus clear(const std::string& suffix, Retention retain = Retention::NoRetain, QoS qos = QoS::AtMostOnce, ticks timeout = MqttDriver::MQTT_PUBLISH_TIMEOUT) {
         return mqtt->clear(fullTopic(suffix), retain, qos, timeout);
     }
 

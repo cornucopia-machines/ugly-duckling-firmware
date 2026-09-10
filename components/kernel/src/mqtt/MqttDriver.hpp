@@ -216,7 +216,18 @@ public:
     }
 
 private:
+    // Bounds how long we wait for the *network* to respond: esp-mqtt's transport read/write
+    // timeout, the connection attempt, and a subscription ack. Deliberately not the publish
+    // default -- see MQTT_PUBLISH_TIMEOUT.
     static constexpr milliseconds MQTT_NETWORK_TIMEOUT = 15s;
+
+    // How long `publish()` blocks its caller waiting for the broker's ack, by default: not at
+    // all. The wait never made the message go out -- `publishAndWait` hands it to `eventQueue`
+    // before awaiting anything, and the driver task enqueues it into esp-mqtt's outbox
+    // regardless -- and no call site reads the returned PublishStatus, so blocking only delayed
+    // the publishing task. Pass an explicit timeout to opt back in where the wait earns its
+    // keep (MqttLog does, to serialise log records; see issue #635).
+    static constexpr milliseconds MQTT_PUBLISH_TIMEOUT = 0s;
     static constexpr milliseconds MQTT_MESSAGE_RETRANSMIT_TIMEOUT = 5s;
     static constexpr milliseconds MQTT_CONNECTION_TIMEOUT = MQTT_NETWORK_TIMEOUT;
     static constexpr milliseconds MQTT_SESSION_KEEP_ALIVE = 120s;
@@ -267,7 +278,7 @@ private:
         std::function<void()> callback;
     };
 
-    PublishStatus publish(const std::string& topic, const JsonDocument& json, Retention retain, QoS qos, ticks timeout = MQTT_NETWORK_TIMEOUT, LogPublish log = LogPublish::Log) {
+    PublishStatus publish(const std::string& topic, const JsonDocument& json, Retention retain, QoS qos, ticks timeout = MQTT_PUBLISH_TIMEOUT, LogPublish log = LogPublish::Log) {
         std::string payload;
         serializeJson(json, payload);
         if (log == LogPublish::Log) {
@@ -289,7 +300,7 @@ private:
         return publishAndWait(topic, payload, retain, qos, timeout);
     }
 
-    PublishStatus clear(const std::string& topic, Retention retain, QoS qos, ticks timeout = MQTT_NETWORK_TIMEOUT) {
+    PublishStatus clear(const std::string& topic, Retention retain, QoS qos, ticks timeout = MQTT_PUBLISH_TIMEOUT) {
         LOGTD(MQTT, "Clearing topic '%s' (qos = %d, timeout = %lld ms)",
             topic.c_str(),
             static_cast<int>(qos),

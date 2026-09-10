@@ -17,7 +17,7 @@ using namespace cornucopia::ugly_duckling::kernel;
 using namespace cornucopia::ugly_duckling::kernel::mqtt;
 
 /**
- * @brief Publishes `telemetry` (NoRetain, QoS 2) on the given interval.
+ * @brief Publishes `telemetry` (NoRetain, QoS 1) on the given interval.
  */
 void initTelemetryPublishTask(
     milliseconds publishInterval,

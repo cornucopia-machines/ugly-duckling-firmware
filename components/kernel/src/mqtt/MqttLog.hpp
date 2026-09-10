@@ -8,6 +8,18 @@
 
 namespace cornucopia::ugly_duckling::kernel::mqtt {
 
+/**
+ * Alone among the outbound channels, `log` stayed at QoS 2 with a blocking publish when issue #634
+ * moved everything else to QoS 1 fire-and-forget. Not because QoS 2 buys ordering -- it doesn't:
+ * esp-mqtt keeps no in-flight window on MQTT 3.1.1, so an outbox retransmit reorders records at
+ * either QoS level. It's that the 2s wait keeps one record in flight at a time, and that accident
+ * is currently the only thing making arrival order match emission order, since the payload carries
+ * no sequence of its own.
+ *
+ * Issue #635 replaces that with an explicit `seq`/`session` in the payload and server-side ordering
+ * (cornucopia-app#509); the QoS and the timeout both drop as part of it. Changing either before
+ * then would degrade log ordering with nothing to take over.
+ */
 class MqttLog {
 public:
     static void init(Level publishLevel, const std::shared_ptr<Queue<LogRecord>>& logRecords, std::shared_ptr<MqttRoot> mqttRoot) {
