@@ -37,7 +37,7 @@ public:
     };
 
     RtcDriver(State& networkReady, const std::shared_ptr<Config>& ntpConfig, StateSource& rtcInSync)
-        : ntpConfig(ntpConfig)
+        : configuredServer(ntpConfig->host.get())
         , rtcInSync(rtcInSync) {
 
         if (isTimeSet()) {
@@ -95,10 +95,12 @@ private:
         config.ip_event_to_renew = IP_EVENT_STA_GOT_IP;
         ESP_ERROR_CHECK(esp_netif_sntp_init(&config));
 
-        if (!ntpConfig->host.get().empty()) {
+        if (!configuredServer.empty()) {
             LOGTD(RTC, "Using NTP server %s from configuration",
-                ntpConfig->host.get().c_str());
-            esp_sntp_setservername(0, ntpConfig->host.get().c_str());
+                configuredServer.c_str());
+            // Note lwIP stores the server name by pointer without copying it, so this has to
+            // reference storage that outlives the SNTP client -- hence the member field.
+            esp_sntp_setservername(0, configuredServer.c_str());
         }
 
         bool success = false;
@@ -121,7 +123,7 @@ private:
         return success;
     }
 
-    const std::shared_ptr<Config> ntpConfig;
+    const std::string configuredServer;
     StateSource& rtcInSync;
 };
 
