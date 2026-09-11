@@ -42,7 +42,7 @@ public:
                         json["level"] = level;
                         json["message"] = message;
                     },
-                    QoS::ExactlyOnce, 2s, Retention::NoRetain, LogPublish::Silent);
+                    QoS::ExactlyOnce, 2s, LogPublish::Silent);
             });
         });
     }

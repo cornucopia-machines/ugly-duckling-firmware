@@ -52,25 +52,21 @@ public:
      *
      * `qos` has no default on purpose: it is the one parameter that genuinely differs per channel,
      * and the old default (QoS 0) was a footgun no call site ever wanted. Everything after it does
-     * have a sensible default -- don't wait for the ack, don't retain, do log -- so the common case
+     * have a sensible default -- don't wait for the ack, do log -- so the common case
      * is `publish("topic", populate, QoS::AtLeastOnce)`.
      *
      * A non-zero `timeout` blocks the calling task until the broker acks; it does not affect
      * whether the message is sent (see MqttDriver::publishAndWait). Only MqttLog wants that today.
      */
-    PublishStatus publish(const std::string& suffix, const JsonDocument& json, QoS qos, ticks timeout = MqttDriver::MQTT_PUBLISH_TIMEOUT, Retention retain = Retention::NoRetain, LogPublish log = LogPublish::Log) {
-        return mqtt->publish(fullTopic(suffix), json, qos, timeout, retain, log);
+    PublishStatus publish(const std::string& suffix, const JsonDocument& json, QoS qos, ticks timeout = MqttDriver::MQTT_PUBLISH_TIMEOUT, LogPublish log = LogPublish::Log) {
+        return mqtt->publish(fullTopic(suffix), json, qos, timeout, log);
     }
 
-    PublishStatus publish(const std::string& suffix, const std::function<void(JsonObject&)>& populate, QoS qos, ticks timeout = MqttDriver::MQTT_PUBLISH_TIMEOUT, Retention retain = Retention::NoRetain, LogPublish log = LogPublish::Log) {
+    PublishStatus publish(const std::string& suffix, const std::function<void(JsonObject&)>& populate, QoS qos, ticks timeout = MqttDriver::MQTT_PUBLISH_TIMEOUT, LogPublish log = LogPublish::Log) {
         JsonDocument doc;
         JsonObject root = doc.to<JsonObject>();
         populate(root);
-        return publish(suffix, doc, qos, timeout, retain, log);
-    }
-
-    PublishStatus clear(const std::string& suffix, QoS qos, ticks timeout = MqttDriver::MQTT_PUBLISH_TIMEOUT, Retention retain = Retention::NoRetain) {
-        return mqtt->clear(fullTopic(suffix), qos, timeout, retain);
+        return publish(suffix, doc, qos, timeout, log);
     }
 
     void registerCommand(const std::string& name, const CommandHandler& handler) {

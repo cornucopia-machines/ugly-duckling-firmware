@@ -34,11 +34,6 @@ namespace cornucopia::ugly_duckling::kernel::mqtt {
 
 LOGGING_TAG(MQTT, "mqtt")
 
-enum class Retention : uint8_t {
-    NoRetain,
-    Retain
-};
-
 enum class QoS : uint8_t {
     AtMostOnce = 0,
     AtLeastOnce = 1,
@@ -242,7 +237,6 @@ private:
     struct OutgoingMessage {
         std::string topic;
         std::string payload;
-        Retention retain;
         QoS qos;
         PendingMessagePtr pending;
         LogPublish log;
@@ -278,37 +272,27 @@ private:
         std::function<void()> callback;
     };
 
-    PublishStatus publish(const std::string& topic, const JsonDocument& json, QoS qos, ticks timeout = MQTT_PUBLISH_TIMEOUT, Retention retain = Retention::NoRetain, LogPublish log = LogPublish::Log) {
+    PublishStatus publish(const std::string& topic, const JsonDocument& json, QoS qos, ticks timeout = MQTT_PUBLISH_TIMEOUT, LogPublish log = LogPublish::Log) {
         std::string payload;
         serializeJson(json, payload);
         if (log == LogPublish::Log) {
 #ifdef DUMP_MQTT
-            LOGTD(MQTT, "Queuing topic '%s'%s (qos = %d, timeout = %lld ms): %s",
+            LOGTD(MQTT, "Queuing topic '%s' (qos = %d, timeout = %lld ms): %s",
                 topic.c_str(),
-                (retain == Retention::Retain ? " (retain)" : ""),
                 static_cast<int>(qos),
                 duration_cast<milliseconds>(timeout).count(),
                 payload.c_str());
 #else
-            LOGTV(MQTT, "Queuing topic '%s'%s (qos = %d, timeout = %lld ms)",
+            LOGTV(MQTT, "Queuing topic '%s' (qos = %d, timeout = %lld ms)",
                 topic.c_str(),
-                (retain == Retention::Retain ? " (retain)" : ""),
                 static_cast<int>(qos),
                 duration_cast<milliseconds>(timeout).count());
 #endif
         }
-        return publishAndWait(topic, payload, qos, timeout, retain);
+        return publishAndWait(topic, payload, qos, timeout);
     }
 
-    PublishStatus clear(const std::string& topic, QoS qos, ticks timeout = MQTT_PUBLISH_TIMEOUT, Retention retain = Retention::NoRetain) {
-        LOGTD(MQTT, "Clearing topic '%s' (qos = %d, timeout = %lld ms)",
-            topic.c_str(),
-            static_cast<int>(qos),
-            duration_cast<milliseconds>(timeout).count());
-        return publishAndWait(topic, "", qos, timeout, retain);
-    }
-
-    PublishStatus publishAndWait(const std::string& topic, const std::string& payload, QoS qos, ticks timeout, Retention retain = Retention::NoRetain) {
+    PublishStatus publishAndWait(const std::string& topic, const std::string& payload, QoS qos, ticks timeout) {
         // Fire-and-forget publishes (timeout == 0) don't get a pending-outcome slot at all --
         // there's nobody around to wait on it.
         auto pending = timeout == ticks::zero() ? nullptr : std::make_shared<PendingMessage>();
@@ -318,7 +302,6 @@ private:
             OutgoingMessage {
                 .topic = topic,
                 .payload = payload,
-                .retain = retain,
                 .qos = qos,
                 .pending = pending,
                 .log = LogPublish::Log,
@@ -621,7 +604,7 @@ private:
             message.payload.c_str(),
             static_cast<int>(message.payload.length()),
             static_cast<int>(message.qos),
-            static_cast<int>(message.retain == Retention::Retain),
+            0,    // Never retain: nothing the device publishes is a retained message
             true);
 
         if (ret < 0) {
