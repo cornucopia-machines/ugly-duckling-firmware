@@ -21,6 +21,7 @@
 #include <devices/UglyDucklingMk10.hpp>
 #include <devices/UglyDucklingMk11.hpp>
 #include <devices/UglyDucklingMk12.hpp>
+#include <devices/UglyDucklingMk13.hpp>
 
 #else
 #error "Unsupported target"
@@ -107,6 +108,8 @@ static void startDeviceBasedOnHardware() {
     startDevice<UglyDucklingMk11Rev1>();
 #elifdef MK12_REV1
     startDevice<UglyDucklingMk12Rev1>();
+#elifdef MK13_REV1
+    startDevice<UglyDucklingMk13Rev1>();
 #else
     // Prefer the eFuse-burned hardware identity over MAC matching when it's
     // present — it's authoritative by construction, unlike MAC prefixes,
@@ -129,6 +132,12 @@ static void startDeviceBasedOnHardware() {
         // MK12 Rev1
         if (hardwareVersion->hwGen == 12 && hardwareVersion->hwRev == 1) {
             startDevice<UglyDucklingMk12Rev1>();
+            return;
+        }
+
+        // MK13 Rev1
+        if (hardwareVersion->hwGen == 13 && hardwareVersion->hwRev == 1) {
+            startDevice<UglyDucklingMk13Rev1>();
             return;
         }
 
