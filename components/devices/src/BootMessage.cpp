@@ -106,5 +106,5 @@ void publishBootMessage(
             }
             CrashManager::handleCrashReport(json, firmwareVersion, rolledBackFromVersion);
         },
-        Retention::NoRetain, QoS::AtLeastOnce);
+        QoS::AtLeastOnce);
 }

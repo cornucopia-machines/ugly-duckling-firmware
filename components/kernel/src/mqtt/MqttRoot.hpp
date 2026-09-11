@@ -26,7 +26,7 @@ public:
                 auto response = responseDoc.to<JsonObject>();
                 it->second(request, response);
                 if (response.size() > 0) {
-                    publish("responses/" + command, responseDoc, Retention::NoRetain, QoS::AtLeastOnce);
+                    publish("responses/" + command, responseDoc, QoS::AtLeastOnce);
                 }
             } else {
                 std::string knownCommands;
@@ -47,23 +47,30 @@ public:
         return child;
     }
 
-    PublishStatus publish(const std::string& suffix, const JsonDocument& json, Retention retain = Retention::NoRetain, QoS qos = QoS::AtMostOnce, ticks timeout = MqttDriver::MQTT_PUBLISH_TIMEOUT, LogPublish log = LogPublish::Log) {
-        return mqtt->publish(fullTopic(suffix), json, retain, qos, timeout, log);
+    /**
+     * @brief Publishes to the given topic under the topic prefix.
+     *
+     * `qos` has no default on purpose: it is the one parameter that genuinely differs per channel,
+     * and the old default (QoS 0) was a footgun no call site ever wanted. Everything after it does
+     * have a sensible default -- don't wait for the ack, don't retain, do log -- so the common case
+     * is `publish("topic", populate, QoS::AtLeastOnce)`.
+     *
+     * A non-zero `timeout` blocks the calling task until the broker acks; it does not affect
+     * whether the message is sent (see MqttDriver::publishAndWait). Only MqttLog wants that today.
+     */
+    PublishStatus publish(const std::string& suffix, const JsonDocument& json, QoS qos, ticks timeout = MqttDriver::MQTT_PUBLISH_TIMEOUT, Retention retain = Retention::NoRetain, LogPublish log = LogPublish::Log) {
+        return mqtt->publish(fullTopic(suffix), json, qos, timeout, retain, log);
     }
 
-    PublishStatus publish(const std::string& suffix, const std::function<void(JsonObject&)>& populate, Retention retain = Retention::NoRetain, QoS qos = QoS::AtMostOnce, ticks timeout = MqttDriver::MQTT_PUBLISH_TIMEOUT, LogPublish log = LogPublish::Log) {
+    PublishStatus publish(const std::string& suffix, const std::function<void(JsonObject&)>& populate, QoS qos, ticks timeout = MqttDriver::MQTT_PUBLISH_TIMEOUT, Retention retain = Retention::NoRetain, LogPublish log = LogPublish::Log) {
         JsonDocument doc;
         JsonObject root = doc.to<JsonObject>();
         populate(root);
-        return publish(suffix, doc, retain, qos, timeout, log);
+        return publish(suffix, doc, qos, timeout, retain, log);
     }
 
-    PublishStatus clear(const std::string& suffix, Retention retain = Retention::NoRetain, QoS qos = QoS::AtMostOnce, ticks timeout = MqttDriver::MQTT_PUBLISH_TIMEOUT) {
-        return mqtt->clear(fullTopic(suffix), retain, qos, timeout);
-    }
-
-    bool subscribe(const std::string& suffix, SubscriptionHandler handler) {
-        return subscribe(suffix, QoS::ExactlyOnce, std::move(handler));
+    PublishStatus clear(const std::string& suffix, QoS qos, ticks timeout = MqttDriver::MQTT_PUBLISH_TIMEOUT, Retention retain = Retention::NoRetain) {
+        return mqtt->clear(fullTopic(suffix), qos, timeout, retain);
     }
 
     void registerCommand(const std::string& name, const CommandHandler& handler) {

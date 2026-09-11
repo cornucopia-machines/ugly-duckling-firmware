@@ -278,7 +278,7 @@ private:
         std::function<void()> callback;
     };
 
-    PublishStatus publish(const std::string& topic, const JsonDocument& json, Retention retain, QoS qos, ticks timeout = MQTT_PUBLISH_TIMEOUT, LogPublish log = LogPublish::Log) {
+    PublishStatus publish(const std::string& topic, const JsonDocument& json, QoS qos, ticks timeout = MQTT_PUBLISH_TIMEOUT, Retention retain = Retention::NoRetain, LogPublish log = LogPublish::Log) {
         std::string payload;
         serializeJson(json, payload);
         if (log == LogPublish::Log) {
@@ -297,18 +297,18 @@ private:
                 duration_cast<milliseconds>(timeout).count());
 #endif
         }
-        return publishAndWait(topic, payload, retain, qos, timeout);
+        return publishAndWait(topic, payload, qos, timeout, retain);
     }
 
-    PublishStatus clear(const std::string& topic, Retention retain, QoS qos, ticks timeout = MQTT_PUBLISH_TIMEOUT) {
+    PublishStatus clear(const std::string& topic, QoS qos, ticks timeout = MQTT_PUBLISH_TIMEOUT, Retention retain = Retention::NoRetain) {
         LOGTD(MQTT, "Clearing topic '%s' (qos = %d, timeout = %lld ms)",
             topic.c_str(),
             static_cast<int>(qos),
             duration_cast<milliseconds>(timeout).count());
-        return publishAndWait(topic, "", retain, qos, timeout);
+        return publishAndWait(topic, "", qos, timeout, retain);
     }
 
-    PublishStatus publishAndWait(const std::string& topic, const std::string& payload, Retention retain, QoS qos, ticks timeout) {
+    PublishStatus publishAndWait(const std::string& topic, const std::string& payload, QoS qos, ticks timeout, Retention retain = Retention::NoRetain) {
         // Fire-and-forget publishes (timeout == 0) don't get a pending-outcome slot at all --
         // there's nobody around to wait on it.
         auto pending = timeout == ticks::zero() ? nullptr : std::make_shared<PendingMessage>();

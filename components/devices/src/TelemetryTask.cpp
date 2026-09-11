@@ -87,7 +87,7 @@ void initTelemetryPublishTask(
             powerManager->populateTelemetry(powerManagementData);
 
             auto features = telemetry["features"].to<JsonArray>();
-            telemetryCollector->collect(features); }, Retention::NoRetain, QoS::AtLeastOnce);
+            telemetryCollector->collect(features); }, QoS::AtLeastOnce);
 
         // Signal that we are still alive
         watchdog->restart();
