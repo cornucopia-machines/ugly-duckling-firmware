@@ -43,6 +43,7 @@ graph BT
         MQTTConnected --> MQTT
         NTP -->|awaits| NetworkConnected
         RTCInSync -.->|provided by| NTP
+        RTCInSync -.->|provided by| BLE
         RTCInSync -.->|provided by| PreBoot{{"Wake from sleep"}}
         TelemetryManager -->|awaits| MQTTConnected
         TelemetryManager -->|awaits| RTCInSync
@@ -54,10 +55,85 @@ Key services:
 - **BLE** (`BleDriver`) — starts NimBLE unconditionally at boot; advertises the device and hosts the standard Device Information Service (DIS, UUID 0x180A). Future roles: provisioning and local-only (WiFi-free) operation.
 - **WiFi** — manages the station connection; publishes the `NetworkConnected` event.
 - **MQTT** — connects to the broker once the network is up; publishes `MQTTConnected`.
-- **NTP** — synchronizes the RTC after the network comes up.
+- **NTP** — synchronizes the RTC after the network comes up. See [Time acquisition](#time-acquisition).
 - **TelemetryManager** — collects telemetry from registered providers and publishes it once MQTT and the RTC are both ready.
 - **PowerManager** / **BatteryManager** — optional battery monitoring and sleep management.
 - **NVS** / **Configuration** — persistent key-value store for device and network config.
+
+## Time acquisition
+
+Boot blocks on the `RTC in sync` state before any peripheral is initialized (`Device.hpp`), so
+everything downstream can assume a real wall-clock time. This matters for scheduling as much as for
+telemetry: a schedule evaluated against time-since-boot would fire at the wrong moment, and the
+server keys telemetry rows on the timestamp the device itself reports.
+
+`RtcDriver` signals that state from three sources:
+
+| Source | When | Availability |
+| ------ | ---- | ------------ |
+| Retained RTC | Immediately at construction, if the clock survived the reset | Soft reset only — a power cycle loses it |
+| SNTP | Once the network is up | All platforms |
+| BLE Current Time Service | Whenever an external central pushes a time | Carrot only — BLE is disabled on Spinach |
+
+**The state is armed on the clock, never on the outcome of a call.** Every path checks `isTimeSet()`
+— the system clock is past 2022-01-01 — before signalling, because a sync can report success while
+leaving the clock near the boot epoch. `StateSource` is a one-way latch that nothing clears, so
+arming it on a bad clock would permanently mark the device as holding good time: it would keep
+publishing, and every status the server can see would look healthy while the timestamps read 1970.
+
+### SNTP servers
+
+Three server slots are configured, tried in order:
+
+| Slot | Server |
+| ---- | ------ |
+| 0 | Supplied by DHCP, if the lease offers one |
+| 1 | `ntp.host` from `network-config.json`, if set |
+| 2 | `pool.ntp.org` |
+
+The split exists because lwIP writes DHCP-supplied servers starting at slot 0 and NULLs out every
+slot after them. Reserving slot 0 for DHCP (`index_of_first_server = 1`, with
+`CONFIG_LWIP_DHCP_MAX_NTP_SERVERS` pinned to 1) lets esp-netif restore ours behind it on each new
+lease, so a DHCP offer takes precedence without ever becoming the only option.
+
+### Lifecycle
+
+The SNTP client is initialized in `RtcDriver`'s constructor — before WiFi associates, since lwIP
+only keeps the NTP server from a DHCP lease if DHCP server mode is already enabled when that lease
+is processed — and started once the network is ready. It then stays alive for the lifetime of the
+device, and a task observes its sync notifications rather than driving the retries itself:
+
+- First request after a random 0–5 s delay (`CONFIG_LWIP_SNTP_MAXIMUM_STARTUP_DELAY`), which keeps a
+  fleet rebooting together from hitting the public pool in one burst.
+- Failed requests retry from 15 s, doubling up to 150 s.
+- After a successful sync, lwIP re-polls hourly (`CONFIG_LWIP_SNTP_UPDATE_DELAY`).
+
+Sync mode is `SNTP_SYNC_MODE_IMMED`: every correction steps the clock with `settimeofday()`. Smooth
+sync (slewing with `adjtime()`) is deliberately **not** used. It is documented to fall back to
+stepping beyond a 35 minute delta, but that fallback is broken in ESP-IDF 6.1
+([espressif/esp-idf#19051](https://github.com/espressif/esp-idf/issues/19051)) — `adjtime()` narrows
+`tv_sec * 1000000` to a 32-bit `long`, so a cold boot's ~57 year delta wraps to a small value that
+slips past the range check meant to reject it. `adjtime()` then reports success, lwIP concludes it
+is slewing and never steps the clock, and the slew is abandoned anyway because the boot time is
+still zero. The clock stays at time-since-boot indefinitely, and because nothing ever sets the boot
+time, every later sync repeats it.
+
+The same overflow would apply to any delta over ~35 minutes, not just a cold boot, so stepping stays
+in force once time is acquired rather than switching to slewing: an RTC that drifts that far during
+a long network outage would otherwise fail the same way, but silently, since the resulting clock
+looks plausible enough to pass the gate.
+
+Keeping one client alive is deliberate. Tearing it down and rebuilding it per attempt discards the
+resolved server address and lwIP's retry state, which is what previously left devices unable to
+acquire time until they were power-cycled.
+
+### Diagnostics
+
+Time problems are hard to reconstruct after the fact, so the failure path logs what distinguishes
+the causes: the error code from each sync wait, every server slot with its RFC 5905 reachability
+register (whether requests went out and whether anything answered), the time value a server actually
+sent, and — for every arming of `RTC in sync` — which source armed it and what the clock read at
+that moment.
 
 ## Device (hardware model)
 

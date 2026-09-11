@@ -56,6 +56,19 @@ error if the sdkconfig in the specified directory was generated for a different
 target. `sdkconfig` is generated inside the build directory (e.g.
 `build-carrot/sdkconfig`), not in the project root.
 
+**An existing `build-*/sdkconfig` takes precedence over `sdkconfig*.defaults`.** The defaults files
+only seed a config that does not exist yet, so editing them does *not* change a symbol that is
+already present in a generated `sdkconfig` — not even after `idf.py reconfigure`. To pick up a
+changed default locally, delete the generated file and let it be regenerated:
+
+```sh
+rm build-carrot/sdkconfig && . tools/activate_idf.sh carrot && idf.py -B build-carrot reconfigure
+```
+
+Always verify the symbol actually changed in `build-<platform>/sdkconfig` afterwards. CI builds
+from scratch, so it only ever sees the defaults — a local build that silently kept the old value
+will disagree with CI.
+
 `tools/activate_idf.sh` reads the IDF version from `main/idf_component.yml`. When upgrading IDF, update the version there (and in `components/kernel/idf_component.yml` and `.github/workflows/build.yml`); the script picks it up automatically.
 
 `tools/build.sh [carrot|spinach] [idf.py args...]` wraps the two steps above:
