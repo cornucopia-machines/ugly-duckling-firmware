@@ -27,6 +27,9 @@ LOGGING_TAG(RTC, "rtc")
  * If the RTC is already set during a previous boot, the in-sync state is signalled straight away.
  * Otherwise a single, long-lived SNTP client is started once the network is up, and a task observes
  * its sync notifications.
+ *
+ * The in-sync state is only ever signalled once the system clock itself holds a plausible
+ * wall-clock time -- never merely because an SNTP call reported success.
  */
 class RtcDriver {
 public:
@@ -40,8 +43,7 @@ public:
         , rtcInSync(rtcInSync) {
 
         if (isTimeSet()) {
-            LOGTI(RTC, "time is already set");
-            rtcInSync.set();
+            markInSync("retained across reboot");
         }
 
         Task::run("ntp-sync", 4096, [this, &networkReady](Task& _task) {
@@ -58,10 +60,16 @@ public:
                 switch (ret) {
                     case ESP_OK:
                     case ESP_ERR_NOT_FINISHED:
-                        // It's okay to assume RTC is _roughly_ in sync even if
-                        // we're not yet finished with smooth sync
-                        this->rtcInSync.set();
-                        LOGTI(RTC, "Sync finished successfully (0x%x)", ret);
+                        // ESP_ERR_NOT_FINISHED only means smooth sync is still slewing; the clock
+                        // itself is already roughly right. Either way, trust the clock and not the
+                        // return code -- a sync notification can also arrive for a response that
+                        // left the clock somewhere near the boot epoch.
+                        if (isTimeSet()) {
+                            markInSync(ret == ESP_OK ? "NTP" : "NTP (smooth sync in progress)");
+                        } else {
+                            LOGTW(RTC, "NTP sync notification (0x%x) left the clock unset at %lld, ignoring",
+                                ret, static_cast<long long>(time(nullptr)));
+                        }
                         break;
                     case ESP_ERR_TIMEOUT:
                         logNoSync();
@@ -75,12 +83,9 @@ public:
     }
 
     static bool isTimeSet() {
-        auto now = system_clock::now();
-        // This is 2022-01-01 00:00:00 UTC
-        const time_point limit = system_clock::from_time_t(1640995200);
         // The MCU boots with a timestamp of 0 seconds, so if the value is
         // much higher, then it means the RTC is set.
-        return now > limit;
+        return time(nullptr) > EARLIEST_PLAUSIBLE_TIME;
     }
 
     State& getInSync() {
@@ -88,13 +93,22 @@ public:
     }
 
     void setTime(time_t utcTime) {
+        // Never let a bogus value from the outside move a clock we already trust, and never
+        // arm the in-sync state on a value that isn't a plausible wall-clock time.
+        if (utcTime <= EARLIEST_PLAUSIBLE_TIME) {
+            LOGTW(RTC, "Ignoring implausible time %lld received via BLE CTS",
+                static_cast<long long>(utcTime));
+            return;
+        }
         struct timeval tv = { .tv_sec = utcTime, .tv_usec = 0 };
         settimeofday(&tv, nullptr);
-        rtcInSync.set();
-        LOGTI(RTC, "Time set via BLE CTS");
+        markInSync("BLE CTS");
     }
 
 private:
+    // 2022-01-01 00:00:00 UTC: no time at or below this can be a real wall-clock time.
+    static constexpr time_t EARLIEST_PLAUSIBLE_TIME = 1640995200;
+
     static constexpr const char* DEFAULT_NTP_SERVER = "pool.ntp.org";
 
     // How often we surface diagnostics while we have no valid time; once we do have it,
@@ -134,6 +148,23 @@ private:
         } else {
             LOGTW(RTC, "Still no NTP sync (server '%s', reachability 0x%x, clock at %lld)",
                 serverName(0), reachability, static_cast<long long>(time(nullptr)));
+        }
+    }
+
+    void markInSync(const char* source) {
+        auto now = time(nullptr);
+        char buffer[32];
+        struct tm timeInfo {};
+        gmtime_r(&now, &timeInfo);
+        strftime(buffer, sizeof(buffer), "%Y-%m-%dT%H:%M:%SZ", &timeInfo);
+        // Log every arming event with the clock value it armed on, so that a device that ends up
+        // running on a bogus clock can be traced back to the source that set it.
+        bool alreadyInSync = rtcInSync.isSet();
+        rtcInSync.set();
+        if (alreadyInSync) {
+            LOGTD(RTC, "RTC re-synced via %s, time is %s", source, buffer);
+        } else {
+            LOGTI(RTC, "RTC in sync via %s, time is %s", source, buffer);
         }
     }
 
