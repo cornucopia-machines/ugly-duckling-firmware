@@ -40,7 +40,7 @@ pending migration, it's `.../devices/ugly-duckling/$INSTANCE`. See
 | --- | --- | --- | --- |
 | `boot` | device → server | `NoRetain`, `QoS 1` | Diagnostics: model/revision/platform, reset/wakeup reason, boot count, per-peripheral/function apply errors, and (see *Rejection reporting* below) a rejection code, if one is pending. **No configuration bodies.** |
 | `sync` | device → server | `NoRetain`, `QoS 1` | The fingerprint manifest of what the device has **applied and booted with** — `device`, `network`, and every function — proof-of-apply, not proof-of-receipt. Built from live in-memory state, never re-derived from NVS. Also carries a rejection code (see *Rejection reporting* below) on the first `SYNC` published after a revert, alongside `BOOT`. |
-| `update` | server → device | `NoRetain`, `QoS 2` | New configuration: `{configurations: {device: envelope, network: envelope, <function>: envelope, ...}}`. |
+| `update` | server → device | `NoRetain`, `QoS 1` (subscription ceiling; the server still publishes at 2) | New configuration: `{configurations: {device: envelope, network: envelope, <function>: envelope, ...}}`. |
 
 - **`BOOT`** is published once per boot, from [`startDevice()`](../components/devices/src/Device.hpp)
   (`mqttRoot->publish("boot", ...)`), unconditionally as soon as peripherals/functions finish

@@ -158,7 +158,15 @@ void registerUpdateHandler(
     const std::shared_ptr<NvsStore>& nvs,
     const std::string& firmwareVersion,
     const std::shared_ptr<std::optional<RejectionCode>>& pendingFirmwareRejection) {
-    mqttRoot->subscribe("update", QoS::ExactlyOnce, [deviceConfirmedFingerprint, networkConfirmedFingerprint, functionRegistry, configStateStore, syncTriggerQueue, nvs, firmwareVersion, pendingFirmwareRejection](const std::string&, const JsonObject& request) {
+    // Subscribed at QoS 1. Subscription QoS is only a ceiling -- the broker delivers at
+    // min(publish QoS, subscription QoS) -- and the server still publishes UPDATE at QoS 2, so
+    // this is what actually shortens the receive-side handshake to one round trip rather than
+    // waiting on the server (cornucopia-app#504). Safe because UPDATE is idempotent under a
+    // duplicate delivery: entries whose fingerprint already matches are filtered out, and a
+    // firmware entry only writes the same URL to NVS and reboots (HttpUpdate::startUpdate) --
+    // there is no in-process download for a second delivery to race. `commands` stays at QoS 2
+    // until responses carry a correlation id (cornucopia-app#508); commands are not idempotent.
+    mqttRoot->subscribe("update", QoS::AtLeastOnce, [deviceConfirmedFingerprint, networkConfirmedFingerprint, functionRegistry, configStateStore, syncTriggerQueue, nvs, firmwareVersion, pendingFirmwareRejection](const std::string&, const JsonObject& request) {
         // Firmware decision: parse the entry, then enforce the "clean config state" precondition
         // (docs/specs/device-readdressing.md, "Precondition"). A firmware upgrade is suppressed
         // when a config request is still in flight; the server retries once the config settles.

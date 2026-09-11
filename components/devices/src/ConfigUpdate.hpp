@@ -38,7 +38,7 @@ ConfigUpdateResult applyConfigUpdate(
     const std::shared_ptr<ConfigStateStore>& configStateStore);
 
 /**
- * @brief Subscribes to `update` (NoRetain, QoS 2) -- the combined config + firmware inbound path.
+ * @brief Subscribes to `update` (NoRetain, QoS 1) -- the combined config + firmware inbound path.
  *
  * Firmware updates are only started when the config state is fully confirmed (no pending
  * `requested`). If a firmware entry is present but a config request is still in flight, the
