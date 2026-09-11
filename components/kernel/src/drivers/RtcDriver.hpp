@@ -5,10 +5,12 @@
 
 #include "esp_netif_sntp.h"
 #include "esp_sntp.h"
+#include "lwip/ip_addr.h"
 #include <sys/time.h>
 #include <time.h>
 
 #include <chrono>
+#include <cstdio>
 #include <memory>
 #include <optional>
 #include <string>
@@ -24,9 +26,10 @@ LOGGING_TAG(RTC, "rtc")
 /**
  * @brief Ensures the real-time clock is properly set up and holds a real time.
  *
- * If the RTC is already set during a previous boot, the in-sync state is signalled straight away.
- * Otherwise a single, long-lived SNTP client is started once the network is up, and a task observes
- * its sync notifications.
+ * If the RTC still holds a valid time from a previous boot (which survives a soft reset, but not a
+ * power cycle), the in-sync state is signalled straight away. Otherwise a single, long-lived SNTP
+ * client is started once the network is up, and a task observes its sync notifications. The server
+ * offered by DHCP is used when there is one, with the configured and public servers behind it.
  *
  * The in-sync state is only ever signalled once the system clock itself holds a plausible
  * wall-clock time -- never merely because an SNTP call reported success.
@@ -42,20 +45,27 @@ public:
         : configuredServer(ntpConfig->host.get())
         , rtcInSync(rtcInSync) {
 
+        // Do this before anything else: lwIP only keeps the NTP server offered in a DHCP lease if
+        // DHCP server mode is already enabled by the time that lease is processed, and WiFiDriver
+        // is already associating from its own task by the time we get here. The client itself is
+        // only started once we actually have a network.
+        initSntp();
+
         if (isTimeSet()) {
             markInSync("retained across reboot");
         }
 
         Task::run("ntp-sync", 4096, [this, &networkReady](Task& _task) {
             networkReady.awaitSet();
-            startSntp();
+            ESP_ERROR_CHECK(esp_netif_sntp_start());
+            LOGTI(RTC, "Started SNTP client; servers: %s", describeServers().c_str());
 
             while (true) {
-                // The SNTP client stays alive for the lifetime of the device: lwIP keeps polling on
-                // its own (with exponential backoff between failed requests), and keeps the resolved
-                // server address around between attempts. Tearing the client down and recreating it
-                // per attempt -- as we used to -- threw all of that away, and left the device unable
-                // to ever acquire time again until it was power-cycled.
+                // The SNTP client stays alive for the lifetime of the device: lwIP keeps polling
+                // on its own (with exponential backoff between failed requests), and keeps the
+                // resolved server address around between attempts. Tearing the client down and
+                // recreating it per attempt -- as we used to -- threw all of that away, and left
+                // the device unable to ever acquire time again until it was power-cycled.
                 auto ret = esp_netif_sntp_sync_wait(ticks(this->rtcInSync.isSet() ? SYNCED_POLL_INTERVAL : UNSYNCED_POLL_INTERVAL).count());
                 switch (ret) {
                     case ESP_OK:
@@ -116,38 +126,42 @@ private:
     static constexpr auto UNSYNCED_POLL_INTERVAL = 30s;
     static constexpr auto SYNCED_POLL_INTERVAL = 1h;
 
-    void startSntp() {
+    void initSntp() {
         esp_sntp_config_t config = ESP_NETIF_SNTP_DEFAULT_CONFIG(DEFAULT_NTP_SERVER);
         config.start = false;
         config.smooth_sync = true;
+        config.wait_for_sync = true;
+        config.sync_cb = onTimeSynced;
+
+        // Accept the NTP server offered by DHCP, but never let it become the only one. lwIP's
+        // dhcp_set_ntp_servers() writes the DHCP-supplied list starting at index 0 and NULLs out
+        // every remaining slot, so our own servers have to be put back afterwards; esp-netif does
+        // that on every new lease, restoring them from `index_of_first_server` onwards. Slot 0 is
+        // thus left to DHCP (CONFIG_LWIP_DHCP_MAX_NTP_SERVERS is 1) and slots 1+ stay ours.
         config.server_from_dhcp = true;
         config.renew_servers_after_new_IP = true;
-        config.wait_for_sync = true;
         config.ip_event_to_renew = IP_EVENT_STA_GOT_IP;
-        config.sync_cb = onTimeSynced;
-        ESP_ERROR_CHECK(esp_netif_sntp_init(&config));
+        config.index_of_first_server = 1;
 
         if (!configuredServer.empty()) {
             // Note lwIP stores the server name by pointer without copying it, so this has to
             // reference storage that outlives the SNTP client -- hence the member field.
-            esp_sntp_setservername(0, configuredServer.c_str());
+            config.servers[0] = configuredServer.c_str();
+            // Keep the public pool as a fallback behind the configured server, instead of
+            // replacing it: lwIP moves on to the next server when the one before is unreachable.
+            config.servers[1] = DEFAULT_NTP_SERVER;
+            config.num_of_servers = 2;
         }
 
-        ESP_ERROR_CHECK(esp_netif_sntp_start());
-        LOGTI(RTC, "Started SNTP client with server '%s'", serverName(0));
+        ESP_ERROR_CHECK(esp_netif_sntp_init(&config));
     }
 
     void logNoSync() {
-        // The reachability shift register (RFC 5905) tells apart "requests go out, nothing comes
-        // back" from a client that never got as far as asking.
-        unsigned int reachability = 0;
-        esp_netif_sntp_reachability(0, &reachability);
         if (rtcInSync.isSet()) {
-            LOGTD(RTC, "No NTP sync in the last hour (server '%s', reachability 0x%x)",
-                serverName(0), reachability);
+            LOGTD(RTC, "No NTP sync in the last hour; servers: %s", describeServers().c_str());
         } else {
-            LOGTW(RTC, "Still no NTP sync (server '%s', reachability 0x%x, clock at %lld)",
-                serverName(0), reachability, static_cast<long long>(time(nullptr)));
+            LOGTW(RTC, "Still no NTP sync, clock at %lld; servers: %s",
+                static_cast<long long>(time(nullptr)), describeServers().c_str());
         }
     }
 
@@ -168,9 +182,35 @@ private:
         }
     }
 
-    static const char* serverName(uint8_t index) {
+    // Every slot with its reachability register (RFC 5905): which servers we actually have, and
+    // whether any of them ever answered. Slot 0 is the DHCP-supplied one, and shows up as a bare
+    // IP address rather than a name.
+    static std::string describeServers() {
+        std::string result;
+        for (uint8_t index = 0; index < CONFIG_LWIP_SNTP_MAX_SERVERS; index++) {
+            unsigned int reachability = 0;
+            esp_netif_sntp_reachability(index, &reachability);
+            char entry[80];
+            snprintf(entry, sizeof(entry), "#%u '%s' (reachability 0x%x)",
+                static_cast<unsigned>(index), describeServer(index).c_str(), reachability);
+            if (!result.empty()) {
+                result += ", ";
+            }
+            result += entry;
+        }
+        return result;
+    }
+
+    static std::string describeServer(uint8_t index) {
         const char* name = esp_sntp_getservername(index);
-        return name == nullptr ? "<none>" : name;
+        if (name != nullptr) {
+            return name;
+        }
+        const ip_addr_t* addr = esp_sntp_getserver(index);
+        if (addr != nullptr && !ip_addr_isany(addr)) {
+            return ipaddr_ntoa(addr);
+        }
+        return "<none>";
     }
 
     // Runs on the lwIP task right after the clock has been updated; the value it reports is the
