@@ -108,8 +108,20 @@ device, and a task observes its sync notifications rather than driving the retri
 - Failed requests retry from 15 s, doubling up to 150 s.
 - After a successful sync, lwIP re-polls hourly (`CONFIG_LWIP_SNTP_UPDATE_DELAY`).
 
-Smooth sync is enabled, so small corrections are slewed with `adjtime()` rather than stepped; deltas
-over ~35 minutes fall back to `settimeofday()`, which is what happens on every cold boot.
+Sync mode is `SNTP_SYNC_MODE_IMMED`: every correction steps the clock with `settimeofday()`. Smooth
+sync (slewing with `adjtime()`) is deliberately **not** used. It is documented to fall back to
+stepping beyond a 35 minute delta, but that fallback is broken in ESP-IDF 6.1
+([espressif/esp-idf#19051](https://github.com/espressif/esp-idf/issues/19051)) — `adjtime()` narrows
+`tv_sec * 1000000` to a 32-bit `long`, so a cold boot's ~57 year delta wraps to a small value that
+slips past the range check meant to reject it. `adjtime()` then reports success, lwIP concludes it
+is slewing and never steps the clock, and the slew is abandoned anyway because the boot time is
+still zero. The clock stays at time-since-boot indefinitely, and because nothing ever sets the boot
+time, every later sync repeats it.
+
+The same overflow would apply to any delta over ~35 minutes, not just a cold boot, so stepping stays
+in force once time is acquired rather than switching to slewing: an RTC that drifts that far during
+a long network outage would otherwise fail the same way, but silently, since the resulting clock
+looks plausible enough to pass the gate.
 
 Keeping one client alive is deliberate. Tearing it down and rebuilding it per attempt discards the
 resolved server address and lwIP's retry state, which is what previously left devices unable to

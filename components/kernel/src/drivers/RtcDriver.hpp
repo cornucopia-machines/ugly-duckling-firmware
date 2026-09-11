@@ -70,8 +70,8 @@ public:
                 switch (ret) {
                     case ESP_OK:
                     case ESP_ERR_NOT_FINISHED:
-                        // ESP_ERR_NOT_FINISHED only means smooth sync is still slewing; the clock
-                        // itself is already roughly right. Either way, trust the clock and not the
+                        // ESP_ERR_NOT_FINISHED would mean a smooth sync is still slewing, with the
+                        // clock already roughly right. Either way, trust the clock and not the
                         // return code -- a sync notification can also arrive for a response that
                         // left the clock somewhere near the boot epoch.
                         if (isTimeSet()) {
@@ -129,7 +129,14 @@ private:
     void initSntp() {
         esp_sntp_config_t config = ESP_NETIF_SNTP_DEFAULT_CONFIG(DEFAULT_NTP_SERVER);
         config.start = false;
-        config.smooth_sync = true;
+        // Step the clock rather than slewing it. Smooth sync is documented to fall back to
+        // settimeofday() beyond a 35 minute delta, but that fallback is broken in IDF 6.1
+        // (espressif/esp-idf#19051): adjtime() narrows `tv_sec * 1000000` to a 32-bit long, so a
+        // cold boot's ~57 year delta wraps to a small value that slips past the range check meant
+        // to reject it. adjtime() then reports success, lwIP concludes it is slewing and never
+        // steps the clock, and the slew is itself abandoned because the boot time is still zero --
+        // leaving the clock at time-since-boot forever. Revisit once we are on an IDF with the fix.
+        config.smooth_sync = false;
         config.wait_for_sync = true;
         config.sync_cb = onTimeSynced;
 
@@ -160,7 +167,9 @@ private:
         if (rtcInSync.isSet()) {
             LOGTD(RTC, "No NTP sync in the last hour; servers: %s", describeServers().c_str());
         } else {
-            LOGTW(RTC, "Still no NTP sync, clock at %lld; servers: %s",
+            // Reachability distinguishes the two failures that look alike from here: nothing
+            // answering at all, versus responses arriving that never reached the clock.
+            LOGTW(RTC, "RTC still not in sync, clock at %lld; servers: %s",
                 static_cast<long long>(time(nullptr)), describeServers().c_str());
         }
     }
