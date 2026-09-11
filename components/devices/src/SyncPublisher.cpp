@@ -61,7 +61,7 @@ void publishSync(
                 firmware["rejection"] = static_cast<int>(*firmwareRejection);
             }
         },
-        Retention::NoRetain, QoS::ExactlyOnce);
+        QoS::AtLeastOnce);
 }
 
 /**

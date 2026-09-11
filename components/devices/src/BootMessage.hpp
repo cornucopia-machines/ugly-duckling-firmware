@@ -27,7 +27,7 @@ enum class InitState : std::uint8_t {
 };
 
 /**
- * @brief Publishes `boot` (NoRetain, QoS 2): diagnostics and per-peripheral/function error
+ * @brief Publishes `boot` (NoRetain, QoS 1): diagnostics and per-peripheral/function error
  * feedback (docs/Configuration.md, "BOOT, SYNC, UPDATE").
  */
 void publishBootMessage(

@@ -21,13 +21,22 @@ using namespace std::chrono;
 using namespace cornucopia::ugly_duckling::kernel;
 
 /**
- * QoS 2 (not 1) matters here: esp-mqtt's outbox resends an unacked PUBLISH verbatim (same
- * packet id, DUP set) if the ack doesn't arrive within its retransmit timeout while the
- * connection stays up, and at QoS 1 the broker has no obligation to dedup that resend before
- * fanning it out to subscribers. Several features (e.g. flow-meter volume, reported as a delta
- * since last report with the on-device counter reset to 0 right after) aren't idempotent under
- * a duplicate delivery, so QoS 2's packet-id-keyed handshake is what actually prevents the
- * resend from being delivered twice (issue #579).
+ * Published at QoS 1. This used to be QoS 2 (issue #579) because esp-mqtt's outbox resends an
+ * unacked PUBLISH verbatim (same packet id, DUP set) if the ack doesn't arrive within its
+ * retransmit timeout while the connection stays up, and at QoS 1 the broker has no obligation
+ * to dedup that resend before fanning it out to subscribers. That breaks every read-and-reset
+ * value on this path: flow-meter `volume`, `pm.sleep-ratio` / `pm.sleep-count`, and the
+ * `wifi.disconnects` / `mqtt.disconnects` counters.
+ *
+ * The server now dedups instead: telemetry rows are keyed on the device's own timestamp, and an
+ * outbox resend is verbatim -- same payload, therefore same timestamp -- so the duplicate
+ * collapses onto the row it already wrote. Flow volume is safe under this because the total is
+ * a query-time SUM over rows, not a running accumulator.
+ *
+ * QoS 2 bought nothing end to end anyway: the broker downgrades to the subscriber's QoS on the
+ * next hop, so the exactly-once guarantee stopped at the broker. QoS 1 halves the handshake
+ * (PUBLISH/PUBACK vs. PUBLISH/PUBREC/PUBREL/PUBCOMP), which is one round trip less of modem-on
+ * time per publish on a battery device (issue #634).
  */
 void initTelemetryPublishTask(
     milliseconds publishInterval,
@@ -78,7 +87,7 @@ void initTelemetryPublishTask(
             powerManager->populateTelemetry(powerManagementData);
 
             auto features = telemetry["features"].to<JsonArray>();
-            telemetryCollector->collect(features); }, Retention::NoRetain, QoS::ExactlyOnce);
+            telemetryCollector->collect(features); }, QoS::AtLeastOnce);
 
         // Signal that we are still alive
         watchdog->restart();

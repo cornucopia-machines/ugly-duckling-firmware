@@ -14,7 +14,7 @@ using namespace cornucopia::ugly_duckling::kernel;
 using namespace cornucopia::ugly_duckling::kernel::config;
 
 /**
- * @brief Publishes `sync` (NoRetain, QoS 2): the manifest of fingerprints/requestedAt the device
+ * @brief Publishes `sync` (NoRetain, QoS 1): the manifest of fingerprints/requestedAt the device
  * currently holds, plus the firmware identity (`platform`, `version`) the server needs for
  * firmware reconciliation (docs/specs/done/firmware-update-via-sync-update.md).
  */

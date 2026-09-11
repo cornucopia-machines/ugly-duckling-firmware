@@ -278,6 +278,16 @@ pushes to the overwrite queue; the separate SYNC task does the publish.
 
 ### QoS 2 + clean session — an explicit assumption
 
+> **Superseded in part by issue #634.** `boot`, `sync`, `telemetry` and `responses/*` are now published at
+> **QoS 1**: the broker downgrades to the subscriber's QoS on the next hop, so QoS 2's guarantee never
+> reached the server anyway, and the duplicate-delivery hazard described below is now handled by
+> server-side dedup on the device's own timestamp instead. `log` stays at QoS 2 for now — not for the
+> reason given below, but because its blocking publish is what currently orders log records; issue #635
+> replaces that with an explicit sequence. The `update` **subscription** is now QoS 1 too — subscription QoS
+> is only a ceiling, and UPDATE is idempotent under a duplicate delivery — while `commands` stays at QoS 2
+> until responses carry a correlation id (cornucopia-app#508). None of that touches the clean-session
+> reasoning in this section, which is about offline queueing rather than QoS.
+
 `update` is subscribed and `sync` published at **QoS 2**. The MQTT driver forces a **clean session on every
 reconnect**, so an `UPDATE` published while the device is offline is **not broker-queued** and is lost.
 **This is by design and fine:** delivery of `UPDATE` is never relied upon. The device's `SYNC` on the next

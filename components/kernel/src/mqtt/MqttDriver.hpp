@@ -34,11 +34,6 @@ namespace cornucopia::ugly_duckling::kernel::mqtt {
 
 LOGGING_TAG(MQTT, "mqtt")
 
-enum class Retention : uint8_t {
-    NoRetain,
-    Retain
-};
-
 enum class QoS : uint8_t {
     AtMostOnce = 0,
     AtLeastOnce = 1,
@@ -216,7 +211,18 @@ public:
     }
 
 private:
+    // Bounds how long we wait for the *network* to respond: esp-mqtt's transport read/write
+    // timeout, the connection attempt, and a subscription ack. Deliberately not the publish
+    // default -- see MQTT_PUBLISH_TIMEOUT.
     static constexpr milliseconds MQTT_NETWORK_TIMEOUT = 15s;
+
+    // How long `publish()` blocks its caller waiting for the broker's ack, by default: not at
+    // all. The wait never made the message go out -- `publishAndWait` hands it to `eventQueue`
+    // before awaiting anything, and the driver task enqueues it into esp-mqtt's outbox
+    // regardless -- and no call site reads the returned PublishStatus, so blocking only delayed
+    // the publishing task. Pass an explicit timeout to opt back in where the wait earns its
+    // keep (MqttLog does, to serialise log records; see issue #635).
+    static constexpr milliseconds MQTT_PUBLISH_TIMEOUT = 0s;
     static constexpr milliseconds MQTT_MESSAGE_RETRANSMIT_TIMEOUT = 5s;
     static constexpr milliseconds MQTT_CONNECTION_TIMEOUT = MQTT_NETWORK_TIMEOUT;
     static constexpr milliseconds MQTT_SESSION_KEEP_ALIVE = 120s;
@@ -231,7 +237,6 @@ private:
     struct OutgoingMessage {
         std::string topic;
         std::string payload;
-        Retention retain;
         QoS qos;
         PendingMessagePtr pending;
         LogPublish log;
@@ -267,37 +272,27 @@ private:
         std::function<void()> callback;
     };
 
-    PublishStatus publish(const std::string& topic, const JsonDocument& json, Retention retain, QoS qos, ticks timeout = MQTT_NETWORK_TIMEOUT, LogPublish log = LogPublish::Log) {
+    PublishStatus publish(const std::string& topic, const JsonDocument& json, QoS qos, ticks timeout = MQTT_PUBLISH_TIMEOUT, LogPublish log = LogPublish::Log) {
         std::string payload;
         serializeJson(json, payload);
         if (log == LogPublish::Log) {
 #ifdef DUMP_MQTT
-            LOGTD(MQTT, "Queuing topic '%s'%s (qos = %d, timeout = %lld ms): %s",
+            LOGTD(MQTT, "Queuing topic '%s' (qos = %d, timeout = %lld ms): %s",
                 topic.c_str(),
-                (retain == Retention::Retain ? " (retain)" : ""),
                 static_cast<int>(qos),
                 duration_cast<milliseconds>(timeout).count(),
                 payload.c_str());
 #else
-            LOGTV(MQTT, "Queuing topic '%s'%s (qos = %d, timeout = %lld ms)",
+            LOGTV(MQTT, "Queuing topic '%s' (qos = %d, timeout = %lld ms)",
                 topic.c_str(),
-                (retain == Retention::Retain ? " (retain)" : ""),
                 static_cast<int>(qos),
                 duration_cast<milliseconds>(timeout).count());
 #endif
         }
-        return publishAndWait(topic, payload, retain, qos, timeout);
+        return publishAndWait(topic, payload, qos, timeout);
     }
 
-    PublishStatus clear(const std::string& topic, Retention retain, QoS qos, ticks timeout = MQTT_NETWORK_TIMEOUT) {
-        LOGTD(MQTT, "Clearing topic '%s' (qos = %d, timeout = %lld ms)",
-            topic.c_str(),
-            static_cast<int>(qos),
-            duration_cast<milliseconds>(timeout).count());
-        return publishAndWait(topic, "", retain, qos, timeout);
-    }
-
-    PublishStatus publishAndWait(const std::string& topic, const std::string& payload, Retention retain, QoS qos, ticks timeout) {
+    PublishStatus publishAndWait(const std::string& topic, const std::string& payload, QoS qos, ticks timeout) {
         // Fire-and-forget publishes (timeout == 0) don't get a pending-outcome slot at all --
         // there's nobody around to wait on it.
         auto pending = timeout == ticks::zero() ? nullptr : std::make_shared<PendingMessage>();
@@ -307,7 +302,6 @@ private:
             OutgoingMessage {
                 .topic = topic,
                 .payload = payload,
-                .retain = retain,
                 .qos = qos,
                 .pending = pending,
                 .log = LogPublish::Log,
@@ -610,7 +604,7 @@ private:
             message.payload.c_str(),
             static_cast<int>(message.payload.length()),
             static_cast<int>(message.qos),
-            static_cast<int>(message.retain == Retention::Retain),
+            0,    // Never retain: nothing the device publishes is a retained message
             true);
 
         if (ret < 0) {
