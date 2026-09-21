@@ -1,1 +1,4 @@
 *   eol=lf
+
+# Binary assets must not be subject to the repo-wide eol=lf normalization above.
+*.pdf binary
