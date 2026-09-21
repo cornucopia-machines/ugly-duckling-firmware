@@ -11,6 +11,8 @@ using cornucopia::ugly_duckling::kernel::PinPtr;
 
 namespace cornucopia::ugly_duckling::kernel::drivers {
 
+LOGGING_TAG(BATTERY, "battery")
+
 struct BatteryParameters {
     /**
      * @brief Maximum voltage of the battery in millivolts.
@@ -82,7 +84,7 @@ public:
         : BatteryDriver(parameters)
         , analogPin(pin)
         , voltageDividerRatio(voltageDividerRatio) {
-        LOGI("Initializing analog battery driver on pin %s",
+        LOGTI(BATTERY, "Initializing analog battery driver on pin %s",
             analogPin.getName().c_str());
     }
 
@@ -90,7 +92,7 @@ public:
         for (int trial = 0; trial < 5; trial++) {
             auto mv = analogPin.tryAnalogReadMillivolts();
             if (!mv.has_value()) {
-                LOGE("Failed to read battery level");
+                LOGTE(BATTERY, "Failed to read battery level");
                 continue;
             }
             return static_cast<int>(*mv * voltageDividerRatio);

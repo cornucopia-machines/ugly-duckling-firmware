@@ -1,6 +1,7 @@
 #pragma once
 #include <MacAddress.hpp>
 #include <Pin.hpp>
+#include <Task.hpp>
 #include <devices/DeviceDefinition.hpp>
 #include <drivers/Bq27220Driver.hpp>
 #include <drivers/BuzzerDriver.hpp>
@@ -35,7 +36,7 @@ public:
     }
 
     std::shared_ptr<BatteryDriver> createBatteryDriver(const std::shared_ptr<I2CManager>& i2c) override {
-        return std::make_shared<Bq27220Driver>(
+        auto driver = std::make_shared<Bq27220Driver>(
             i2c,
             LP_SDA,
             LP_SCL,
@@ -44,6 +45,21 @@ public:
                 .bootThreshold = 3300,
                 .shutdownThreshold = 3100,
             });
+        driver->useExternalThermistor();
+
+#ifdef UD_DEBUG
+        Task::loop("battery-monitor", 4096, [driver](Task& task) {
+            auto temperature = driver->getTemperature();
+            if (temperature < 0) {
+                LOGTD(BATTERY, "Failed to read battery temperature");
+            } else {
+                LOGTD(BATTERY, "Battery temperature: %.2f °C", temperature);
+            }
+            Task::delay(10s);
+        });
+#endif
+
+        return driver;
     }
 
     void handleShortButtonPress(milliseconds duration) override {

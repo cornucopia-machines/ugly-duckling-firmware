@@ -188,7 +188,7 @@ public:
             .outbox {},
         };
 
-        LOGTD(MQTT, "server: %s, client ID is '%s'",
+        LOGTI(MQTT, "Server: %s, client ID is '%s'",
             serverAddress.c_str(),
             config.credentials.client_id);
 
