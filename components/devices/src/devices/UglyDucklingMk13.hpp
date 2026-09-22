@@ -13,6 +13,8 @@
 
 #include <soc/rtc.h>
 
+#include <cstdio>
+#include <limits>
 #include <memory>
 #include <string>
 
@@ -48,13 +50,24 @@ public:
         driver->useExternalThermistor();
 
 #ifdef UD_DEBUG
+        // Enough to tell at a glance whether the pack is charging on the bench: the
+        // temperature, the current flowing in or out, and the gauge's own flag word.
+        // Current is positive while charging.
         Task::loop("battery-monitor", 4096, [driver](Task& task) {
-            auto temperature = driver->getTemperature();
-            if (temperature < 0) {
-                LOGTD(BATTERY, "Failed to read battery temperature");
+            // Rendered separately so a failed read shows as '?' rather than a plausible 0x0000.
+            char statusText[8];
+            auto status = driver->getBatteryStatus();
+            if (status.has_value()) {
+                snprintf(statusText, sizeof(statusText), "0x%04X", status->full);
             } else {
-                LOGTD(BATTERY, "Battery temperature: %.2f °C", temperature);
+                snprintf(statusText, sizeof(statusText), "?");
             }
+
+            LOGTD(BATTERY, "Battery: %d mV, %.2f °C, %.0f mA, status %s",
+                driver->getVoltage(),
+                driver->getTemperature(),
+                driver->getCurrent().value_or(std::numeric_limits<double>::quiet_NaN()),
+                statusText);
             Task::delay(10s);
         });
 #endif
