@@ -192,6 +192,23 @@ public:
     }
 
     /**
+     * @brief Reads BatteryStatus(), the gauge's flag word.
+     *
+     * Read the word once and pick the flags out of it rather than making one call per flag:
+     * every call is a separate I2C transaction, and flags that disagree about which moment
+     * they describe are worse than useless when diagnosing the gauge.
+     *
+     * @return the flags, or std::nullopt when the read failed.
+     */
+    std::optional<battery_status_t> getBatteryStatus() {
+        battery_status_t status {};
+        if (bq27220_get_battery_status(gauge, &status) != ESP_OK) {
+            return std::nullopt;
+        }
+        return status;
+    }
+
+    /**
      * @brief Returns the on-chip sensor temperature in Celsius.
      *
      * InternalTemperature() always reports the internal sensor regardless of [TEMPS],

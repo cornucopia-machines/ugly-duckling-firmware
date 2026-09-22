@@ -5,6 +5,7 @@
 
 #include <chrono>
 #include <limits>
+#include <optional>
 #include <utility>
 
 using cornucopia::ugly_duckling::kernel::PinPtr;
@@ -63,8 +64,9 @@ public:
     /**
      * @brief Get the current, if supported.
      *
-     * @return Consumed current in mA, or std::nullopt if not supported.
-     * @note The current is positive when discharging, negative when charging.
+     * @return Battery current in mA, or std::nullopt if not supported.
+     * @note We follow the BQ27220's convention: the current is positive when charging,
+     * negative when discharging.
      */
     virtual std::optional<double> getCurrent() {
         return std::nullopt;
