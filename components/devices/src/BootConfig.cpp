@@ -131,7 +131,10 @@ std::shared_ptr<NetworkConfig> loadNetworkConfig(
     // TODO(legacy-v1-topics): remove NVS cleanup and the legacyConfigNvs parameter
     // NVS cleanup: remove any lingering network-config from the old namespace (best-effort,
     // idempotent -- handles orphaned keys from interrupted migrations)
-    legacyConfigNvs->remove("network-config");
+    if (legacyConfigNvs->contains("network-config")) {
+        LOGI("Removing orphaned legacy network-config from NVS");
+        legacyConfigNvs->remove("network-config");
+    }
 
     return networkConfig;
 }
