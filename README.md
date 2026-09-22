@@ -219,12 +219,24 @@ Off by default, and CI debug builds do not enable it:
 idf.py build -DUD_DEBUG=1 -DUD_DEBUG_CONSOLE=1
 ```
 
+You can add `-DUD_NOSLEEP=1` to keep the device out of light sleep, which is handy when a
+sleeping device makes debugging awkward — JTAG drops, the serial console stalls between
+wakeups. Off by default, *including* for `UD_DEBUG` builds: a debug build light-sleeps like a
+production one unless you ask it not to, so sleep-related behavior stays reproducible with
+debug logging on. `UD_DEBUG_CONSOLE` forces it on and `-DUD_NOSLEEP=0` will not override that
+— a status line redrawn four times a second would keep a sleeping device awake just to be
+drawn, so the numbers on it would describe a device that only behaves that way because you are
+watching. See `PowerManager::shouldSleepWhenIdle`:
+
+```bash
+idf.py build -DUD_DEBUG=1 -DUD_NOSLEEP=1
+```
+
 You can add `-DUD_PM_DIAGNOSTICS=1` to enable power-management diagnostics — a periodic
 (every 2.5s) dump of PM lock hold times, `esp_timer` stats, light-sleep wakeup count/causes,
 and per-task CPU time to the console. Real overhead (~9% CPU in testing), not for production
-builds. Separate from `UD_DEBUG` since debug builds disable light sleep entirely, which would
-make PM diagnostics pointless. See `components/kernel/src/PowerManager.hpp` and
-`sdkconfig.pm_diagnostics.defaults`:
+builds. Do not combine it with `UD_NOSLEEP`: a device that never light-sleeps has nothing to
+report. See `components/kernel/src/PowerManager.hpp` and `sdkconfig.pm_diagnostics.defaults`:
 
 ```bash
 idf.py build -DUD_PM_DIAGNOSTICS=1
