@@ -17,7 +17,7 @@ using namespace cornucopia::ugly_duckling::kernel::drivers;
 
 namespace cornucopia::ugly_duckling::kernel {
 
-#ifdef UD_DEBUG
+#ifdef UD_DEBUG_CONSOLE
 class DebugConsole {
 public:
     DebugConsole(

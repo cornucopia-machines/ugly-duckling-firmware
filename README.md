@@ -202,10 +202,21 @@ idf.py build
 The resulting binary uses runtime MAC detection to select the correct model at boot.
 No `UD_GEN` is required for normal builds.
 
-You can add `-DUD_DEBUG=1` to enable debug output:
+You can add `-DUD_DEBUG=1` to enable debug output — verbose logging, colorized by level:
 
 ```bash
 idf.py build -DUD_DEBUG=1
+```
+
+You can add `-DUD_DEBUG_CONSOLE=1` on top of that for the live status line: a spinner at the
+bottom of the terminal showing uptime, BLE and WiFi state, RTC sync, free heap, CPU frequency
+and battery voltage, redrawn four times a second. It only makes sense on an interactive
+terminal — it moves the cursor and erases the line before every log message, so captured
+output (CI, Wokwi runs, `idf.py monitor | tee`) gets escape sequences woven through it.
+Off by default, and CI debug builds do not enable it:
+
+```bash
+idf.py build -DUD_DEBUG=1 -DUD_DEBUG_CONSOLE=1
 ```
 
 You can add `-DUD_PM_DIAGNOSTICS=1` to enable power-management diagnostics — a periodic

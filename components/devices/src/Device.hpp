@@ -159,7 +159,7 @@ static void startDevice() {
     auto connectivity = initConnectivity(states, networkConfig, ble);
     auto& wifi = connectivity.wifi;
 
-#ifdef UD_DEBUG
+#ifdef UD_DEBUG_CONSOLE
     new DebugConsole(batteryManager, wifi, ble);
 #endif
 

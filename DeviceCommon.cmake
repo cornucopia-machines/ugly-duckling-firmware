@@ -90,6 +90,23 @@ if(UD_DEBUG)
     add_compile_definitions(DUMP_MQTT)
 endif()
 
+# UD_DEBUG_CONSOLE — separate from UD_DEBUG because the two want different terminals. It draws
+# a status line the log output then has to erase and redraw around, which is only readable on an
+# interactive terminal; anything that captures the serial output to a file or scrapes it (CI,
+# Wokwi runs, `idf.py monitor | tee`) ends up with cursor escapes interleaved into every line.
+# UD_DEBUG on its own gives the verbose logging without any of that.
+
+if(NOT DEFINED UD_DEBUG_CONSOLE)
+    set(UD_DEBUG_CONSOLE "$ENV{UD_DEBUG_CONSOLE}")
+endif()
+if(UD_DEBUG_CONSOLE STREQUAL "")
+    set(UD_DEBUG_CONSOLE 0)
+endif()
+
+if(UD_DEBUG_CONSOLE)
+    add_compile_definitions(UD_DEBUG_CONSOLE)
+endif()
+
 # UD_PM_DIAGNOSTICS — separate from UD_DEBUG since debug builds already disable light sleep
 # entirely (see PowerManager::shouldSleepWhenIdle), which would make PM diagnostics useless.
 
@@ -124,8 +141,8 @@ if(WOKWI)
     endif()
 endif()
 
-# Make sure we reconfigure if UD_DEBUG or UD_PM_DIAGNOSTICS changes
-set_property(DIRECTORY PROPERTY UD_DEBUG_TRACKER "${UD_DEBUG} ${UD_PM_DIAGNOSTICS}")
+# Make sure we reconfigure if UD_DEBUG, UD_DEBUG_CONSOLE or UD_PM_DIAGNOSTICS changes
+set_property(DIRECTORY PROPERTY UD_DEBUG_TRACKER "${UD_DEBUG} ${UD_DEBUG_CONSOLE} ${UD_PM_DIAGNOSTICS}")
 
 set(SDKCONFIG_FILES)
 list(APPEND SDKCONFIG_FILES "${CMAKE_CURRENT_LIST_DIR}/sdkconfig.defaults")
