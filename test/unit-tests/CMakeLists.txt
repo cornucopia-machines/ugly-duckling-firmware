@@ -49,8 +49,11 @@ include_directories(
     ${COMPONENTS_DIR}/utils/src
 )
 
-# Collect all test source files
-file(GLOB_RECURSE TEST_SOURCES
+# Collect all test source files.
+# CONFIGURE_DEPENDS re-globs on every build, so a newly added test file is picked up without
+# having to re-run CMake by hand -- otherwise the glob is only evaluated at configure time and
+# a new test silently never runs.
+file(GLOB_RECURSE TEST_SOURCES CONFIGURE_DEPENDS
     ${COMPONENTS_DIR}/functions/test/*.cpp
     ${COMPONENTS_DIR}/kernel/test/*.cpp
     ${COMPONENTS_DIR}/peripherals/test/*.cpp

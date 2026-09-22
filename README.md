@@ -313,8 +313,12 @@ There are four test suites:
 cd test/unit-tests
 cmake -B build -G Ninja
 ninja -C build
-./build/unit-tests
+./build/ugly-duckling-unit-tests
 ```
+
+Run a subset by passing Catch2 test name patterns, e.g.
+`./build/ugly-duckling-unit-tests "*charging*"`, and list what is available with
+`--list-tests`.
 
 #### Embedded tests (Wokwi simulator)
 
