@@ -75,17 +75,8 @@ DeviceRuntimeInit initDeviceRuntime(
     JsonDocument peripheralsInitDoc;
     auto peripheralsInitJson = peripheralsInitDoc.to<JsonArray>();
 
-    auto builtInPeripheralsSettings = deviceDefinition->getBuiltInPeripherals();
-    LOGD("Loading configuration for %d built-in peripherals",
-        builtInPeripheralsSettings.size());
-    for (auto& builtInPeripheralSettings : builtInPeripheralsSettings) {
-        if (!peripheralManager->createPeripheral(builtInPeripheralSettings, peripheralsInitJson)) {
-            initState = InitState::PeripheralError;
-        }
-    }
-
     const auto& peripheralsSettings = deviceConfig->peripherals.get();
-    LOGI("Loading configuration for %d user-configured peripherals",
+    LOGI("Loading configuration for %d peripherals",
         peripheralsSettings.size());
     for (const auto& peripheralSettings : peripheralsSettings) {
         if (!peripheralManager->createPeripheral(peripheralSettings.get(), peripheralsInitJson)) {
@@ -99,7 +90,7 @@ DeviceRuntimeInit initDeviceRuntime(
     JsonDocument functionsInitDoc;
     auto functionsInitJson = functionsInitDoc.to<JsonArray>();
     const auto& functionsSettings = deviceConfig->functions.get();
-    LOGI("Loading configuration for %d user-configured functions",
+    LOGI("Loading configuration for %d functions",
         functionsSettings.size());
     for (const auto& functionSettings : functionsSettings) {
         if (!functionRegistry->createFunction(functionSettings.get(), functionsInitJson)) {

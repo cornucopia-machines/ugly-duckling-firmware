@@ -106,13 +106,6 @@ public:
         registerDeviceSpecificFunctionFactories(functionRegistry);
     }
 
-    /**
-     * @brief Returns zero or more JSON configurations for any built-in peripheral of the device.
-     */
-    virtual std::vector<std::string> getBuiltInPeripherals() {
-        return {};
-    }
-
     virtual std::shared_ptr<BatteryDriver> createBatteryDriver(const std::shared_ptr<I2CManager>& _i2c) {
         return nullptr;
     }

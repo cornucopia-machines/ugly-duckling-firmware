@@ -35,8 +35,7 @@ struct DeviceRuntimeInit {
 
 /**
  * @brief Creates peripheral and function infrastructure, registers factories from the device
- * definition, then runs the init loops for built-in peripherals, user-configured peripherals,
- * and user-configured functions.
+ * definition, then runs the init loops for peripherals and functions.
  */
 DeviceRuntimeInit initDeviceRuntime(
     const std::shared_ptr<I2CManager>& i2c,
