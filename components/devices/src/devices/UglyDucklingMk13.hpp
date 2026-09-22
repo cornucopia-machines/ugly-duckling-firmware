@@ -32,9 +32,10 @@ public:
         : DeviceDefinition({ .model = "mk13", .revision = 1, .boot = GPIO_NUM_9, .status = GPIO_NUM_8 }) {
         rtc_clk_32k_enable(true);
 
-        // Pull buzzer low
-        BUZZER->pinMode(Pin::Mode::Output);
-        BUZZER->digitalWrite(0);
+        // Pull buzzer low so it stays quiet until BuzzerDriver claims the pin.
+        // Parked rather than configured via pinMode() so LEDC doesn't report a
+        // conflict when the buzzer driver registers the pin later on.
+        BUZZER->parkOutput(0);
     }
 
     std::shared_ptr<BatteryDriver> createBatteryDriver(const std::shared_ptr<I2CManager>& i2c) override {
