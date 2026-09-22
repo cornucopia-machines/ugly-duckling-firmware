@@ -188,7 +188,11 @@ public:
         } else {
             LOGTI(BATTERY, "BQ27220 now reads the external thermistor (Operation Config A = 0x%04X)", config);
         }
-        bq27220_seal(gauge);
+        // Deliberately does not reseal. Measured on an MK13: CONTROL_SEALED does take effect
+        // from FULL ACCESS, but the gauge then refuses both the 0x8000 0x8000 key that tech ref
+        // section 3.3 documents and the 0x0414 0x3672 pair that espressif__bq27220 sends, so a
+        // sealed gauge cannot be reopened -- by us or by bq27220_create() -- until it loses
+        // power. Operation Config B [Default Seal] is off, so it powers up UNSEALED anyway.
     }
 
     /**
