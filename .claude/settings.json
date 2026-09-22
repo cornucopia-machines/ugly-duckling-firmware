@@ -1,5 +1,6 @@
 {
   "enabledPlugins": {
-    "clangd-lsp@claude-plugins-official": true
+    "clangd-lsp@claude-plugins-official": true,
+    "engineering@cornucopia-tools": true
   }
 }

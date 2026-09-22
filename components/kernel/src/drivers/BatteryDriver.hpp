@@ -5,11 +5,14 @@
 
 #include <chrono>
 #include <limits>
+#include <optional>
 #include <utility>
 
 using cornucopia::ugly_duckling::kernel::PinPtr;
 
 namespace cornucopia::ugly_duckling::kernel::drivers {
+
+LOGGING_TAG(BATTERY, "battery")
 
 struct BatteryParameters {
     /**
@@ -61,8 +64,9 @@ public:
     /**
      * @brief Get the current, if supported.
      *
-     * @return Consumed current in mA, or std::nullopt if not supported.
-     * @note The current is positive when discharging, negative when charging.
+     * @return Battery current in mA, or std::nullopt if not supported.
+     * @note We follow the BQ27220's convention: the current is positive when charging,
+     * negative when discharging.
      */
     virtual std::optional<double> getCurrent() {
         return std::nullopt;
@@ -82,7 +86,7 @@ public:
         : BatteryDriver(parameters)
         , analogPin(pin)
         , voltageDividerRatio(voltageDividerRatio) {
-        LOGI("Initializing analog battery driver on pin %s",
+        LOGTI(BATTERY, "Initializing analog battery driver on pin %s",
             analogPin.getName().c_str());
     }
 
@@ -90,7 +94,7 @@ public:
         for (int trial = 0; trial < 5; trial++) {
             auto mv = analogPin.tryAnalogReadMillivolts();
             if (!mv.has_value()) {
-                LOGE("Failed to read battery level");
+                LOGTE(BATTERY, "Failed to read battery level");
                 continue;
             }
             return static_cast<int>(*mv * voltageDividerRatio);

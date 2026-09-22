@@ -122,6 +122,28 @@ public:
         ESP_ERROR_THROW(gpio_config(&conf));
     }
 
+    /**
+     * @brief Drive this pin at a known level without claiming ownership of it.
+     *
+     * Use this to park a pin during boot when a driver (LEDC, RMT, ...) is meant
+     * to take the pin over later on. pinMode() goes through gpio_config(), which
+     * reserves every pin it configures as an output; the driver claiming the pin
+     * afterwards then finds it reserved and warns about a conflict. Configuring
+     * the pad directly avoids taking that reservation in the first place, so the
+     * later hand-over stays clean.
+     *
+     * Pulls are disabled explicitly, since unlike gpio_config() the calls below
+     * leave whatever pull configuration the pad happens to carry.
+     */
+    void parkOutput(uint8_t level) const {
+        ESP_ERROR_THROW(gpio_set_pull_mode(gpio, GPIO_FLOATING));
+        // Set the level first so enabling the output driver doesn't glitch the
+        // pin through whatever the output register happened to hold.
+        ESP_ERROR_THROW(gpio_set_level(gpio, level));
+        gpio_sleep_set_direction(gpio, GPIO_MODE_OUTPUT);
+        ESP_ERROR_THROW(gpio_set_direction(gpio, GPIO_MODE_OUTPUT));
+    }
+
     void digitalWrite(uint8_t val) const override {
         gpio_set_level(gpio, val);
     }

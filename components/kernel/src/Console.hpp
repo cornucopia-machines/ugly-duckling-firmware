@@ -63,9 +63,14 @@ private:
         }
 
         int count = 0;
-#ifdef UD_DEBUG
-        // Erase the current line
+#ifdef UD_DEBUG_CONSOLE
+        // Erase the status line DebugConsole leaves on the current line, so this log line
+        // does not land on top of it. Pointless without that status line, and actively
+        // harmful when the output is being captured rather than watched.
         count += printf("\033[1G\033[0K");
+#endif
+
+#ifdef UD_DEBUG
         switch (level) {
             case Level::Error:
                 count += printf(UD_LOG_COLOR(UD_LOG_COLOR_RED));

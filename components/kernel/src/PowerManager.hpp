@@ -173,8 +173,8 @@ public:
 private:
     static bool shouldSleepWhenIdle(bool requestedSleepWhenIdle) {
         if (requestedSleepWhenIdle) {
-#if UD_DEBUG
-            LOGTI(PM, "Light sleep is disabled in debug mode");
+#ifdef UD_NOSLEEP
+            LOGTI(PM, "Light sleep is disabled by UD_NOSLEEP");
             return false;
 #elif not(CONFIG_PM_ENABLE)
             LOGTI(PM, "Power management is disabled because CONFIG_PM_ENABLE is not set");
