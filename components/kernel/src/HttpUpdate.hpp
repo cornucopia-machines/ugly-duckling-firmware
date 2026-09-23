@@ -147,7 +147,7 @@ private:
                 LOGTV(UPDATE, "HTTP status code: %d", *reinterpret_cast<int*>(event->data));
                 break;
             case HTTP_EVENT_ON_DATA: {
-                LOGTD(UPDATE, "HTTP data: %d bytes", event->data_len);
+                LOGTV(UPDATE, "HTTP data: %d bytes", event->data_len);
                 // Keep running while we are receiving data
                 watchdog->restart();
                 auto beforeBatch = downloaded / DOWNLOAD_NOTIFICATION_BATCH;
