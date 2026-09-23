@@ -28,8 +28,8 @@ namespace cornucopia::ugly_duckling::kernel {
  * Fixed upstream in esp-idf 9c3a553 ("read crt bundle byte-wise to avoid misaligned flash
  * access"), which is not in the v6.1 tag. TODO: remove once we are on IDF v6.1.1.
  *
- * The HTTP updater is the only user of the bundle, so the copy only needs to live for the
- * duration of an OTA. Falls back to the flash-resident bundle if the copy cannot be made.
+ * The HTTP updater is the only user of the bundle, so the copy only needs to live while an OTA
+ * connects. Falls back to the flash-resident bundle if the copy cannot be made.
  */
 class RamCertBundle {
 public:
