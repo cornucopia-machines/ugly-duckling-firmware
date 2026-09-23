@@ -1,5 +1,6 @@
 #pragma once
 
+#include <ChipIdentifier.hpp>
 #include <Strings.hpp>
 
 #include <ArduinoJson.h>
@@ -62,6 +63,7 @@ private:
         } else {
             auto crashJson = json["crash"].to<JsonObject>();
             crashJson["firmware-version"] = crashedFirmwareVersion;
+            crashJson["chip"] = getChipIdentifier();
             reportPreviousCrash(crashJson, summary);
         }
     }

@@ -1,3 +1,4 @@
+#include "ChipIdentifier.hpp"
 #include "FirmwareRollback.hpp"
 #include "HardwareVersion.hpp"
 #include "NetworkConfig.hpp"
@@ -70,6 +71,7 @@ void publishBootMessage(
             // TODO(legacy-v1-topics): stop sending instance once the server no longer reads it
             json["instance"] = networkConfig->instance.get();
             json["mac"] = macAddress;
+            json["chip"] = getChipIdentifier();
             if (hardwareVersion.has_value()) {
                 json["batch"] = hardwareVersion->batch;
                 json["serial"] = hardwareVersion->serial;
