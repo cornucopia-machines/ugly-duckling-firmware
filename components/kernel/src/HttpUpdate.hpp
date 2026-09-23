@@ -1,6 +1,7 @@
 #pragma once
 #include <Log.hpp>
 #include <NvsStore.hpp>
+#include <RamCertBundle.hpp>
 #include <Restart.hpp>
 #include <Watchdog.hpp>
 #include <config/ConfigState.hpp>
@@ -100,7 +101,11 @@ private:
         // rejection on the next boot so the server stops retrying.
         nvs->set(UPDATE_FAILED_KEY, url);
 
-        esp_err_t ret = esp_https_ota(&otaConfig);
+        esp_err_t ret;
+        {
+            RamCertBundle ramCertBundle;
+            ret = esp_https_ota(&otaConfig);
+        }
 
         // Clear the crash marker — we got here without crashing
         nvs->remove(UPDATE_FAILED_KEY);
