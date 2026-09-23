@@ -3,12 +3,14 @@
 #include <NvsStore.hpp>
 #include <RamCertBundle.hpp>
 #include <Restart.hpp>
+#include <State.hpp>
 #include <Watchdog.hpp>
 #include <config/ConfigState.hpp>
 #include <drivers/WiFiDriver.hpp>
 
 #include <ArduinoJson.h>
 #include <esp_crt_bundle.h>
+#include <esp_heap_caps.h>
 #include <esp_http_client.h>
 #include <esp_https_ota.h>
 
@@ -31,12 +33,12 @@ public:
         });
     }
 
-    static std::optional<config::RejectionCode> performPendingHttpUpdateIfNecessary(const std::shared_ptr<NvsStore>& nvs, const std::shared_ptr<WiFiDriver>& wifi, std::shared_ptr<Watchdog> watchdog, const std::string& firmwareVersion) {
-        // If a previous update attempt crashed (marker survived the reboot),
+    static std::optional<config::RejectionCode> performPendingHttpUpdateIfNecessary(const std::shared_ptr<NvsStore>& nvs, const std::shared_ptr<WiFiDriver>& wifi, const State& mqttReady, std::shared_ptr<Watchdog> watchdog, const std::string& firmwareVersion) {
+        // If a previous update attempt failed or crashed (marker survived the reboot),
         // report the failure so the server knows not to re-send the same update.
         if (nvs->contains(UPDATE_FAILED_KEY)) {
             nvs->remove(UPDATE_FAILED_KEY);
-            LOGTE(UPDATE, "Previous firmware update crashed, rejecting");
+            LOGTE(UPDATE, "Previous firmware update failed, rejecting");
             return config::RejectionCode::Internal;
         }
 
@@ -59,7 +61,17 @@ public:
         }
 
         HttpUpdater updater(nvs, std::move(watchdog), firmwareVersion);
-        return updater.performPendingHttpUpdate(url, wifi);
+        updater.performPendingHttpUpdate(url, wifi, mqttReady);
+    }
+
+    /**
+     * @brief Whether an update will be attempted during this boot.
+     *
+     * Lets startup skip optional subsystems (BLE) to leave RAM for the OTA: the device reboots
+     * after the attempt either way, so they come back on the next boot.
+     */
+    static bool isUpdatePending(const std::shared_ptr<NvsStore>& nvs) {
+        return nvs->contains(UPDATE_KEY);
     }
 
     static constexpr const char* UPDATE_KEY = "pending-update";
@@ -72,23 +84,47 @@ private:
         , firmwareVersion(firmwareVersion) {
     }
 
-    std::optional<config::RejectionCode> performPendingHttpUpdate(const std::string& url, const std::shared_ptr<WiFiDriver>& wifi) {
+    /**
+     * @brief Attempts the update, then reboots regardless of the outcome.
+     *
+     * Startup skips BLE while an update is pending (see isUpdatePending()), so rebooting after
+     * a failure too brings the device back up fully. The next boot reports the failure via the
+     * UPDATE_FAILED_KEY marker.
+     */
+    [[noreturn]] void performPendingHttpUpdate(const std::string& url, const std::shared_ptr<WiFiDriver>& wifi, const State& mqttReady) {
         LOGTI(UPDATE, "Updating from version %s via URL %s",
             firmwareVersion.c_str(), url.c_str());
 
+        // Mark that an update is being attempted. Unless the update succeeds, this marker
+        // survives the reboot -- whether we crashed or failed cleanly -- and triggers a
+        // rejection on the next boot so the server stops retrying.
+        nvs->set(UPDATE_FAILED_KEY, url);
+
         LOGTD(UPDATE, "Waiting for network...");
         if (!wifi->getNetworkReady().awaitSet(15s)) {
-            LOGTE(UPDATE, "Network not ready, aborting update");
-            return config::RejectionCode::Internal;
+            LOGTE(UPDATE, "Network not ready, aborting update, restarting...");
+            delayedRestart();
         }
+
+        // Let MQTT finish connecting first: two concurrent TLS handshakes (plus BLE) can exhaust
+        // internal RAM on ESP32-C6. Proceed without MQTT if it can't connect, though; an
+        // unreachable broker should not block the update.
+        LOGTD(UPDATE, "Waiting for MQTT...");
+        if (!mqttReady.awaitSet(15s)) {
+            LOGTW(UPDATE, "MQTT not ready, updating without it");
+        }
+
+        LOGTI(UPDATE, "Internal heap before update: %zu bytes free, largest free block %zu bytes",
+            heap_caps_get_free_size(MALLOC_CAP_INTERNAL), heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
 
         esp_http_client_config_t httpConfig = {};
         httpConfig.url = url.c_str();
         httpConfig.event_handler = httpEventHandler;
-        // Additional buffers to fit headers
-        // Updating directly via GitHub's release links requires these
+        // Additional buffers to fit headers. The TX buffer holds the request line, so it must
+        // fit the URL -- including redirect targets like GitHub's release asset links. Kept
+        // small: internal RAM is tight while MQTT's TLS session is also up.
         httpConfig.buffer_size = 4 * 1024;
-        httpConfig.buffer_size_tx = 12 * 1024;
+        httpConfig.buffer_size_tx = 2 * 1024;
         httpConfig.user_data = this;
         httpConfig.crt_bundle_attach = esp_crt_bundle_attach;
         httpConfig.keep_alive_enable = true;
@@ -96,28 +132,48 @@ private:
         esp_https_ota_config_t otaConfig = {};
         otaConfig.http_config = &httpConfig;
 
-        // Mark that an update is being attempted. If the device crashes
-        // during esp_https_ota(), this marker survives and triggers a
-        // rejection on the next boot so the server stops retrying.
-        nvs->set(UPDATE_FAILED_KEY, url);
+        esp_err_t ret = runOta(otaConfig);
+        if (ret == ESP_OK) {
+            nvs->remove(UPDATE_FAILED_KEY);
+            LOGTI(UPDATE, "Update succeeded, restarting...");
+        } else {
+            LOGTE(UPDATE, "Update failed (%s), restarting...", esp_err_to_name(ret));
+        }
+        delayedRestart();
+    }
 
-        esp_err_t ret;
+    /**
+     * @brief Equivalent of esp_https_ota(), but only holds the RAM copy of the CA bundle while
+     * connecting.
+     *
+     * The bundle is only needed for the TLS handshake(s) in esp_https_ota_begin(), which also
+     * follows redirects; freeing it before the download gives its RAM back while WiFi buffers
+     * the incoming image.
+     */
+    static esp_err_t runOta(const esp_https_ota_config_t& otaConfig) {
+        esp_https_ota_handle_t handle = nullptr;
+        esp_err_t err;
         {
             RamCertBundle ramCertBundle;
-            ret = esp_https_ota(&otaConfig);
+            err = esp_https_ota_begin(&otaConfig, &handle);
+        }
+        if (err != ESP_OK) {
+            return err;
+        }
+        if (handle == nullptr) {
+            return ESP_FAIL;
         }
 
-        // Clear the crash marker — we got here without crashing
-        nvs->remove(UPDATE_FAILED_KEY);
-
-        if (ret == ESP_OK) {
-            LOGTI(UPDATE, "Update succeeded, restarting...");
-            delayedRestart();
-            return std::nullopt;
+        err = esp_https_ota_perform(handle);
+        while (err == ESP_ERR_HTTPS_OTA_IN_PROGRESS) {
+            err = esp_https_ota_perform(handle);
         }
-        LOGTE(UPDATE, "Update failed (%s), continuing with regular boot",
-            esp_err_to_name(ret));
-        return config::RejectionCode::Internal;
+
+        if (err != ESP_OK) {
+            esp_https_ota_abort(handle);
+            return err;
+        }
+        return esp_https_ota_finish(handle);
     }
 
     static esp_err_t httpEventHandler(esp_http_client_event_t* event) {

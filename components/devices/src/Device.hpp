@@ -119,7 +119,15 @@ static void startDevice() {
     auto states = std::make_shared<ModuleStates>();
     KernelStatusTask::init(statusLed, states);
 
-    auto ble = initBle(boot.deviceConfig, networkConfig->getHostname(macAddress), "Ugly Duckling " + modelWithRevision, firmwareVersion, macAddress);
+    // Skip BLE while a firmware update is pending: the OTA's TLS handshake needs the RAM on
+    // ESP32-C6, and the device reboots after the update attempt either way
+    std::shared_ptr<BleDriver> ble;
+    if (HttpUpdater::isUpdatePending(legacyConfigNvs)) {
+        LOGI("Firmware update pending, not starting BLE");
+        ble = std::make_shared<BleDriver>();
+    } else {
+        ble = initBle(boot.deviceConfig, networkConfig->getHostname(macAddress), "Ugly Duckling " + modelWithRevision, firmwareVersion, macAddress);
+    }
 
     auto telemetryPublishQueue = std::make_shared<CopyQueue<bool>>("telemetry-publish", 1);
     auto telemetryPublisher = std::make_shared<TelemetryPublisher>(telemetryPublishQueue);
@@ -192,9 +200,9 @@ static void startDevice() {
     // by the first SYNC this boot publishes.
     auto pendingFirmwareRejection = std::make_shared<std::optional<RejectionCode>>();
 
-    // Handle any pending HTTP update (will reboot if update was required and was successful)
+    // Handle any pending HTTP update (reboots after the attempt, whether it succeeds or not)
     registerHttpUpdateCommand(mqttRoot, legacyConfigNvs);
-    auto firmwareDownloadRejection = HttpUpdater::performPendingHttpUpdateIfNecessary(legacyConfigNvs, wifi, watchdog, firmwareVersion);
+    auto firmwareDownloadRejection = HttpUpdater::performPendingHttpUpdateIfNecessary(legacyConfigNvs, wifi, states->mqttReady, watchdog, firmwareVersion);
 
     // Detect whether the bootloader rolled back from a failed OTA partition. This and a failed
     // download cannot co-occur: a failed download never writes a new partition, so there's nothing
