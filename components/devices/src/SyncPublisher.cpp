@@ -90,7 +90,7 @@ void initSyncTask(
     const std::shared_ptr<std::optional<RejectionCode>>& pendingConfigRejection,
     const std::shared_ptr<std::optional<RejectionCode>>& pendingFirmwareRejection,
     const std::string& firmwareVersion) {
-    Task::loop("sync", 4096, [mqttRoot, syncTriggerQueue, states, functionRegistry, deviceManifestEntry, networkManifestEntry, pendingConfigRejection, pendingFirmwareRejection, firmwareVersion](Task&) {
+    Task::loop("sync", 3072, [mqttRoot, syncTriggerQueue, states, functionRegistry, deviceManifestEntry, networkManifestEntry, pendingConfigRejection, pendingFirmwareRejection, firmwareVersion](Task&) {
         syncTriggerQueue->take();
         states->kernelReady.awaitSet();
         syncTriggerQueue->clear();

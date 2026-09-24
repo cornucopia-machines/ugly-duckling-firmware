@@ -49,7 +49,7 @@ void initTelemetryPublishTask(
     const std::shared_ptr<BleDriver>& ble,
     const std::shared_ptr<TelemetryCollector>& telemetryCollector,
     const std::shared_ptr<CopyQueue<bool>>& telemetryPublishQueue) {
-    Task::loop("telemetry", 8192, [publishInterval, watchdog, mqttRoot, batteryManager, powerManager, wifi, ble, telemetryCollector, telemetryPublishQueue](Task& task) {
+    Task::loop("telemetry", 5120, [publishInterval, watchdog, mqttRoot, batteryManager, powerManager, wifi, ble, telemetryCollector, telemetryPublishQueue](Task& task) {
         task.markWakeTime();
 
         if (batteryManager != nullptr) {

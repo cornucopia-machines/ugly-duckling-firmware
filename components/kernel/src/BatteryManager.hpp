@@ -34,7 +34,7 @@ public:
         std::shared_ptr<ShutdownManager> shutdownManager)
         : battery(std::move(battery))
         , shutdownManager(std::move(shutdownManager)) {
-        Task::loop("battery", 4096, [this](Task& task) {
+        Task::loop("battery", 3072, [this](Task& task) {
             checkBatteryVoltage(task);
         });
     }

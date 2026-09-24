@@ -44,7 +44,7 @@ public:
 class KernelStatusTask {
 public:
     static void init(const std::shared_ptr<LedDriver>& statusLed, const std::shared_ptr<ModuleStates>& states) {
-        Task::run("status-update", 3072, [statusLed, states](Task&) {
+        Task::run("status-update", 2048, [statusLed, states](Task&) {
             updateState(statusLed, states);
         });
     }
