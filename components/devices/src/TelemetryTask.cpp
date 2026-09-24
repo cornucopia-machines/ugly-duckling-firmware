@@ -2,6 +2,7 @@
 #include "PowerManager.hpp"
 #include "Queue.hpp"
 #include "Task.hpp"
+#include "TaskStats.hpp"
 #include "Telemetry.hpp"
 #include "Watchdog.hpp"
 #include "drivers/BleDriver.hpp"
@@ -88,6 +89,10 @@ void initTelemetryPublishTask(
 
             auto features = telemetry["features"].to<JsonArray>();
             telemetryCollector->collect(features); }, QoS::AtLeastOnce);
+
+        // Piggybacks on the telemetry cadence rather than running its own task, which would
+        // need a stack of its own
+        logTaskStackHighWaterMarks();
 
         // Signal that we are still alive
         watchdog->restart();
