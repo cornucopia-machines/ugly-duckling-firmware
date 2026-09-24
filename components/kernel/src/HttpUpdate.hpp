@@ -114,9 +114,6 @@ private:
             LOGTW(UPDATE, "MQTT not ready, updating without it");
         }
 
-        LOGTI(UPDATE, "Internal heap before update: %zu bytes free, largest free block %zu bytes",
-            heap_caps_get_free_size(MALLOC_CAP_INTERNAL), heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
-
         esp_http_client_config_t httpConfig = {};
         httpConfig.url = url.c_str();
         httpConfig.event_handler = httpEventHandler;
@@ -151,6 +148,9 @@ private:
      * the incoming image.
      */
     static esp_err_t runOta(const esp_https_ota_config_t& otaConfig) {
+        LOGTI(UPDATE, "Attempting OTA update from URL %s",
+            otaConfig.http_config->url);
+
         esp_https_ota_handle_t handle = nullptr;
         esp_err_t err;
         {

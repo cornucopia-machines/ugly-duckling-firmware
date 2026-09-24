@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Log.hpp>
 #include <Task.hpp>
 
 #include <esp_system.h>
@@ -16,6 +17,10 @@ namespace cornucopia::ugly_duckling::kernel {
  * (e.g. waiting for the MQTT outbox to drain), only this function needs to change.
  */
 [[noreturn]] inline void delayedRestart() {
+    // Restarts often happen at the end of a deep call chain (e.g. applying an MQTT `update`),
+    // so this is where the calling task's peak stack usage is known
+    LOGD("Restarting from task '%s', stack high-water mark: %u bytes unused",
+        pcTaskGetName(nullptr), static_cast<unsigned int>(uxTaskGetStackHighWaterMark(nullptr)));
     (void) fflush(stdout);
     fsync(fileno(stdout));
     Task::delay(5s);
