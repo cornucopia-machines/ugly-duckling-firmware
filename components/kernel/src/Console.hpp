@@ -2,6 +2,7 @@
 #include <Log.hpp>
 #include <Queue.hpp>
 
+#include <cstdarg>
 #include <memory>
 #include <string>
 #include <utility>
@@ -112,7 +113,12 @@ private:
         int length;
         {
             std::scoped_lock lock(bufferMutex);
-            length = vsnprintf(buffer, BUFFER_SIZE, format, args);
+            // vsnprintf consumes the va_list, so format from a copy and keep the original
+            // intact for the heap-buffer retry below
+            va_list argsCopy;
+            va_copy(argsCopy, args);
+            length = vsnprintf(buffer, BUFFER_SIZE, format, argsCopy);
+            va_end(argsCopy);
             if (length < 0) {
                 return "<Encoding error>";
             }
