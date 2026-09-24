@@ -2,6 +2,7 @@
 #include <Log.hpp>
 #include <Time.hpp>
 
+#include <esp_heap_caps.h>
 #include <freertos/FreeRTOS.h>    // NOLINT(misc-header-include-cycle)
 #include <freertos/task.h>        // NOLINT(misc-header-include-cycle)
 
@@ -80,7 +81,10 @@ public:
         TaskHandle_t handle = nullptr;
         auto result = xTaskCreate(executeTask, name.c_str(), stackSize, taskFunction, priority, &handle);
         if (result != pdPASS) {
-            LOGE("Failed to create task %s: %d", name.c_str(), result);
+            // Task stacks are allocated from internal RAM and need a single contiguous block
+            LOGE("Failed to create task %s with stack size %" PRIu32 ": %d (internal heap: %zu bytes free, largest free block %zu bytes)",
+                name.c_str(), stackSize, result,
+                heap_caps_get_free_size(MALLOC_CAP_INTERNAL), heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
             delete taskFunction;
             return {};
         }
