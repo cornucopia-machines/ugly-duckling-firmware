@@ -1,8 +1,8 @@
 [wokwi]
 version = 1
-firmware = '../build/flasher_args.json'
-elf = '../build/ugly-duckling.elf'
-gdbServerPort=3333
+firmware = '../build-spinach/flasher_args.json'
+elf = '../build-spinach/ugly-duckling.elf'
+gdbServerPort = 3333
 
 [[chip]]
 name = 'bq27220'

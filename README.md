@@ -313,10 +313,11 @@ idf.py monitor
 ### Simulation
 
 Can use [Wokwi](https://wokwi.com/) to run the firmware in a simulated environment.
-For this the firmware must be built with `-DWOKWI=1`.
+For this the firmware must be built with `-DWOKWI=1`. [`wokwi/wokwi.toml`](wokwi/wokwi.toml)
+loads the firmware from `build-spinach`:
 
 ```bash
-idf.py -DUD_GEN=MK6_REV3 -DUD_DEBUG=0 -DWOKWI=1 build
+. tools/build.sh spinach -DUD_GEN=MK6_REV3 -DUD_DEBUG=0 -DWOKWI=1 build
 ```
 
 The opening a diagram in the [`wokwi`](wokwi) directory will start the simulation.
