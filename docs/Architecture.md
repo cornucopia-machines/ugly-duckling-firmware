@@ -178,7 +178,7 @@ Bytes used (stack size minus high-water mark), measured in September 2026 with d
 | `telemetry`             | 5120  | 1428          | 2096          | 2160                 |
 | `plot`                  | 4096  | 1804          | 2516          | 2744                 |
 | `wifi-driver`           | 4096  | 1420          | 2616          | 1988                 |
-| `mqtt:log`              | 4096  | 1544          | 2328          | 2328                 |
+| `mqtt:log`              | 3072  | 1544          | 2328          | 2328                 |
 | `sync`                  | 4096  | 1552          | 2196          | 2300                 |
 | `mqtt:incoming`         | 4096  | 1476          | 2088          | 2052                 |
 | `status-update`         | 3072  | 1016          | 1576          | 1676                 |
