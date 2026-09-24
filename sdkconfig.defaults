@@ -203,15 +203,23 @@ CONFIG_ESP_COEX_POWER_MANAGEMENT=y
 CONFIG_BT_NIMBLE_ROLE_CENTRAL=n
 CONFIG_BT_NIMBLE_ROLE_OBSERVER=n
 
+# Trim NimBLE's RAM: internal RAM is tight on ESP32-C6 with WiFi, MQTT's TLS session and BLE
+# all running (BLE measured at ~53 KB of heap). We only ever talk to one phone/provisioner at a
+# time, and GATT traffic is small, so:
+# - one connection instead of 3 (each slot costs ~1 KB DRAM per the controller's Kconfig);
+# - half the shared host/controller mbuf pools (MSYS 1: 24 x 128 B, MSYS 2: 24 x 320 B) and
+#   half the host ACL buffers (24 x 255 B). 12 is also IDF's MSYS 1 default on chips without
+#   the NimBLE controller.
+CONFIG_BT_NIMBLE_MAX_CONNECTIONS=1
+CONFIG_BT_NIMBLE_MSYS_1_BLOCK_COUNT=12
+CONFIG_BT_NIMBLE_MSYS_2_BLOCK_COUNT=12
+CONFIG_BT_NIMBLE_TRANSPORT_ACL_FROM_LL_COUNT=12
+
 # --- Optional NimBLE size-reduction knobs (review before enabling) -------------
 # Default NimBLE config compiles in all four roles, BLE5 features, and supports
 # up to 3 simultaneous connections — together this is ~235 KB in libble_app.a.
 #
 # Estimated savings (combined ~60–100 KB in libble_app.a; verify with `idf.py size`):
-#
-# # Cap simultaneous connections at 1 — we only ever talk to one phone/provisioner.
-# # Each extra slot costs ~1–2 KB RAM + some flash.
-# # CONFIG_BT_NIMBLE_MAX_CONNECTIONS=1
 #
 # # Disable periodic advertising (we don't use it; separate from CONFIG_BT_NIMBLE_EXT_ADV,
 # # which we do use — see above).
