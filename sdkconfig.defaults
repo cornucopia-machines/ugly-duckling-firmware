@@ -133,6 +133,12 @@ CONFIG_MBEDTLS_TLS_CLIENT_ONLY=y
 # DS peripheral requires eFuse-provisioned keys; we use PEM keys in NVS
 CONFIG_MBEDTLS_HARDWARE_RSA_DS_PERIPHERAL=n
 
+# Allocate each TLS session's record buffers only while data is being sent or received, instead
+# of holding them for the connection's lifetime. The long-lived MQTT session otherwise pins a
+# 16 KB input buffer (MBEDTLS_SSL_IN_CONTENT_LEN) plus a 4 KB output buffer, and internal RAM
+# is tight on ESP32-C6 with BLE running. Costs some allocation churn per message.
+CONFIG_MBEDTLS_DYNAMIC_BUFFER=y
+
 # Use the "common" CA bundle (covers the most widely-used commercial roots)
 # instead of FULL. FULL ships ~150 CAs (~110 KB of .rodata in libmbed-builtin);
 # CMN is roughly half that. TODO: switch to a hand-picked custom bundle (just
