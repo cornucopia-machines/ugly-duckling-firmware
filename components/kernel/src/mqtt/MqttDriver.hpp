@@ -676,10 +676,16 @@ private:
 #endif
         for (const auto& subscription : subscriptions) {
             if (topicMatches(subscription.topic.c_str(), topic.c_str())) {
-                Task::run("mqtt:incoming-handler", 4096, [topic, payload, subscription](Task& _task) {
+                // Handlers can run deep: applying an `update` copies nested config documents, and
+                // ArduinoJson's copy recurses once per nesting level. 4 KB overflowed on a device
+                // config with peripherals and functions.
+                Task::run("mqtt:incoming-handler", 8192, [topic, payload, subscription](Task& _task) {
                     JsonDocument json;
                     deserializeJson(json, payload);
                     subscription.handle(topic, json.as<JsonObject>());
+                    // On ESP-IDF, stack sizes and the high-water mark are in bytes
+                    LOGTD(MQTT, "Handled '%s', stack high-water mark: %u bytes unused",
+                        topic.c_str(), static_cast<unsigned int>(uxTaskGetStackHighWaterMark(nullptr)));
                 });
                 return;
             }
