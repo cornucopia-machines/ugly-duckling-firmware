@@ -135,6 +135,62 @@ register (whether requests went out and whether anything answered), the time val
 sent, and — for every arming of `RTC in sync` — which source armed it and what the clock read at
 that moment.
 
+## Task stacks
+
+Every task's stack is allocated from internal RAM, so oversized stacks eat directly into the heap
+headroom that MQTT messages, TLS and config updates need at runtime. Size them from measurements,
+not guesswork.
+
+### Measuring
+
+Debug builds (`CONFIG_FREERTOS_USE_TRACE_FACILITY=y`, set in `sdkconfig.debug.defaults`) log every
+task's stack high-water mark after each telemetry publish, least headroom first:
+
+```text
+D (131983) ud:global: Task stack high-water marks (bytes unused): ipc0=352, status-update=472, ...
+```
+
+The high-water mark is the least stack a task has had unused since boot, so read it only after the
+device has been through its busy paths in a single boot: an MQTT reconnect over TLS, a device-config
+update, an OTA, and a WiFi drop and reconnect. Short-lived tasks (`mqtt:incoming-handler`,
+`update`, `shutdown`) don't appear in the list while they aren't running.
+
+### Sizing
+
+Sizes are shared by both platforms, so size for **Spinach**: Xtensa's windowed register ABI and
+larger interrupt frames make the same code use about **1.5×** the stack it does on Carrot's RISC-V
+core (1.4–1.8× observed, highest for the smallest tasks). Keep at least 30% of the stack unused on
+Spinach, and more for tasks that parse JSON or whose worst case is rare.
+
+A Spinach build running in Wokwi matched real Spinach hardware to within about 100 bytes for most
+tasks, so it is a reasonable proxy. It does not exercise TLS (the local Mosquitto is plain MQTT),
+real WiFi reconnects, or OTA.
+
+### Observed usage
+
+Bytes used (stack size minus high-water mark), measured in September 2026 with debug builds:
+
+| Task                    | Stack | Carrot (Mk13) | Spinach (MK8) | Spinach (Wokwi, MK6) |
+| ----------------------- | ----- | ------------- | ------------- | -------------------- |
+| `mqtt:incoming-handler` | 8192  | 4240 ¹        | –             | –                    |
+| `mqtt_task` (esp-mqtt)  | 6144  | 4240          | 3724          | 3584 ²               |
+| `mqtt`                  | 5120  | 2572          | 2988          | 2976                 |
+| `telemetry`             | 5120  | 1428          | 2096          | 2160                 |
+| `plot`                  | 4096  | 1804          | 2516          | 2744                 |
+| `wifi-driver`           | 4096  | 1420          | 2616          | 1988                 |
+| `mqtt:log`              | 4096  | 1544          | 2328          | 2328                 |
+| `sync`                  | 4096  | 1552          | 2196          | 2300                 |
+| `mqtt:incoming`         | 4096  | 1476          | 2088          | 2052                 |
+| `status-update`         | 3072  | 1016          | 1576          | 1676                 |
+| `ntp-sync`              | 3072  | 1176          | 1716          | 1716                 |
+| `flow-meter`            | 3072  | 584           | 1736          | 984                  |
+| `battery`               | 3072  | 864           | 1508          | 1572                 |
+| `battery-monitor`       | 3072  | 1208          | –             | –                    |
+| `switch-manager`        | 3072  | 1124          | 1092          | 1104                 |
+| `status`                | 2048  | 688           | 1176          | 1224                 |
+
+¹ During a device-config update. ² No TLS in Wokwi.
+
 ## Device (hardware model)
 
 Each hardware revision is a concrete C++ class that:
