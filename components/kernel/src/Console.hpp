@@ -29,7 +29,7 @@ public:
     }
 
 private:
-    static int processLogFunc(const char* format, va_list args) {
+    [[gnu::format(printf, 1, 0)]] static int processLogFunc(const char* format, va_list args) {
         std::string message = renderMessage(format, args);
         return processLog(message);
     }
@@ -109,7 +109,7 @@ private:
         return count;
     }
 
-    static std::string renderMessage(const char* format, va_list args) {
+    [[gnu::format(printf, 1, 0)]] static std::string renderMessage(const char* format, va_list args) {
         int length;
         {
             std::scoped_lock lock(bufferMutex);
@@ -128,10 +128,10 @@ private:
         }
 
         // The buffer was too small, try again with a heap-allocated buffer instead, but still limit length
-        length = std::min(length, 2048);
-        char* heapBuffer = new char[length + 1];
-        (void) vsnprintf(heapBuffer, length + 1, format, args);
-        std::string result(heapBuffer, length);
+        auto size = static_cast<size_t>(std::min(length, 2048));
+        char* heapBuffer = new char[size + 1];
+        (void) vsnprintf(heapBuffer, size + 1, format, args);
+        std::string result(heapBuffer, size);
         delete[] heapBuffer;
         return result;
     }

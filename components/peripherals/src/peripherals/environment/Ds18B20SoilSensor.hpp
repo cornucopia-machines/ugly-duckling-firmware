@@ -7,6 +7,7 @@
 
 #include <ds18x20.h>
 
+#include <limits>
 #include <memory>
 #include <optional>
 #include <string>
@@ -52,7 +53,7 @@ public:
             LOGTV(ENV, "Locating DS18B20 sensors on bus...");
             size_t sensorCount;
             // TODO How many slots do we need here actually?
-            int maxSensors = 1;
+            size_t maxSensors = 1;
 
             esp_err_t searchResult = ds18x20_scan_devices(pin->getGpio(), &sensor, maxSensors, &sensorCount);
             if (searchResult == ESP_OK) {
@@ -92,7 +93,7 @@ private:
             return temperature;
         },
         1s,
-        NAN
+        std::numeric_limits<double>::quiet_NaN()
     };
 };
 

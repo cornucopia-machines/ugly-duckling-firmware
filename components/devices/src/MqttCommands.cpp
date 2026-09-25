@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <memory>
+#include <ratio>
 #include <string>
 
 using namespace std::chrono;
@@ -23,7 +24,7 @@ void registerBasicCommands(const std::shared_ptr<MqttRoot>& mqttRoot) {
     });
     mqttRoot->registerCommand("sleep", [](const JsonObject& request, JsonObject& _response) {
         seconds duration = seconds(request["duration"].as<int64_t>());
-        esp_sleep_enable_timer_wakeup((microseconds(duration)).count());
+        esp_sleep_enable_timer_wakeup(duration_cast<std::chrono::duration<uint64_t, std::micro>>(duration).count());
         LOGI("Sleeping deep for %lld seconds",
             duration.count());
         esp_deep_sleep_start();

@@ -35,7 +35,7 @@ class RamCertBundle {
 public:
     RamCertBundle() {
 #if SOC_CPU_MISALIGNED_ACCESS_ON_PMP_MISMATCH_ISSUE
-        size_t size = x509CrtBundleEnd - x509CrtBundleStart;
+        auto size = static_cast<size_t>(x509CrtBundleEnd - x509CrtBundleStart);
         buffer = static_cast<uint8_t*>(heap_caps_malloc(size, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
         if (buffer == nullptr) {
             LOGW("Failed to allocate %zu bytes for CA bundle in RAM, using bundle in flash", size);

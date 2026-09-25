@@ -7,6 +7,7 @@
 
 #include <chrono>
 #include <functional>
+#include <ratio>
 #include <string>
 #include <utility>
 
@@ -56,8 +57,9 @@ public:
 
     bool restart() {
         // TODO Add proper error handling
-        if (esp_timer_restart(timer, timeout.count()) == ESP_ERR_INVALID_STATE) {
-            esp_timer_start_once(timer, timeout.count());
+        auto timeoutUs = duration_cast<duration<uint64_t, std::micro>>(timeout).count();
+        if (esp_timer_restart(timer, timeoutUs) == ESP_ERR_INVALID_STATE) {
+            esp_timer_start_once(timer, timeoutUs);
         }
         callback(WatchdogState::Started);
         return true;

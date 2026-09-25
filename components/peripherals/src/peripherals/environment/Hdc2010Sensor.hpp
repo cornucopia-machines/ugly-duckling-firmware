@@ -61,8 +61,8 @@ private:
                 // Burst-read TEMP_LOW (0x00), TEMP_HIGH (0x01), HUM_LOW (0x02), HUM_HIGH (0x03)
                 uint8_t buf[4];
                 device->readReg(0x00, buf, 4);
-                uint16_t rawTemp = static_cast<uint16_t>(buf[0]) | (static_cast<uint16_t>(buf[1]) << 8);
-                uint16_t rawHum = static_cast<uint16_t>(buf[2]) | (static_cast<uint16_t>(buf[3]) << 8);
+                auto rawTemp = static_cast<uint16_t>(buf[0] | (buf[1] << 8));
+                auto rawHum = static_cast<uint16_t>(buf[2] | (buf[3] << 8));
                 // Datasheet §8.3.4: maps 0–65535 to -40…+125 °C (range = 165 °C)
                 double temp = (static_cast<double>(rawTemp) / 65536.0 * 165.0) - 40.0;
                 // Datasheet §8.3.4: maps 0–65535 to 0…100 %RH

@@ -65,7 +65,7 @@ protected:
             LOGD("Could not read light level: %s", esp_err_to_name(res));
             return std::numeric_limits<double>::quiet_NaN();
         }
-        return lux;
+        return static_cast<double>(lux);
     }
 
 private:

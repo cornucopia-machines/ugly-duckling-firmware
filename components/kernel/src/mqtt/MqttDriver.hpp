@@ -554,8 +554,8 @@ private:
                 break;
             }
             case MQTT_EVENT_DATA: {
-                std::string topic(event->topic, event->topic_len);
-                std::string payload(event->data, event->data_len);
+                std::string topic(event->topic, static_cast<size_t>(event->topic_len));
+                std::string payload(event->data, static_cast<size_t>(event->data_len));
                 LOGTV(MQTT, "Received message on topic '%s'",
                     topic.c_str());
                 incomingQueue.offerIn(MQTT_QUEUE_TIMEOUT, IncomingMessage { .topic = topic, .payload = payload });

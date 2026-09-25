@@ -62,7 +62,7 @@ public:
 
         float voltage;
         ESP_ERROR_THROW(ina219_get_bus_voltage(&device, &voltage));
-        return voltage;
+        return static_cast<double>(voltage);
     }
 
     double getShuntVoltage() {
@@ -73,7 +73,7 @@ public:
 
         float voltage;
         ESP_ERROR_THROW(ina219_get_shunt_voltage(&device, &voltage));
-        return voltage;
+        return static_cast<double>(voltage);
     }
 
     double getCurrent() {
@@ -84,7 +84,7 @@ public:
 
         float current;
         ESP_ERROR_THROW(ina219_get_current(&device, &current));
-        return current;
+        return static_cast<double>(current);
     }
 
     double getPower() {
@@ -95,7 +95,7 @@ public:
 
         float power;
         ESP_ERROR_THROW(ina219_get_power(&device, &power));
-        return power;
+        return static_cast<double>(power);
     }
 
 private:

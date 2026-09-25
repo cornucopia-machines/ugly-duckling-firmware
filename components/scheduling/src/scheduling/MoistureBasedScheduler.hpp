@@ -9,6 +9,7 @@
 #include <concepts>
 #include <cstdint>
 #include <functional>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <stdexcept>
@@ -52,15 +53,15 @@ struct MoistureBasedSchedulerSettings {
     s valveTimeout { 5min };
 
     // Quotas / safety
-    Liters maxTotalVolume { NAN };
+    Liters maxTotalVolume { std::numeric_limits<double>::quiet_NaN() };
     // TODO Make this work
     // Liters noRiseAfterVolume { NAN };
 };
 
 struct MoistureBasedSchedulerTelemetry {
-    Percent rawMoisture { NAN };
-    Percent moisture { NAN };    // filtered
-    double slope { 0.0 };        // % / min
+    Percent rawMoisture { std::numeric_limits<double>::quiet_NaN() };
+    Percent moisture { std::numeric_limits<double>::quiet_NaN() };    // filtered
+    double slope { 0.0 };                                             // % / min
 
     // Learned soil model
     double gain { 0.20 };    // % / L (steady-state gain, K)
@@ -251,14 +252,14 @@ private:
 
     // Internal sampling
     std::optional<ms> lastSample;
-    Percent lastMoisture { NAN };
+    Percent lastMoisture { std::numeric_limits<double>::quiet_NaN() };
 
     // Pulse bookkeeping
     Liters volumePlanned { 0.0 };
     Liters volumeDelivered { 0.0 };
     ms waterStartTime { 0ms };
     ms pulseEndTime { 0ms };
-    Percent moistureAtPulseEnd { NAN };
+    Percent moistureAtPulseEnd { std::numeric_limits<double>::quiet_NaN() };
     double slopePeak { 0.0 };
     bool sawRise { false };
 
