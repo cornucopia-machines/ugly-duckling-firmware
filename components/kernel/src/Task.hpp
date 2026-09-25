@@ -178,4 +178,33 @@ private:
     TickType_t lastWakeTime { xTaskGetTickCount() };
 };
 
+/**
+ * @brief Raise the current task's priority for the lifetime of the guard.
+ *
+ * @details Use this around short, timing-sensitive sections: `Task::delay()` only guarantees a minimum,
+ * and after it expires the task still has to compete with every other ready task at its priority.
+ * The priority is only ever raised, never lowered, and is restored when the guard goes out of scope.
+ */
+class TaskPriorityGuard {
+public:
+    explicit TaskPriorityGuard(UBaseType_t priority)
+        : originalPriority(uxTaskPriorityGet(nullptr)) {
+        if (priority > originalPriority) {
+            vTaskPrioritySet(nullptr, priority);
+        }
+    }
+
+    ~TaskPriorityGuard() {
+        vTaskPrioritySet(nullptr, originalPriority);
+    }
+
+    TaskPriorityGuard(const TaskPriorityGuard&) = delete;
+    TaskPriorityGuard& operator=(const TaskPriorityGuard&) = delete;
+    TaskPriorityGuard(TaskPriorityGuard&&) = delete;
+    TaskPriorityGuard& operator=(TaskPriorityGuard&&) = delete;
+
+private:
+    const UBaseType_t originalPriority;
+};
+
 }    // namespace cornucopia::ugly_duckling::kernel
