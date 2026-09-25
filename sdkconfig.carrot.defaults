@@ -31,6 +31,22 @@ CONFIG_RTC_CLK_SRC_EXT_CRYS=y
 # CPU wake" goal and hasn't been tested; do not assume it has the same problem.
 # CONFIG_ESP_WIFI_ENHANCED_LIGHT_SLEEP=y
 
+# Internal RAM is tight on ESP32-C6 with BLE running. Static RX buffers (~1.6 KB each) are
+# allocated when WiFi starts and held until it stops; 6 (down from the default 10) still matches
+# the AMPDU RX block-ack window (ESP_WIFI_RX_BA_WIN=6), as IDF recommends. Costs some peak RX
+# throughput (slower OTA downloads) and more dropped frames in bursts, which TCP retransmits.
+CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=6
+
+# On ESP32-C6, IRAM and DRAM are the same SRAM, so every WiFi function placed in IRAM for speed
+# comes out of the heap. Keep WiFi library code in flash instead (IDF estimates: IRAM_OPT >10 KB,
+# EXTRA_IRAM_OPT >5 KB, RX_IRAM_OPT >17 KB). Costs WiFi throughput and some latency, which
+# MQTT and occasional OTA downloads can afford.
+# ESP_WIFI_SLP_IRAM_OPT stays on (IDF's default on C6): it keeps the beacon-reception path in
+# IRAM, which lowers the average current in WiFi power-save mode.
+CONFIG_ESP_WIFI_IRAM_OPT=n
+CONFIG_ESP_WIFI_EXTRA_IRAM_OPT=n
+CONFIG_ESP_WIFI_RX_IRAM_OPT=n
+
 #
 # BLE controller sleep — allows light sleep between advertising events (C6-specific config name).
 # ESP-IDF defaults to BT_LE_LP_CLK_SRC_MAIN_XTAL (keeps the main XTAL powered during light sleep),

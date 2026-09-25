@@ -54,7 +54,7 @@ public:
         // Enough to tell at a glance whether the pack is charging on the bench: the
         // temperature, the current flowing in or out, and the gauge's own flag word.
         // Current is positive while charging.
-        Task::loop("battery-monitor", 4096, [driver](Task& task) {
+        Task::loop("battery-monitor", 3072, [driver](Task& task) {
             // Rendered separately so a failed read shows as '?' rather than a plausible 0x0000.
             char statusText[8];
             auto status = driver->getBatteryStatus();

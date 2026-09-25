@@ -2,6 +2,7 @@
 #include "PowerManager.hpp"
 #include "Queue.hpp"
 #include "Task.hpp"
+#include "TaskStats.hpp"
 #include "Telemetry.hpp"
 #include "Watchdog.hpp"
 #include "drivers/BleDriver.hpp"
@@ -48,7 +49,7 @@ void initTelemetryPublishTask(
     const std::shared_ptr<BleDriver>& ble,
     const std::shared_ptr<TelemetryCollector>& telemetryCollector,
     const std::shared_ptr<CopyQueue<bool>>& telemetryPublishQueue) {
-    Task::loop("telemetry", 8192, [publishInterval, watchdog, mqttRoot, batteryManager, powerManager, wifi, ble, telemetryCollector, telemetryPublishQueue](Task& task) {
+    Task::loop("telemetry", 5120, [publishInterval, watchdog, mqttRoot, batteryManager, powerManager, wifi, ble, telemetryCollector, telemetryPublishQueue](Task& task) {
         task.markWakeTime();
 
         if (batteryManager != nullptr) {
@@ -88,6 +89,10 @@ void initTelemetryPublishTask(
 
             auto features = telemetry["features"].to<JsonArray>();
             telemetryCollector->collect(features); }, QoS::AtLeastOnce);
+
+        // Piggybacks on the telemetry cadence rather than running its own task, which would
+        // need a stack of its own
+        logTaskStackHighWaterMarks();
 
         // Signal that we are still alive
         watchdog->restart();

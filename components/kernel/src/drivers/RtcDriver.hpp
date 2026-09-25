@@ -55,7 +55,7 @@ public:
             markInSync("retained across reboot");
         }
 
-        Task::run("ntp-sync", 4096, [this, &networkReady](Task& _task) {
+        Task::run("ntp-sync", 3072, [this, &networkReady](Task& _task) {
             networkReady.awaitSet();
             ESP_ERROR_CHECK(esp_netif_sntp_start());
             LOGTI(RTC, "Started SNTP client; servers: %s", describeServers().c_str());

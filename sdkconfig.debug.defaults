@@ -8,3 +8,7 @@ CONFIG_COMPILER_OPTIMIZATION_DEBUG=y
 
 # Enable frame pointers for better backtraces in debug builds
 CONFIG_ESP_SYSTEM_USE_FRAME_POINTER=y
+
+# Needed for uxTaskGetSystemState(), which logTaskStackHighWaterMarks() uses to report every
+# task's stack headroom at debug level (costs a few bytes per task control block)
+CONFIG_FREERTOS_USE_TRACE_FACILITY=y
