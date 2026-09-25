@@ -163,7 +163,7 @@ void PulseCounterManager::start() {
     ulpStarted = true;
 
     // NOLINTNEXTLINE(clang-analyzer-security.PointerSub) -- linker-emitted symbols, not a real array
-    size_t size = ulp_pulse_counter_bin_end - ulp_pulse_counter_bin_start;
+    auto size = static_cast<size_t>(ulp_pulse_counter_bin_end - ulp_pulse_counter_bin_start);
     LOGTD(PULSE, "Loading ULP binary (%zu bytes from %p to %p)", size, ulp_pulse_counter_bin_start, ulp_pulse_counter_bin_end);
 #ifdef CONFIG_ULP_COPROC_TYPE_RISCV
     // Stop any ULP timer still running from a previous boot (the RTC domain
@@ -191,11 +191,11 @@ void PulseCounterManager::start() {
 #ifdef UD_DEBUG
     // Give the ULP a moment to run and halt; then check registers to see if it actually executed.
     Task::delay(100ms);
-    // NOLINTBEGIN(cppcoreguidelines-pro-type-cstyle-cast,performance-no-int-to-ptr) -- ESP-IDF REG_READ macro
+    // NOLINTBEGIN(cppcoreguidelines-pro-type-cstyle-cast,performance-no-int-to-ptr,clang-analyzer-core.FixedAddressDereference) -- ESP-IDF REG_READ macro
     uint32_t cocpuCtrl = REG_READ(RTC_CNTL_COCPU_CTRL_REG);
     uint32_t sensState = REG_READ(SENS_SAR_COCPU_STATE_REG);
     uint32_t intRaw = REG_READ(RTC_CNTL_INT_RAW_REG);
-    // NOLINTEND(cppcoreguidelines-pro-type-cstyle-cast,performance-no-int-to-ptr)
+    // NOLINTEND(cppcoreguidelines-pro-type-cstyle-cast,performance-no-int-to-ptr,clang-analyzer-core.FixedAddressDereference)
     LOGTD(PULSE, "COCPU_CTRL=0x%" PRIx32 " SENSE=0x%" PRIx32 " DONE=%d TRAP=%d TRAP_INT_RAW=%d started=%" PRIu32,
         cocpuCtrl,
         sensState,

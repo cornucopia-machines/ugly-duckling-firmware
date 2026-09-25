@@ -1,17 +1,17 @@
 #include "State.hpp"
 
 #include "freertos/idf_additions.h"
+#include "freertos/projdefs.h"
 
 namespace cornucopia::ugly_duckling::kernel {
 
 bool StateSource::setFromISR() const {
-    return hasAllBits(setBitsFromISR(eventBits | STATE_CHANGE_BIT_MASK));
+    return setBitsFromISR(eventBits | STATE_CHANGE_BIT_MASK) == pdPASS;
 }
 
 bool StateSource::clearFromISR() const {
-    bool cleared = hasAllBits(xEventGroupClearBitsFromISR(eventGroup, eventBits));
-    setBitsFromISR(STATE_CHANGE_BIT_MASK);
-    return cleared;
+    bool queued = xEventGroupClearBitsFromISR(eventGroup, eventBits) == pdPASS;
+    return setBitsFromISR(STATE_CHANGE_BIT_MASK) == pdPASS && queued;
 }
 
 }    // namespace cornucopia::ugly_duckling::kernel

@@ -30,7 +30,7 @@ public:
                 }
                 auto length = record.message.length();
                 // Remove the level prefix
-                auto messageStart = 2;
+                size_t messageStart = 2;
                 // Remove trailing newline
                 auto messageEnd = record.message[length - 1] == '\n'
                     ? length - 1

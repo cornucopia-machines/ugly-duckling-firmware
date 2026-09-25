@@ -22,6 +22,9 @@
 
 #include <ArduinoJson.h>
 #include <esp_random.h>
+// NimBLE's os_mbuf.h has inline functions with implicit narrowing conversions
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wconversion"
 #include <host/ble_gatt.h>
 #include <host/ble_hs.h>    // NOLINT(misc-header-include-cycle) -- ble_hs.h and ble_gap.h include each other; cycle is in ESP-IDF, not our code
 #include <host/ble_hs_mbuf.h>
@@ -33,6 +36,7 @@
 #include <services/dis/ble_svc_dis.h>
 #include <services/gap/ble_svc_gap.h>
 #include <services/gatt/ble_svc_gatt.h>
+#pragma GCC diagnostic pop
 #endif
 
 using namespace std::chrono;
@@ -183,7 +187,7 @@ public:
             if (connHandle < 0) {
                 return;
             }
-            struct os_mbuf* om = ble_hs_mbuf_from_flat(wifiStatus.data(), wifiStatus.size());
+            struct os_mbuf* om = ble_hs_mbuf_from_flat(wifiStatus.data(), static_cast<uint16_t>(wifiStatus.size()));
             if (om == nullptr) {
                 LOGTE(BLE, "Failed to allocate mbuf for WiFi status notification");
                 return;
@@ -350,7 +354,7 @@ private:
                 // startAdvertising() for why. ble_npl_callout_reset both (re)arms the callout
                 // and is safe to call while already pending, so no separate stop-first step.
                 ble_npl_error_t err = ble_npl_callout_reset(
-                    &driver->advRestartCallout, ble_npl_time_ms_to_ticks32(driver->advBurstInterval.count()));
+                    &driver->advRestartCallout, ble_npl_time_ms_to_ticks32(static_cast<uint32_t>(driver->advBurstInterval.count())));
                 if (err != BLE_NPL_OK) {
                     LOGTE(BLE, "Failed to arm advertising restart callout: 0x%02x", err);
                 }
@@ -429,7 +433,7 @@ private:
         if (ctxt->op != BLE_GATT_ACCESS_OP_READ_CHR) {
             return BLE_ATT_ERR_UNLIKELY;
         }
-        int rc = os_mbuf_append(ctxt->om, instance->wifiStatus.data(), instance->wifiStatus.size());
+        int rc = os_mbuf_append(ctxt->om, instance->wifiStatus.data(), static_cast<uint16_t>(instance->wifiStatus.size()));
         return rc == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
     }
 
@@ -648,7 +652,7 @@ private:
 
     static int userDescAccessCallback(uint16_t /* conn_handle */, uint16_t /* attr_handle */, struct ble_gatt_access_ctxt* ctxt, void* arg) {
         const char* label = static_cast<const char*>(arg);
-        int rc = os_mbuf_append(ctxt->om, label, strlen(label));
+        int rc = os_mbuf_append(ctxt->om, label, static_cast<uint16_t>(strlen(label)));
         return rc == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
     }
 

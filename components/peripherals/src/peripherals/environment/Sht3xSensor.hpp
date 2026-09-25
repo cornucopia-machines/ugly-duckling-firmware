@@ -61,7 +61,7 @@ private:
             esp_err_t res = sht3x_measure(&sensor, &fTemp, &fHumidity);
             if (res == ESP_OK) {
                 LOGTV(ENV, "Measured temperature: %.2f °C, humidity: %.2f %%",
-                    fTemp, fHumidity);
+                    static_cast<double>(fTemp), static_cast<double>(fHumidity));
                 return Reading { fTemp, fHumidity };
             }
             LOGTD(ENV, "Could not measure temperature: %s", esp_err_to_name(res));

@@ -207,7 +207,7 @@ private:
                 // Keep running while we are receiving data
                 watchdog->restart();
                 auto beforeBatch = downloaded / DOWNLOAD_NOTIFICATION_BATCH;
-                downloaded += event->data_len;
+                downloaded += static_cast<size_t>(event->data_len);
                 auto afterBatch = downloaded / DOWNLOAD_NOTIFICATION_BATCH;
                 if (beforeBatch < afterBatch) {
                     LOGTI(UPDATE, "Downloaded %.02f KB", ((double) downloaded / 1024.0));

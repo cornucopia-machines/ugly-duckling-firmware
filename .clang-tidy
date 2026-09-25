@@ -1,9 +1,21 @@
 Checks:
   - bugprone-*
   - -bugprone-easily-swappable-parameters
-  - cert-*
-  - -cert-err58-cpp
-  - -cert-dcl58-cpp
+  # Most cert-* checks are aliases of checks enabled elsewhere, and each enabled name runs the check again.
+  # Only the ones that have no other name are listed. cert-err33-c is bugprone-unused-return-value with a
+  # different list of functions (C library calls), so it adds coverage.
+  - cert-dcl50-cpp
+  - cert-env33-c
+  - cert-err33-c
+  - cert-err34-c
+  - cert-err52-cpp
+  - cert-err60-cpp
+  - cert-flp30-c
+  - cert-mem57-cpp
+  - cert-msc50-cpp
+  - cert-msc51-cpp
+  - cert-oop57-cpp
+  - cert-oop58-cpp
   - clang-analyzer-*
   - -clang-analyzer-core.StackAddressEscape # False positive in ArduinoJson's JsonDocument move constructor
   - -clang-analyzer-cplusplus.NewDeleteLeaks # False positives from ArduinoJson placement new and std::function internals
@@ -24,26 +36,42 @@ Checks:
   - -cppcoreguidelines-pro-type-union-access
   - -cppcoreguidelines-pro-type-vararg
   - -cppcoreguidelines-special-member-functions
+  # Aliases of misc-*, modernize-*, bugprone-* and performance-* checks enabled above and below
+  - -cppcoreguidelines-c-copy-assignment-signature
+  - -cppcoreguidelines-explicit-virtual-functions
+  - -cppcoreguidelines-macro-to-enum
+  - -cppcoreguidelines-narrowing-conversions
+  - -cppcoreguidelines-noexcept-destructor
+  - -cppcoreguidelines-noexcept-move-operations
+  - -cppcoreguidelines-noexcept-swap
+  - -cppcoreguidelines-use-default-member-init
+  # We don't use coroutines
+  - -cppcoreguidelines-avoid-capturing-lambda-coroutines
+  - -cppcoreguidelines-avoid-reference-coroutine-parameters
+  - -cppcoreguidelines-no-suspend-with-lock
   - google-*
   - -google-build-using-namespace
   - -google-explicit-constructor
   - -google-global-names-in-headers
   - -google-objc-*
   - -google-readability-todo
-  - hicpp-*
-  - -hicpp-avoid-c-arrays
-  - -hicpp-avoid-goto
-  - -hicpp-explicit-conversions
-  - -hicpp-member-init
-  - -hicpp-no-array-decay
-  - -hicpp-signed-bitwise
-  - -hicpp-special-member-functions
-  - -hicpp-vararg
-  - llvm-*
-  - -llvm-header-guard
-  - -llvm-include-order # We are managing include order via clang-format instead
+  # Aliases of readability-* and llvm-* checks enabled below
+  - -google-readability-braces-around-statements
+  - -google-readability-function-size
+  - -google-readability-namespace-comments
+  # We use Catch2, not GoogleTest
+  - -google-readability-avoid-underscore-in-googletest-name
+  - -google-upgrade-googletest-case
+  # Most hicpp-* checks are aliases of checks enabled elsewhere; only the ones that have no other name are listed
+  - hicpp-exception-baseclass
+  - hicpp-multiway-paths-covered
+  - hicpp-no-assembler
+  # The rest of llvm-* is either an alias, about LLVM's own APIs, or conflicts with clang-format (include order)
+  - llvm-namespace-comment
+  - llvm-prefer-static-over-anonymous-namespace
   - misc-*
   - -misc-const-correctness
+  - -misc-coroutine-hostile-raii # We don't use coroutines
   - -misc-definitions-in-headers
   - -misc-non-private-member-variables-in-classes
   - -misc-use-anonymous-namespace # Contradicts llvm-prefer-static-over-anonymous-namespace
@@ -54,9 +82,13 @@ Checks:
   - -modernize-use-nodiscard
   - -modernize-use-std-print
   - -modernize-use-trailing-return-type
+  # No auto_ptr or iostreams to modernize
+  - -modernize-deprecated-ios-base-aliases
+  - -modernize-replace-auto-ptr
   - performance-*
   - portability-*
   - -portability-avoid-pragma-once
+  - -portability-std-allocator-const # libstdc++, used by our GCC build, rejects such containers already
   - -portability-template-virtual-member-function
   - readability-*
   - -readability-identifier-length
@@ -66,7 +98,9 @@ Checks:
 CheckOptions:
   readability-function-cognitive-complexity.Threshold: 500
   cppcoreguidelines-avoid-do-while.IgnoreMacros: true
-  hicpp-signed-bitwise.IgnorePositiveIntegerLiterals: true
+  # Carried over from its alias cert-oop54-cpp, which we no longer run: warn on every
+  # copy assignment without a self-assignment check, not only ones with pointer members.
+  bugprone-unhandled-self-assignment.WarnOnlyIfThisHasSuspiciousField: false
   # misc-include-cleaner suggests internal headers (ArduinoJson/Document/JsonDocument.hpp,
   # bits/chrono.h, etc.) instead of the public umbrella headers (ArduinoJson.h, <chrono>)
   # because neither library carries IWYU export pragmas. Ignore the internal trees.

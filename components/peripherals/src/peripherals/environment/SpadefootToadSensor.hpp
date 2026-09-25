@@ -92,7 +92,7 @@ public:
     void readCalibration(JsonObject& res) {
         auto calibration = transportReadBytes(CMD_READ_CALIBRATION, 17);
         uint8_t csum = 0;
-        for (int i = 0; i < 16; i++) {
+        for (size_t i = 0; i < 16; i++) {
             csum ^= calibration[i];
         }
         if (csum != calibration[16]) {
@@ -101,7 +101,7 @@ public:
         }
         res["checksumOk"] = true;
         static constexpr const char* PROBE_NAMES[] = { "top-front", "top-rear", "bottom-front", "bottom-rear" };
-        for (int i = 0; i < 4; i++) {
+        for (size_t i = 0; i < 4; i++) {
             auto dryVal = static_cast<uint16_t>((calibration[i * 2] << 8) | calibration[(i * 2) + 1]);
             auto wetVal = static_cast<uint16_t>((calibration[8 + (i * 2)] << 8) | calibration[8 + (i * 2) + 1]);
             auto probeObj = res[PROBE_NAMES[i]].to<JsonObject>();
@@ -168,7 +168,7 @@ protected:
 
         auto calibration = transportReadBytes(CMD_READ_CALIBRATION, 17);
         uint8_t calibrationCsum = 0;
-        for (int i = 0; i < 16; i++) {
+        for (size_t i = 0; i < 16; i++) {
             calibrationCsum ^= calibration[i];
         }
         if (calibrationCsum != calibration[16]) {
@@ -176,7 +176,7 @@ protected:
         } else {
             uint16_t dry[4];
             uint16_t wet[4];
-            for (int i = 0; i < 4; i++) {
+            for (size_t i = 0; i < 4; i++) {
                 dry[i] = static_cast<uint16_t>((calibration[i * 2] << 8) | calibration[(i * 2) + 1]);
                 wet[i] = static_cast<uint16_t>((calibration[8 + (i * 2)] << 8) | calibration[8 + (i * 2) + 1]);
             }
@@ -206,12 +206,12 @@ private:
             if (logRawValues) {
                 auto rawData = transportReadBytes(CMD_READ_RAW, 14);
                 uint8_t rawCsum = 0;
-                for (int i = 0; i < 13; i++) {
+                for (size_t i = 0; i < 13; i++) {
                     rawCsum ^= rawData[i];
                 }
                 if (rawCsum == rawData[13]) {
                     uint16_t ticks[4];
-                    for (int i = 0; i < 4; i++) {
+                    for (size_t i = 0; i < 4; i++) {
                         ticks[i] = static_cast<uint16_t>((rawData[i * 2] << 8) | rawData[(i * 2) + 1]);
                     }
                     auto adcTop = static_cast<uint16_t>((rawData[8] << 8) | rawData[9]);
@@ -227,7 +227,7 @@ private:
 
             // Validate checksum (XOR of bytes [0..8])
             uint8_t csum = 0;
-            for (int i = 0; i < 9; i++) {
+            for (size_t i = 0; i < 9; i++) {
                 csum ^= data[i];
             }
             if (csum != data[9]) {
@@ -242,7 +242,7 @@ private:
             if (flags & FLAG_MOISTURE_VALID) {
                 int sum = 0;
                 int count = 0;
-                for (int i = 0; i < 4; i++) {
+                for (size_t i = 0; i < 4; i++) {
                     if (data[i] != MOISTURE_INVALID) {
                         sum += data[i];
                         count++;
@@ -388,7 +388,7 @@ protected:
         uint8_t hi = bus.readByteAndAck(false);    // ACK — more bytes coming
         uint8_t lo = bus.readByteAndAck(true);     // NACK — last byte
         bus.stop();
-        return (static_cast<uint16_t>(hi) << 8) | lo;
+        return static_cast<uint16_t>((hi << 8) | lo);
     }
 
     std::vector<uint8_t> transportReadBytes(uint8_t cmd, size_t n) override {

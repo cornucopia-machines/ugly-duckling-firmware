@@ -45,6 +45,12 @@ EXTRA_ARGS = [
     "-Wno-extern-c-compat",
     "-include", str(SCRIPT_DIR / "tools" / "clang-tidy-compat.h"),
     "-Wno-unused-command-line-argument",
+    # GCC-only warnings we enable for our components (-Wduplicated-cond, -Wlogical-op, ...)
+    "-Wno-unknown-warning-option",
+    # clang-tidy turns compiler warnings into errors itself (WarningsAsErrors in .clang-tidy). Keeping
+    # -Werror from the GCC command line would make Clang stop parsing after 20 of them, and clang-tidy
+    # would then analyze an incomplete AST.
+    "-Wno-error",
 ]
 
 def run(cmd):

@@ -15,6 +15,7 @@
 #include <utils/Chrono.hpp>
 
 #include <chrono>
+#include <limits>
 #include <memory>
 #include <string>
 #include <utility>
@@ -132,7 +133,7 @@ struct MoistureBasedSchedulerSettings : ConfigurationSection {
     Property<seconds> valveTimeout { this, "valveTimeout", 5min };
 
     // Quotas / safety
-    Property<Liters> maxTotalVolume { this, "maxTotalVolume", NAN };
+    Property<Liters> maxTotalVolume { this, "maxTotalVolume", std::numeric_limits<double>::quiet_NaN() };
 };
 
 struct PlotControllerSettings : ConfigurationSection {

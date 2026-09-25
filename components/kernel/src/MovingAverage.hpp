@@ -24,7 +24,7 @@ public:
 
         measurements[currentIndex] = measurement;
         sum += measurement;
-        average = sum / count;
+        average = sum / static_cast<T>(count);
 
         currentIndex = (currentIndex + 1) % maxMeasurements;
     }

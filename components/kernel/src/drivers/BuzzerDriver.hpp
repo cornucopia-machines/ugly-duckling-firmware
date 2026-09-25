@@ -11,6 +11,7 @@
 #include <chrono>
 #include <memory>
 #include <mutex>
+#include <ratio>
 
 using namespace std::chrono;
 
@@ -82,7 +83,7 @@ public:
             duty * 100);
 
         ESP_ERROR_THROW(esp_timer_start_once(stopTimer,
-            duration_cast<microseconds>(duration).count()));
+            duration_cast<std::chrono::duration<uint64_t, std::micro>>(duration).count()));
     }
 
 private:

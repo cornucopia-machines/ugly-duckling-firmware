@@ -81,6 +81,8 @@ public:
         return hasAllBits(setBits(eventBits | STATE_CHANGE_BIT_MASK));
     }
 
+    // The ISR variants defer the change to the timer daemon task, so they can only report whether the
+    // request was queued, not the resulting bits.
     bool IRAM_ATTR setFromISR() const;
 
     bool clear() const {
@@ -96,7 +98,7 @@ private:
         return xEventGroupSetBits(eventGroup, bits);
     }
 
-    EventBits_t setBitsFromISR(EventBits_t bits) const {
+    BaseType_t setBitsFromISR(EventBits_t bits) const {
         BaseType_t xHigherPriorityTaskWoken = pdFALSE;
         auto result = xEventGroupSetBitsFromISR(eventGroup, bits, &xHigherPriorityTaskWoken);
         portYIELD_FROM_ISR(xHigherPriorityTaskWoken);

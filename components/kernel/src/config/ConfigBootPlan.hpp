@@ -89,15 +89,21 @@ inline ConfigState recordStrictBootOutcome(
     ConfigSlot loadedSlot,
     bool success,
     RejectionCode failureCode) {
-    ConfigState next = stateAfterMarkingAttempted;
+    // Built field by field instead of copying the whole state: copying `requested` trips a GCC false
+    // positive (-Wmaybe-uninitialized on std::optional, https://gcc.gnu.org/bugzilla/show_bug.cgi?id=80635),
+    // and neither branch keeps the old `requested` anyway.
     if (success) {
-        next.confirmed = loadedSlot;
-        next.requested.reset();
-    } else {
-        next.requested = RequestedConfig { .slot = loadedSlot, .status = RequestedConfigStatus::Rejected };
-        next.rejection = failureCode;
+        return {
+            .confirmed = loadedSlot,
+            .requested = std::nullopt,
+            .rejection = stateAfterMarkingAttempted.rejection,
+        };
     }
-    return next;
+    return {
+        .confirmed = stateAfterMarkingAttempted.confirmed,
+        .requested = RequestedConfig { .slot = loadedSlot, .status = RequestedConfigStatus::Rejected },
+        .rejection = failureCode,
+    };
 }
 
 }    // namespace cornucopia::ugly_duckling::kernel::config

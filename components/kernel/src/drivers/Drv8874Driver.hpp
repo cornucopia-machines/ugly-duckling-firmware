@@ -56,7 +56,7 @@ public:
         }
         enableHandle.acquire();
 
-        int dutyValue = static_cast<int>((in1Channel.maxValue() + in1Channel.maxValue() * duty) / 2);
+        auto dutyValue = static_cast<uint32_t>((in1Channel.maxValue() + in1Channel.maxValue() * duty) / 2);
         LOGD("Driving motor %s at %.2f%%",
             phase == MotorPhase::Forward ? "forward" : "reverse",
             duty * 100);

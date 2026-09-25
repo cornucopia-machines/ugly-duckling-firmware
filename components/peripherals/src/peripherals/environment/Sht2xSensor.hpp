@@ -48,7 +48,7 @@ public:
             LOGTD(ENV, "Could not measure temperature: %s", esp_err_to_name(res));
             return std::numeric_limits<double>::quiet_NaN();
         }
-        return value;
+        return static_cast<double>(value);
     }
 
     double getMoisture() override {
@@ -58,7 +58,7 @@ public:
             LOGTD(ENV, "Could not measure humidity: %s", esp_err_to_name(res));
             return std::numeric_limits<double>::quiet_NaN();
         }
-        return value;
+        return static_cast<double>(value);
     }
 
 private:

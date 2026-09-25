@@ -29,9 +29,9 @@ public:
     void pinMode(uint8_t pin, Pin::Mode mode) {
         // TODO Signal if pull-up or pull-down is requested that we cannot support it
         if (mode == Pin::Mode::Output) {
-            direction &= ~(1 << pin);
+            direction &= static_cast<uint16_t>(~bit(pin));
         } else {
-            direction |= 1 << pin;
+            direction |= bit(pin);
         }
         if (pin < 8) {
             updateDirection1();
@@ -42,9 +42,9 @@ public:
 
     void digitalWrite(uint8_t pin, uint8_t val) {
         if (val == 1) {
-            output |= 1 << pin;
+            output |= bit(pin);
         } else {
-            output &= ~(1 << pin);
+            output &= static_cast<uint16_t>(~bit(pin));
         }
         if (pin < 8) {
             updateOutput1();
@@ -59,20 +59,32 @@ public:
     }
 
 private:
+    static constexpr uint16_t bit(uint8_t pin) {
+        return static_cast<uint16_t>(1U << pin);
+    }
+
+    static constexpr uint8_t lowByte(uint16_t value) {
+        return static_cast<uint8_t>(value & 0xFFU);
+    }
+
+    static constexpr uint8_t highByte(uint16_t value) {
+        return static_cast<uint8_t>(value >> 8U);
+    }
+
     void updateDirection1() {
-        device->writeRegByte(0x06, direction & 0xFF);
+        device->writeRegByte(0x06, lowByte(direction));
     }
 
     void updateDirection2() {
-        device->writeRegByte(0x07, direction >> 8);
+        device->writeRegByte(0x07, highByte(direction));
     }
 
     void updateOutput1() {
-        device->writeRegByte(0x02, output & 0xFF);
+        device->writeRegByte(0x02, lowByte(output));
     }
 
     void updateOutput2() {
-        device->writeRegByte(0x03, output >> 8);
+        device->writeRegByte(0x03, highByte(output));
     }
 
     std::shared_ptr<I2CDevice> device;

@@ -117,12 +117,6 @@ ConfigUpdateResult applyConfigUpdate(
         }
     }
 
-    // Redundant guard: stageDeviceUpdate() unconditionally populates `requested`, and the
-    // has_value() check above already returned FunctionsFailed. Repeated here to silence a
-    // GCC 15 false positive (-Wmaybe-uninitialized, https://gcc.gnu.org/bugzilla/show_bug.cgi?id=80635).
-    if (!attempted.requested.has_value()) {
-        return ConfigUpdateResult::FunctionsFailed;
-    }
     ConfigState outcome = recordStrictBootOutcome(attempted, staged.slot, success, RejectionCode::Internal);
     configStateStore->save(outcome);
 

@@ -505,7 +505,7 @@ private:
 
     void ensureWifiStationStarted(wifi_config_t& config) {
         if (!stationStarted.isSet()) {
-            auto listenInterval = 20;
+            constexpr uint16_t listenInterval = 20;
             LOGTV(WIFI, "Enabling power save mode, listen interval: %d DTIM beacons (%d ms)",
                 listenInterval, listenInterval * 100);
             config.sta.listen_interval = listenInterval;

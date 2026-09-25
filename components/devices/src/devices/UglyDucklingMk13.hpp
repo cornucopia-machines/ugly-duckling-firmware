@@ -59,9 +59,9 @@ public:
             char statusText[8];
             auto status = driver->getBatteryStatus();
             if (status.has_value()) {
-                snprintf(statusText, sizeof(statusText), "0x%04X", status->full);
+                (void) snprintf(statusText, sizeof(statusText), "0x%04X", status->full);
             } else {
-                snprintf(statusText, sizeof(statusText), "?");
+                (void) snprintf(statusText, sizeof(statusText), "?");
             }
 
             LOGTD(BATTERY, "Battery: %d mV, %.2f °C, %.0f mA, status %s",
