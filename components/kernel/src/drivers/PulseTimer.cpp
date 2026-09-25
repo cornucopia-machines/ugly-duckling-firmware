@@ -2,9 +2,23 @@
 
 #include <EspException.hpp>
 #include <Log.hpp>
+#include <PwmManager.hpp>
 
+#include <driver/gptimer.h>
+#include <driver/gptimer_types.h>
+#include <driver/ledc.h>
 #include <esp_attr.h>
+#include <esp_err.h>
+#include <freertos/portmacro.h>
+#include <freertos/projdefs.h>
+#include <freertos/semphr.h>    // NOLINT(misc-header-include-cycle)
+#include <freertos/task.h>      // NOLINT(misc-header-include-cycle)
+#include <hal/timer_types.h>
+#include <soc/clk_tree_defs.h>
 
+#include <chrono>
+#include <cstdint>
+#include <functional>
 #include <stdexcept>
 
 namespace cornucopia::ugly_duckling::kernel::drivers {
@@ -68,7 +82,7 @@ bool PulseTimer::run(std::chrono::microseconds duration, const std::function<voi
         .alarm_count = static_cast<uint64_t>(duration.count()),
         .reload_count = 0,
         .flags = {
-            .auto_reload_on_alarm = false,
+            .auto_reload_on_alarm = 0,
         },
     };
     // Enabling the timer holds a power management lock until it's disabled again

@@ -4,8 +4,8 @@
 
 #include <driver/gptimer.h>
 #include <driver/ledc.h>
-#include <freertos/FreeRTOS.h>
-#include <freertos/semphr.h>
+#include <freertos/FreeRTOS.h>    // NOLINT(misc-header-include-cycle)
+#include <freertos/semphr.h>      // NOLINT(misc-header-include-cycle)
 
 #include <chrono>
 #include <functional>
