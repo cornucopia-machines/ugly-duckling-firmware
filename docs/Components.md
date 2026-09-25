@@ -79,3 +79,23 @@ graph TD
   Functions are the unit of runtime configuration.
   A plot controller can be configured to open the valve on a schedule, or to ensure the soil moisture level stays between 60-80%.
   Configuration is sent to the device under `.../config`, with each feature having its own configuration object.
+
+## Valve timing
+
+Motor-driven valves (`strategy` of `NO`, `NC` or `latching`) are driven through an H-bridge.
+Their timing is set by these properties:
+
+| Property         | Strategies | Default                                | Meaning                                                                  |
+|------------------|------------|----------------------------------------|--------------------------------------------------------------------------|
+| `switchDuration` | all        | 500 ms (`NO`/`NC`), 30 ms (`latching`) | How long to drive the valve at full duty when switching it.              |
+| `holdDuty`       | `NO`, `NC` | 100 %                                  | Duty used to hold the valve in its non-default state after switching.    |
+| `brakeDuration`  | `latching` | 10 ms                                  | How long to brake the bridge after a pulse, before releasing the driver. |
+
+A latching solenoid only needs its rated pulse (25–30 ms for the S211B and Transol coils).
+A longer pulse only heats the coil and loads the supply rail, so a `switchDuration` set
+for a motorized valve should not be copied to a latching one.
+
+A latching pulse ends with a brake (both bridge inputs high), not a coast. The coil's
+current then decays inside the bridge instead of flying back onto the supply rail.
+`brakeDuration` should cover a few L/R time constants of the coil. That is 2–3 ms
+for the valves in use, so the 10 ms default leaves margin.
