@@ -288,7 +288,7 @@ static void startDevice() {
     confirmFirmwareValid();
 
     LOGI("Device ready in %.2f s (kernel version %s on %s with hostname '%s' and IP '%s', SSID '%s', current time is %lld)",
-        duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count() / 1000.0,
+        duration<double, seconds::period>(steady_clock::now().time_since_epoch()).count(),
         firmwareVersion.c_str(),
         modelWithRevision.c_str(),
         networkConfig->getHostname(macAddress).c_str(),

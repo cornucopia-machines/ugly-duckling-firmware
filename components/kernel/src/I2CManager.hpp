@@ -128,7 +128,7 @@ public:
         return bus;
     }
 
-    uint8_t getAddress() const {
+    uint16_t getAddress() const {
         return device.addr;
     }
 

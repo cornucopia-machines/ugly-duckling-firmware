@@ -32,7 +32,7 @@ public:
         seconds latencyInterval)
         : Peripheral(name)
         , measurementFrequency(measurementFrequency)
-        , level(latencyInterval.count() / measurementFrequency.count()) {
+        , level(static_cast<std::size_t>(latencyInterval.count() / measurementFrequency.count())) {
     }
 
     Lux getLightLevel() override {

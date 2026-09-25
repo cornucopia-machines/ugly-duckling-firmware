@@ -50,10 +50,10 @@ public:
             .debounceTime = 1ms,
         });
 
-        auto now = steady_clock::now();
-        lastMeasurement = now;
-        lastSeenFlow = now;
-        lastPublished = now;
+        auto startTime = steady_clock::now();
+        lastMeasurement = startTime;
+        lastSeenFlow = startTime;
+        lastPublished = startTime;
 
         Task::loop(name, 3072, [this, measurementFrequency](Task& task) {
             auto now = steady_clock::now();
@@ -65,9 +65,9 @@ public:
 
                 if (pulses > 0) {
                     std::scoped_lock lock(updateMutex);
-                    double currentVolume = pulses / this->qFactor / 60.0F;
+                    double currentVolume = pulses / this->qFactor / 60.0;
                     LOGV("Counted %" PRIu32 " pulses, %.2f l/min, %.2f l",
-                        pulses, currentVolume / (elapsed.count() / 1000.0F / 60.0F), currentVolume);
+                        pulses, currentVolume / duration<double, minutes::period>(elapsed).count(), currentVolume);
                     volume += currentVolume;
                     lastSeenFlow = now;
                 }
