@@ -77,6 +77,13 @@ public:
         phaseChannel.write(dutyValue);
     }
 
+    void brake() override {
+        LOGD("Braking");
+        enableHandle.acquire();
+        // ENABLE = 0 with MODE1 = 1 while awake: brake (slow decay)
+        enablePin->digitalWrite(0);
+    }
+
 private:
     const PinPtr enablePin;
     const PwmPin& phaseChannel;

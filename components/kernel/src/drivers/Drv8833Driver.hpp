@@ -3,9 +3,11 @@
 #include <Log.hpp>
 #include <Pin.hpp>
 #include <PwmManager.hpp>
+#include <Task.hpp>
 #include <drivers/MotorDriver.hpp>
 #include <drivers/SharedEnable.hpp>
 
+#include <chrono>
 #include <memory>
 
 namespace cornucopia::ugly_duckling::kernel::drivers {
@@ -82,6 +84,18 @@ private:
         }
 
         void drive(MotorPhase phase, double duty) override {
+            if (duty == 0) {
+                LOGD("Stopping motor on pins %s/%s",
+                    forwardChannel.getName().c_str(),
+                    reverseChannel.getName().c_str());
+                forwardChannel.write(0);
+                reverseChannel.write(0);
+                enableHandle.release();
+                return;
+            }
+
+            enableRail();
+
             int dutyValue = static_cast<int>((forwardChannel.maxValue() + forwardChannel.maxValue() * duty) / 2);
             LOGD("Driving motor %s on pins %s/%s at %d%%",
                 phase == MotorPhase::Forward ? "forward" : "reverse",
@@ -99,15 +113,39 @@ private:
                     reverseChannel.write(dutyValue);
                     break;
             }
+        }
 
-            if (duty == 0) {
-                enableHandle.release();
-            } else {
-                enableHandle.acquire();
-            }
+        void brake() override {
+            LOGD("Braking motor on pins %s/%s",
+                forwardChannel.getName().c_str(),
+                reverseChannel.getName().c_str());
+            enableRail();
+            // xIN1 = xIN2 = 1: both low-side FETs on, slow decay
+            forwardChannel.write(forwardChannel.maxValue());
+            reverseChannel.write(reverseChannel.maxValue());
         }
 
     private:
+        /**
+         * @brief Time for the load rail to come up after the enable is asserted.
+         *
+         * @details On boards where the enable also switches a load boost converter (MK14's
+         * TPS61378-Q1 has a true load disconnect, so VLOAD starts from 0 V with ~0.4 ms delay
+         * plus 2.5 ms soft-start), loading the rail during soft-start can trip the boost's hiccup
+         * protection. It also covers the DRV88xx wake-up time. Harmless on boards without a boost.
+         */
+        static constexpr std::chrono::milliseconds RAIL_SETTLE_TIME { 5 };
+
+        /**
+         * @brief Acquire the enable before touching the inputs, and wait for the rail if we just turned it on.
+         */
+        void enableRail() {
+            if (!enableHandle.isAcquired()) {
+                enableHandle.acquire();
+                Task::delay(RAIL_SETTLE_TIME);
+            }
+        }
+
         const PwmPin& forwardChannel;
         const PwmPin& reverseChannel;
         SharedEnable::Handle enableHandle;

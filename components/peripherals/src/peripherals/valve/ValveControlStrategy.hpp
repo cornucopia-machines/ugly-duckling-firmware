@@ -129,22 +129,19 @@ public:
 class LatchingMotorValveControlStrategy
     : public MotorValveControlStrategy {
 public:
-    LatchingMotorValveControlStrategy(const std::shared_ptr<PwmMotorDriver>& controller, milliseconds switchDuration, double switchDuty = 1.0)
+    LatchingMotorValveControlStrategy(const std::shared_ptr<PwmMotorDriver>& controller, milliseconds switchDuration, milliseconds brakeDuration, double switchDuty = 1.0)
         : MotorValveControlStrategy(controller)
         , switchDuration(switchDuration)
+        , brakeDuration(brakeDuration)
         , switchDuty(switchDuty) {
     }
 
     void open() override {
-        controller->drive(MotorPhase::Forward, switchDuty);
-        Task::delay(switchDuration);
-        controller->stop();
+        pulse(MotorPhase::Forward);
     }
 
     void close() override {
-        controller->drive(MotorPhase::Reverse, switchDuty);
-        Task::delay(switchDuration);
-        controller->stop();
+        pulse(MotorPhase::Reverse);
     }
 
     TargetState getDefaultState() const override {
@@ -152,11 +149,22 @@ public:
     }
 
     std::string describe() const override {
-        return "latching with switch duration " + std::to_string(switchDuration.count()) + " ms and switch duty " + std::to_string(switchDuty * 100) + "%";
+        return "latching with switch duration " + std::to_string(switchDuration.count()) + " ms, brake duration " + std::to_string(brakeDuration.count()) + " ms and switch duty " + std::to_string(switchDuty * 100) + "%";
     }
 
 private:
+    void pulse(MotorPhase phase) {
+        controller->drive(phase, switchDuty);
+        Task::delay(switchDuration);
+        // End the pulse with a brake instead of coasting: the coil's stored energy then
+        // decays inside the bridge rather than flying back onto the load rail (see #581).
+        controller->brake();
+        Task::delay(brakeDuration);
+        controller->stop();
+    }
+
     const milliseconds switchDuration;
+    const milliseconds brakeDuration;
     const double switchDuty;
 };
 

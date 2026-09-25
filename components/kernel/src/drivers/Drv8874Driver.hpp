@@ -73,6 +73,14 @@ public:
         }
     }
 
+    void brake() override {
+        LOGD("Braking motor");
+        enableHandle.acquire();
+        // IN1 = IN2 = 1: both low-side FETs on, slow decay
+        in1Channel.write(in1Channel.maxValue());
+        in2Channel.write(in2Channel.maxValue());
+    }
+
 private:
     const PwmPin& in1Channel;
     const PwmPin& in2Channel;

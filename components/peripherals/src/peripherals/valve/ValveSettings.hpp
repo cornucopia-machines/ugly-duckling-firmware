@@ -58,6 +58,15 @@ public:
      */
     Property<milliseconds> switchDuration { this, "switchDuration", 500ms };
 
+    /**
+     * @brief Duration to brake the motor for after a latching pulse, before releasing the driver.
+     *
+     * @details This is in milliseconds, default is 10ms. Braking lets the coil's current decay inside
+     * the H-bridge instead of flying back onto the supply rail. It should cover a few L/R time constants
+     * of the coil; 2-3 ms for typical latching solenoids. Only used by the latching strategy.
+     */
+    Property<milliseconds> brakeDuration { this, "brakeDuration", 10ms };
+
     std::unique_ptr<ValveControlStrategy> createValveControlStrategy(const std::map<std::string, std::shared_ptr<PwmMotorDriver>>& motors, const std::string& motorName) const {
         PinPtr pin = this->pin.get();
         if (pin != nullptr) {
@@ -74,7 +83,7 @@ public:
             case ValveControlStrategyType::NormallyClosed:
                 return std::make_unique<NormallyClosedMotorValveControlStrategy>(motor, switchDuration, holdDuty);
             case ValveControlStrategyType::Latching:
-                return std::make_unique<LatchingMotorValveControlStrategy>(motor, switchDuration, holdDuty);
+                return std::make_unique<LatchingMotorValveControlStrategy>(motor, switchDuration, brakeDuration.get(), holdDuty);
             default:
                 throw PeripheralCreationException("unknown strategy");
         }
