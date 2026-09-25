@@ -1,6 +1,14 @@
 #pragma once
-#include <driver/ledc.h>
 
+#include <EspException.hpp>
+#include <Log.hpp>
+#include <Pin.hpp>
+
+#include <driver/ledc.h>
+#include <esp_err.h>
+
+#include <cinttypes>
+#include <cstdint>
 #include <list>
 #include <stdexcept>
 #include <string>
@@ -81,6 +89,25 @@ public:
     void write(uint32_t value) const {
         ESP_ERROR_THROW(ledc_set_duty(timer.speedMode, channel, value));
         ESP_ERROR_THROW(ledc_update_duty(timer.speedMode, channel));
+    }
+
+    /**
+     * @brief Like write(), but returns the error instead of throwing, so it can be used in a critical section.
+     */
+    esp_err_t tryWrite(uint32_t value) const noexcept {
+        esp_err_t err = ledc_set_duty(timer.speedMode, channel, value);
+        if (err != ESP_OK) {
+            return err;
+        }
+        return ledc_update_duty(timer.speedMode, channel);
+    }
+
+    ledc_mode_t getSpeedMode() const {
+        return timer.speedMode;
+    }
+
+    ledc_channel_t getChannel() const {
+        return channel;
     }
 
     const std::string& getName() const {

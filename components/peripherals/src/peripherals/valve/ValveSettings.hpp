@@ -54,9 +54,24 @@ public:
     /**
      * @brief Duration to keep the motor running to switch the motorized valve.
      *
-     * @details This is in milliseconds, default is 500ms. This is ignored when the pin is specified.
+     * @details This is in milliseconds. The default depends on the strategy: 500ms for motor-driven
+     * (NO/NC) valves, and 30ms for latching valves, which only need their rated pulse (e.g. 25-30 ms
+     * for the S211B); anything longer just heats the coil and loads the supply. This is ignored when
+     * the pin is specified.
      */
-    Property<milliseconds> switchDuration { this, "switchDuration", 500ms };
+    Property<milliseconds> switchDuration { this, "switchDuration" };
+
+    static constexpr milliseconds DEFAULT_SWITCH_DURATION = 500ms;
+    static constexpr milliseconds DEFAULT_LATCHING_SWITCH_DURATION = 30ms;
+
+    /**
+     * @brief Duration to brake the motor for after a latching pulse, before releasing the driver.
+     *
+     * @details This is in milliseconds, default is 10ms. Braking lets the coil's current decay inside
+     * the H-bridge instead of flying back onto the supply rail. It should cover a few L/R time constants
+     * of the coil; 2-3 ms for typical latching solenoids. Only used by the latching strategy.
+     */
+    Property<milliseconds> brakeDuration { this, "brakeDuration", 10ms };
 
     std::unique_ptr<ValveControlStrategy> createValveControlStrategy(const std::map<std::string, std::shared_ptr<PwmMotorDriver>>& motors, const std::string& motorName) const {
         PinPtr pin = this->pin.get();
@@ -65,16 +80,19 @@ public:
         }
 
         auto motor = findMotor(motors, motorName);
-        auto switchDuration = this->switchDuration.get();
+        auto strategy = this->strategy.get();
+        auto switchDuration = this->switchDuration.getOrDefault(strategy == ValveControlStrategyType::Latching
+                ? DEFAULT_LATCHING_SWITCH_DURATION
+                : DEFAULT_SWITCH_DURATION);
         auto holdDuty = this->holdDuty.get() / 100.0;
 
-        switch (this->strategy.get()) {
+        switch (strategy) {
             case ValveControlStrategyType::NormallyOpen:
                 return std::make_unique<NormallyOpenMotorValveControlStrategy>(motor, switchDuration, holdDuty);
             case ValveControlStrategyType::NormallyClosed:
                 return std::make_unique<NormallyClosedMotorValveControlStrategy>(motor, switchDuration, holdDuty);
             case ValveControlStrategyType::Latching:
-                return std::make_unique<LatchingMotorValveControlStrategy>(motor, switchDuration, holdDuty);
+                return std::make_unique<LatchingMotorValveControlStrategy>(motor, switchDuration, brakeDuration.get(), holdDuty);
             default:
                 throw PeripheralCreationException("unknown strategy");
         }
