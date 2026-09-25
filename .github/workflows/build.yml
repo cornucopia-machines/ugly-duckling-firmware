@@ -95,6 +95,14 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           ls -l build/*.bin build/bootloader/bootloader.bin build/partition_table/partition-table.bin
 
+      - name: Check for float-to-string bloat
+        run: |
+          if grep -q 'floating_to_chars\.o' build/ugly-duckling.map; then
+            echo "::error::floating_to_chars.o (~123 KB) is linked: something calls std::to_string/std::to_chars on a float or double. See docs/CodingStandards.md#binary-size"
+            grep -n -A1 'floating_to_chars\.o' build/ugly-duckling.map | head -20
+            exit 1
+          fi
+
       - name: clang-format
         if: matrix.ud_debug == 0
         uses: espressif/esp-idf-ci-action@v1

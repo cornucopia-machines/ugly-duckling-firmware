@@ -1,4 +1,5 @@
 #pragma once
+#include <Strings.hpp>
 #include <Task.hpp>
 #include <drivers/MotorDriver.hpp>
 #include <peripherals/api/IValve.hpp>
@@ -98,7 +99,7 @@ public:
     }
 
     std::string describe() const override {
-        return "normally closed with switch duration " + std::to_string(switchDuration.count()) + " ms and hold duty " + std::to_string(holdDuty * 100) + "%";
+        return "normally closed with switch duration " + std::to_string(switchDuration.count()) + " ms and hold duty " + kernel::toStringWithPrecision(holdDuty * 100, 1) + "%";
     }
 };
 
@@ -122,7 +123,7 @@ public:
     }
 
     std::string describe() const override {
-        return "normally open with switch duration " + std::to_string(switchDuration.count()) + " ms and hold duty " + std::to_string(holdDuty * 100) + "%";
+        return "normally open with switch duration " + std::to_string(switchDuration.count()) + " ms and hold duty " + kernel::toStringWithPrecision(holdDuty * 100, 1) + "%";
     }
 };
 
@@ -149,7 +150,7 @@ public:
     }
 
     std::string describe() const override {
-        return "latching with switch duration " + std::to_string(switchDuration.count()) + " ms, brake duration " + std::to_string(brakeDuration.count()) + " ms and switch duty " + std::to_string(switchDuty * 100) + "%";
+        return "latching with switch duration " + std::to_string(switchDuration.count()) + " ms, brake duration " + std::to_string(brakeDuration.count()) + " ms and switch duty " + kernel::toStringWithPrecision(switchDuty * 100, 1) + "%";
     }
 
 private:

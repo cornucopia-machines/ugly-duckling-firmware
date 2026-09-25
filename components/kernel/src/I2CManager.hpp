@@ -30,7 +30,7 @@ public:
     uint32_t clkSpeed = 400000;    // Hz; set by I2CSettings (which takes kHz) or overridden per-driver
 
     std::string toString() const {
-        return "I2C address: " + toHexString(address) + ", SDA: " + sda->getName() + ", SCL: " + scl->getName() + ", clk: " + std::to_string(clkSpeed / 1000.0) + " kHz";
+        return "I2C address: " + toHexString(address) + ", SDA: " + sda->getName() + ", SCL: " + scl->getName() + ", clk: " + std::to_string(clkSpeed / 1000) + " kHz";
     }
 };
 

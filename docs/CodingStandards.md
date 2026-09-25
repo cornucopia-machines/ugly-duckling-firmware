@@ -20,6 +20,12 @@
 
 - CI runs clang-tidy on every build.
 
+## Binary Size
+
+- Don't call `std::to_string` or `std::to_chars` on a `float` or `double`. Either one links `libstdc++`'s `floating_to_chars.o`, which adds ~123 KB (mostly lookup tables) to the image ([#652](https://github.com/cornucopia-machines/ugly-duckling-firmware/issues/652)).
+- Use `toStringWithPrecision()` from `Strings.hpp` or `snprintf("%.1f", ...)` instead. `vfprintf` is linked for logging anyway, so these cost nothing extra. For values that are really integers (e.g. Hz to kHz), use integer maths.
+- CI fails the build if `floating_to_chars.o` shows up in the link map.
+
 ## Naming Conventions
 
 | Kind | Convention | Example |
