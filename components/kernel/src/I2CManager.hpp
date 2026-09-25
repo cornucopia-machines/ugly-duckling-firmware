@@ -212,7 +212,7 @@ private:
             static_cast<int>(I2C_NUM_0), sda->getName().c_str(), scl->getName().c_str());
         return I2C_NUM_0;
 #else
-        if (static_cast<int>(buses.size()) >= SOC_HP_I2C_NUM) {
+        if (buses.size() >= SOC_HP_I2C_NUM) {
             throw std::runtime_error("Maximum number of I2C buses reached");
         }
         return static_cast<i2c_port_t>(buses.size());
