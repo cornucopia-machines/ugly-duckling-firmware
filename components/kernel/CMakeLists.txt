@@ -13,6 +13,7 @@ idf_component_register(
         esp_app_format
         esp_driver_gpio
         esp_driver_i2c
+        esp_driver_gptimer
         esp_driver_ledc
         esp_event
         efuse

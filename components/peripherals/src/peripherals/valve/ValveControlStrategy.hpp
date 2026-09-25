@@ -157,17 +157,17 @@ private:
      * @brief Priority to run the pulse at.
      *
      * @details Above every application task, esp-mqtt and pthreads (5), so that MQTT/TLS and telemetry work
-     * triggered by the same command can't stretch the pulse; below lwIP (18), esp_timer (22) and WiFi (23).
+     * triggered by the same command can't delay the task-timed parts of the pulse: the brake tail, releasing
+     * the driver, and the whole pulse on drivers that don't time it in hardware. Below lwIP (18), esp_timer (22)
+     * and WiFi (23).
      */
     static constexpr UBaseType_t PULSE_PRIORITY = 10;
 
     void pulse(MotorPhase phase) {
         TaskPriorityGuard priorityGuard(PULSE_PRIORITY);
-        controller->drive(phase, switchDuty);
-        Task::delay(switchDuration);
         // End the pulse with a brake instead of coasting: the coil's stored energy then
         // decays inside the bridge rather than flying back onto the load rail (see #581).
-        controller->brake();
+        controller->drivePulse(phase, switchDuty, switchDuration);
         Task::delay(brakeDuration);
         controller->stop();
     }

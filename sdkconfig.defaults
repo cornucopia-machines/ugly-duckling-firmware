@@ -34,6 +34,12 @@ CONFIG_LOG_MAXIMUM_LEVEL_INFO=y
 # We do our own coloring in debug mode
 CONFIG_LOG_COLORS=n
 
+# Latching valve pulses are ended from a GPTimer alarm (see drivers/PulseTimer.hpp), so that neither
+# task scheduling nor flash erase/writes (which stall all code running from flash) can stretch them.
+# That needs the alarm ISR to run while the cache is disabled, and ledc_stop() to be callable from it.
+CONFIG_GPTIMER_ISR_CACHE_SAFE=y
+CONFIG_LEDC_CTRL_FUNC_IN_IRAM=y
+
 # Seems like a good idea to have some stack checks
 CONFIG_COMPILER_STACK_CHECK_MODE_NORM=y
 

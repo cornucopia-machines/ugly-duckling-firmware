@@ -1,5 +1,8 @@
 #pragma once
 
+#include <Task.hpp>
+
+#include <chrono>
 #include <cstdint>
 
 namespace cornucopia::ugly_duckling::kernel::drivers {
@@ -29,6 +32,19 @@ public:
      * to release the driver.
      */
     virtual void brake() = 0;
+
+    /**
+     * @brief Drive the motor for `duration`, then brake, leaving the motor braking; call stop() to release the driver.
+     *
+     * @details The default implementation times the pulse from the calling task, so it can run longer
+     * than `duration` when the task is delayed. Drivers that can time the end of the pulse in hardware
+     * override this.
+     */
+    virtual void drivePulse(MotorPhase phase, double duty, std::chrono::milliseconds duration) {
+        drive(phase, duty);
+        Task::delay(duration);
+        brake();
+    }
 };
 
 }    // namespace cornucopia::ugly_duckling::kernel::drivers
