@@ -195,3 +195,42 @@ list(JOIN SDKCONFIG_FILES ";" SDKCONFIG_DEFAULTS)
 add_compile_definitions(UD_PLATFORM="${_ud_platform}")
 
 add_link_options("-Wl,--gc-sections")
+
+# Extra warnings for our own components (not ESP-IDF or managed components).
+# Deferred to the end of the top-level CMakeLists.txt, when project() has created the component targets.
+function(ud_add_project_warnings)
+    idf_build_get_property(build_components BUILD_COMPONENTS)
+    foreach(component IN LISTS build_components)
+        idf_component_get_property(component_dir ${component} COMPONENT_DIR)
+        idf_component_get_property(component_lib ${component} COMPONENT_LIB)
+        cmake_path(IS_PREFIX UD_PROJECT_ROOT "${component_dir}" is_ours)
+        if(NOT is_ours OR component_dir MATCHES "/managed_components/")
+            continue()
+        endif()
+        get_target_property(lib_type ${component_lib} TYPE)
+        if(lib_type STREQUAL "INTERFACE_LIBRARY")
+            continue()
+        endif()
+        target_compile_options(${component_lib} PRIVATE
+            # Only locals shadowing locals: constructor parameters named like the member they initialize are fine
+            -Wshadow=local
+            -Wnon-virtual-dtor
+            -Woverloaded-virtual
+            -Wnull-dereference
+            -Wduplicated-cond
+            -Wduplicated-branches
+            -Wlogical-op
+            -Wformat=2
+            -Wcast-qual
+            -Wdouble-promotion
+            -Wsign-compare
+            -Wconversion
+            # The global -Werror above is overridden by the -Wno-error that ESP-IDF's components need,
+            # which is applied to every component; re-enable it for ours, after it. SHELL: stops CMake
+            # from dropping it as a duplicate of the earlier -Werror.
+            "SHELL:-Werror"
+        )
+    endforeach()
+endfunction()
+set(UD_PROJECT_ROOT "${CMAKE_CURRENT_LIST_DIR}")
+cmake_language(DEFER DIRECTORY ${CMAKE_SOURCE_DIR} CALL ud_add_project_warnings)
