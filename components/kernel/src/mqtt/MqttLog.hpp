@@ -30,7 +30,11 @@ public:
                 }
                 auto length = record.message.length();
                 // Remove the level prefix
-                size_t messageStart = 2;
+                constexpr size_t messageStart = 2;
+                if (length <= messageStart) {
+                    // Nothing after the prefix; substr() would throw and terminate the task
+                    return;
+                }
                 // Remove trailing newline
                 auto messageEnd = record.message[length - 1] == '\n'
                     ? length - 1

@@ -39,6 +39,8 @@ private:
             return 0;
         }
 
+        // Log v2 emits each line in three vprintf calls (prefix, message, newline), holding the
+        // stdout lock for the whole line, so assemble the pieces before parsing the level
         std::string assembledMessage;
         {
             std::scoped_lock lock(partialMessageMutex);
@@ -59,7 +61,9 @@ private:
 
     static int processLogLine(const std::string& message) {
         Level level = getLevel(message);
-        if (level <= recordedLevel) {
+        // A format string ending in '\n' completes the line before Log v2 writes its own newline,
+        // which then arrives here alone; print it, but don't record an empty line
+        if (level <= recordedLevel && message != "\n") {
             logRecords->offer(level, message);
         }
 

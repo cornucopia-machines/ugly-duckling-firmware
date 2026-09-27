@@ -4,9 +4,8 @@
 
 #include <Device.hpp>
 #include <HardwareVersion.hpp>
+#include <Log.hpp>
 #include <MacAddress.hpp>
-
-#include <esp_log.h>
 
 #ifdef CONFIG_IDF_TARGET_ESP32S3
 
@@ -35,11 +34,11 @@ using namespace cornucopia::ugly_duckling::kernel;
 static void startDeviceBasedOnHardware() {
     const auto& hardwareVersion = getHardwareVersion();
     if (hardwareVersion.has_value()) {
-        ESP_LOGI("device", "Hardware identity (eFuse): generation %d, revision %d, manufacturer 0x%04x, batch %llu, serial %llu",
+        LOGI("Hardware identity (eFuse): generation %d, revision %d, manufacturer 0x%04x, batch %llu, serial %llu",
             hardwareVersion->hwGen, hardwareVersion->hwRev, hardwareVersion->mfrId,
             static_cast<unsigned long long>(hardwareVersion->batch), static_cast<unsigned long long>(hardwareVersion->serial));
     } else {
-        ESP_LOGI("device", "No hardware identity eFuse record found — hardware version is unknown (expected for MK10 and earlier)");
+        LOGI("No hardware identity eFuse record found — hardware version is unknown (expected for MK10 and earlier)");
     }
 
 #ifdef CONFIG_IDF_TARGET_ESP32S3
@@ -141,7 +140,7 @@ static void startDeviceBasedOnHardware() {
             return;
         }
 
-        ESP_LOGW("device", "Unrecognized hardware identity (generation %d, revision %d) — falling back to MAC-based detection",
+        LOGW("Unrecognized hardware identity (generation %d, revision %d) — falling back to MAC-based detection",
             hardwareVersion->hwGen, hardwareVersion->hwRev);
     }
 
@@ -155,7 +154,7 @@ static void startDeviceBasedOnHardware() {
 #endif
 #endif
 
-    ESP_LOGW("device", "Unrecognized MAC address %s — falling back to generic device", getMacAddress().c_str());
+    LOGW("Unrecognized MAC address %s — falling back to generic device", getMacAddress().c_str());
     startDevice<GenericDevice>();
 }
 
