@@ -24,6 +24,7 @@ RTC_DATA_ATTR int bootCount = 0;
 
 #include <CrashManager.hpp>
 
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
@@ -50,6 +51,7 @@ using namespace cornucopia::ugly_duckling::kernel;
 void publishBootMessage(
     const std::shared_ptr<MqttRoot>& mqttRoot,
     esp_reset_reason_t resetReason,
+    uint32_t consecutiveCrashes,
     const std::string& firmwareVersion,
     const std::string& macAddress,
     const std::shared_ptr<NetworkConfig>& networkConfig,
@@ -64,7 +66,7 @@ void publishBootMessage(
     const std::optional<RollbackDetection>& rollback) {
     mqttRoot->publish(
         "boot",
-        [resetReason, firmwareVersion, macAddress, networkConfig, initState, peripheralsInitJson, functionsInitJson, powerManager, deviceDefinition, hardwareVersion, rejectionToReport, firmwareDownloadRejection, rollback](JsonObject& json) {
+        [=](JsonObject& json) {
             json["model"] = deviceDefinition->model;
             json["revision"] = deviceDefinition->revision;
             json["platform"] = UD_PLATFORM;
@@ -83,6 +85,7 @@ void publishBootMessage(
             json["debug"] = false;
 #endif
             json["reset"] = resetReason;
+            json["consecutiveCrashes"] = consecutiveCrashes;
             json["wakeup"] = esp_sleep_get_wakeup_causes();
             json["bootCount"] = bootCount++;
             json["time"] = duration_cast<seconds>(system_clock::now().time_since_epoch()).count();

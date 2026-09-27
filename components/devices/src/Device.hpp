@@ -23,6 +23,7 @@ static const std::string firmwareVersion(esp_app_get_description()->version);
 #include <ConfigUpdate.hpp>
 #include <Connectivity.hpp>
 #include <Console.hpp>
+#include <CrashCounter.hpp>
 #include <DebugConsole.hpp>
 #include <DeviceInit.hpp>
 #include <FirmwareRollback.hpp>
@@ -56,7 +57,8 @@ static void startDevice() {
         deviceDefinition->model.c_str(), deviceDefinition->revision);
 
     auto resetReason = esp_reset_reason();
-    LOGD("Restarting after reset reason: %d", resetReason);
+    auto consecutiveCrashes = CrashCounter::recordBoot(resetReason);
+    LOGD("Restarting after reset reason: %d, consecutive crashes: %" PRIu32, resetReason, consecutiveCrashes);
 
     auto i2c = std::make_shared<I2CManager>();
     auto battery = initBattery(deviceDefinition, i2c);
@@ -277,7 +279,7 @@ static void startDevice() {
     // Enable power saving once we are done initializing
     WiFiDriver::setPowerSaveMode(boot.deviceConfig->sleepWhenIdle.get());
 
-    publishBootMessage(mqttRoot, resetReason, firmwareVersion, macAddress, networkConfig, runtime.initState, peripheralsInitJson, functionsInitJson,
+    publishBootMessage(mqttRoot, resetReason, consecutiveCrashes, firmwareVersion, macAddress, networkConfig, runtime.initState, peripheralsInitJson, functionsInitJson,
         powerManager, deviceDefinition, hardwareVersion, rejectionToReport, firmwareDownloadRejection, rollback);
 
     states->kernelReady.set();

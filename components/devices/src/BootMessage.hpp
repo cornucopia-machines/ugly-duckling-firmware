@@ -33,6 +33,7 @@ enum class InitState : std::uint8_t {
 void publishBootMessage(
     const std::shared_ptr<MqttRoot>& mqttRoot,
     esp_reset_reason_t resetReason,
+    uint32_t consecutiveCrashes,
     const std::string& firmwareVersion,
     const std::string& macAddress,
     const std::shared_ptr<NetworkConfig>& networkConfig,
