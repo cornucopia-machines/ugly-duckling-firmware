@@ -183,7 +183,8 @@ private:
             default:
                 LOGTW(NVS, "failed to open NVS to %s '%s': %s",
                     readOnly ? "read" : "write", ns.c_str(), esp_err_to_name(err));
-                break;
+                // The handle is not valid, so neither the action nor nvs_close() may use it
+                return err;
         }
 
         esp_err_t result = action(handle);
