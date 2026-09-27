@@ -125,6 +125,11 @@ CONFIG_PM_LIGHT_SLEEP_CALLBACKS=y
 # CONFIG_HEAP_POISONING_LIGHT=y
 # CONFIG_HEAP_TASK_TRACKING=y
 
+# Reproducible builds: no build date/time or local paths in the image, so rebuilding the same
+# commit yields the same binary (and ELF SHA). Debug info paths are remapped; `idf.py gdb` loads
+# the generated build/gdbinit/prefix_map to map them back.
+CONFIG_APP_REPRODUCIBLE_BUILD=y
+
 # Core dump
 CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH=y
 CONFIG_ESP_COREDUMP_LOGS=n

@@ -5,8 +5,15 @@
 
 #include <ArduinoJson.h>
 #include <esp_core_dump.h>
+#include <esp_private/panic_reason.h>
+#include <soc/soc.h>
+#include <soc/soc_caps.h>
+#if __XTENSA__
+#include <xtensa/config/core-isa.h>
+#endif
 #include <mbedtls/base64.h>
 
+#include <array>
 #include <optional>
 #include <string>
 
@@ -187,6 +194,8 @@ private:
 #endif
     }
 
+    // Lookup logic and strings mirror panic_arch_fill_info() / panic_soc_fill_info() in
+    // esp_system/port/arch/*/panic_arch.c; keep them in sync when upgrading IDF.
     static const char* resolveCauseDescription(uint32_t cause) {
 #if __XTENSA__
         constexpr std::array<const char*, 40> regularCauses = {
@@ -231,18 +240,34 @@ private:
             "Cp6Dis",
             "Cp7Dis",
         };
+        if (cause < regularCauses.size()) {
+            return regularCauses[cause];
+        }
 
-        constexpr std::array<const char*, 8> pseudoCauses = {
-            "Unknown reason",
-            "Unhandled debug exception",
-            "Double exception",
-            "Unhandled kernel exception",
-            "Coprocessor exception",
-            "Interrupt wdt timeout on CPU0",
-            "Interrupt wdt timeout on CPU1",
-            "Cache disabled but cached memory region accessed",
-        };
-
+        // The core dump stores SoC-level pseudo causes (PANIC_RSN_*) offset by
+        // XCHAL_EXCCAUSE_NUM so they don't collide with the regular EXCCAUSE values
+        if (cause >= XCHAL_EXCCAUSE_NUM) {
+            switch (cause - XCHAL_EXCCAUSE_NUM) {
+                case PANIC_RSN_NONE:
+                    return "Unknown reason";
+                case PANIC_RSN_DEBUGEXCEPTION:
+                    return "Unhandled debug exception";
+                case PANIC_RSN_DOUBLEEXCEPTION:
+                    return "Double exception";
+                case PANIC_RSN_KERNELEXCEPTION:
+                    return "Unhandled kernel exception";
+                case PANIC_RSN_COPROCEXCEPTION:
+                    return "Coprocessor exception";
+                case PANIC_RSN_INTWDT_CPU0:
+                    return "Interrupt wdt timeout on CPU0";
+                case PANIC_RSN_INTWDT_CPU1:
+                    return "Interrupt wdt timeout on CPU1";
+                case PANIC_RSN_CACHEERR:
+                    return "Cache error";
+                default:
+                    break;
+            }
+        }
 #elif __riscv
         constexpr std::array<const char*, 16> regularCauses = {
             "Instruction address misaligned",
@@ -262,25 +287,29 @@ private:
             nullptr,
             "Store page fault",
         };
-
-        constexpr std::array<const char*, 0> pseudoCauses = {
-            // TODO Handle RISC-V pseudo causes
-        };
-#endif
-        // Lookup logic and strings copied from frame_to_panic_info()
-
-        // These come from core.h / panic_arch_fill_info()
         if (cause < regularCauses.size() && regularCauses[cause] != nullptr) {
             return regularCauses[cause];
         }
 
-        if (cause >= 64) {
-            // These come from panic_reason.h / panic_soc_fill_info()
-            auto pseudoCauseIndex = cause - 64;
-            if (pseudoCauseIndex < pseudoCauses.size() && pseudoCauses[pseudoCauseIndex] != nullptr) {
-                return pseudoCauses[pseudoCauseIndex];
-            }
+        // SoC-level panics are raised by interrupts; the panic handler stores the
+        // interrupt number (with the interrupt bit cleared) as mcause
+        switch (cause) {
+            case ETS_CACHEERR_INUM:
+                return "Cache error";
+            case PANIC_RSN_INTWDT_CPU0:
+                return "Interrupt wdt timeout on CPU0";
+#if SOC_CPU_CORES_NUM > 1
+            case PANIC_RSN_INTWDT_CPU1:
+                return "Interrupt wdt timeout on CPU1";
+#endif
+            case ETS_ASSIST_DEBUG_INUM:
+                return "Stack protection fault";
+            case ETS_MEMPROT_ERR_INUM:
+                return "Memory protection fault";
+            default:
+                break;
         }
+#endif
         return "Unknown reason";
     }
 };
