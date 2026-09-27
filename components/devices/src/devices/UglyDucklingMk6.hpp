@@ -43,7 +43,7 @@ protected:
 
     void registerDeviceSpecificPeripheralFactories(const std::shared_ptr<PeripheralManager>& peripheralManager, const PeripheralServices& services, const std::shared_ptr<DeviceConfiguration>& deviceConfig) override {
         auto nSleepPin = deviceConfig->motorNSleepPin.getOrDefault(motorNSleepPin());
-        auto motorEnable = SharedEnable::forActiveHighPin(nSleepPin);
+        auto motorEnable = SharedEnable::forActiveHighPin({ .pin = nSleepPin, .settleTime = 5ms });
         auto motorDriver = Drv8833Driver::create(
             services.pwmManager,
             AIN1,

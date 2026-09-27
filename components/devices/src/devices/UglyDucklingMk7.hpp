@@ -40,7 +40,7 @@ public:
 
 protected:
     void registerDeviceSpecificPeripheralFactories(const std::shared_ptr<PeripheralManager>& peripheralManager, const PeripheralServices& services, const std::shared_ptr<DeviceConfiguration>& _deviceConfig) override {
-        auto motorEnable = SharedEnable::forActiveHighPin(LOADEN);
+        auto motorEnable = SharedEnable::forActiveHighPin({ .pin = LOADEN, .settleTime = 5ms });
         auto motorDriver = Drv8833Driver::create(
             services.pwmManager,
             DAIN1,
