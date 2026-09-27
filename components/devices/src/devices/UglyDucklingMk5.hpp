@@ -24,7 +24,7 @@ public:
 
 protected:
     void registerDeviceSpecificPeripheralFactories(const std::shared_ptr<PeripheralManager>& peripheralManager, const PeripheralServices& services, const std::shared_ptr<DeviceConfiguration>& _deviceConfig) override {
-        auto motorEnable = SharedEnable::forActiveHighPin(NSLEEP, 0ms);
+        auto motorEnable = SharedEnable::forActiveHighPin({ .pin = NSLEEP, .settleTime = 0ms });
 
         auto motorA = std::make_shared<Drv8874Driver>(
             services.pwmManager,

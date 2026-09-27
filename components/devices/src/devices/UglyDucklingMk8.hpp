@@ -43,7 +43,7 @@ public:
 
 protected:
     void registerMotorAndValves(const std::shared_ptr<PeripheralManager>& peripheralManager, const PeripheralServices& services) {
-        auto motorEnable = SharedEnable::forActiveHighPin(LOADEN, 5ms);
+        auto motorEnable = SharedEnable::forActiveHighPin({ .pin = LOADEN, .settleTime = 5ms });
         auto motorDriver = Drv8848Driver::create(
             services.pwmManager,
             DAIN1,

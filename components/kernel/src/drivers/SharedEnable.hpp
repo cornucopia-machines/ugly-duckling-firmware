@@ -100,6 +100,17 @@ public:
     using Actuator = std::function<void(bool)>;
 
     /**
+     * @brief A SharedEnable driven by a pin.
+     */
+    struct PinConfig {
+        PinPtr pin;
+        /**
+         * @brief How long clients must wait after the pin turns on before using what it enables.
+         */
+        std::chrono::microseconds settleTime;
+    };
+
+    /**
      * @param settleTime How long clients must wait after the output turns on before using what it enables.
      */
     SharedEnable(Actuator actuate, std::chrono::microseconds settleTime)
@@ -117,25 +128,27 @@ public:
     /**
      * @brief Create a SharedEnable that drives a pin HIGH when active, LOW when inactive.
      */
-    static std::shared_ptr<SharedEnable> forActiveHighPin(const PinPtr& pin, std::chrono::microseconds settleTime) {
+    static std::shared_ptr<SharedEnable> forActiveHighPin(const PinConfig& config) {
+        const auto& pin = config.pin;
         pin->pinMode(Pin::Mode::Output);
         pin->digitalWrite(0);
         return std::make_shared<SharedEnable>([pin](bool active) {
             pin->digitalWrite(active ? 1 : 0);
         },
-            settleTime);
+            config.settleTime);
     }
 
     /**
      * @brief Create a SharedEnable that drives a pin LOW when active, HIGH when inactive.
      */
-    static std::shared_ptr<SharedEnable> forActiveLowPin(const PinPtr& pin, std::chrono::microseconds settleTime) {
+    static std::shared_ptr<SharedEnable> forActiveLowPin(const PinConfig& config) {
+        const auto& pin = config.pin;
         pin->pinMode(Pin::Mode::Output);
         pin->digitalWrite(1);
         return std::make_shared<SharedEnable>([pin](bool active) {
             pin->digitalWrite(active ? 0 : 1);
         },
-            settleTime);
+            config.settleTime);
     }
 
     Handle createHandle() {
