@@ -30,6 +30,16 @@ struct LogRecord {
 #endif
 #endif
 
+// Compile-time ceiling for our own logs, deliberately separate from CONFIG_LOG_MAXIMUM_LEVEL
+// (LOG_LOCAL_LEVEL), which gates IDF and third-party code. Release builds compile those at WARN
+// but keep our INFO logs, which LOGGING_TAG enables at runtime and publishLogs forwards over MQTT.
+// esp_log_level_set() doesn't clamp to the Kconfig maximum, so the runtime override still works.
+#ifdef UD_DEBUG
+#define UD_LOG_MAXIMUM_LEVEL CONFIG_LOG_MAXIMUM_LEVEL
+#else
+#define UD_LOG_MAXIMUM_LEVEL UD_LOG_LEVEL
+#endif
+
 #ifndef UD_LOG_VERBOSE
 #define UD_LOG_VERBOSE ""
 #endif
@@ -66,11 +76,18 @@ inline bool loggingTagInList(const char* tag, const char* list) {
 
 LOGGING_TAG(GLOBAL, "global")
 
-#define LOGTE(tag, format, ...) ESP_LOG_LEVEL_LOCAL(ESP_LOG_ERROR, tag, format, ##__VA_ARGS__)
-#define LOGTW(tag, format, ...) ESP_LOG_LEVEL_LOCAL(ESP_LOG_WARN, tag, format, ##__VA_ARGS__)
-#define LOGTI(tag, format, ...) ESP_LOG_LEVEL_LOCAL(ESP_LOG_INFO, tag, format, ##__VA_ARGS__)
-#define LOGTD(tag, format, ...) ESP_LOG_LEVEL_LOCAL(ESP_LOG_DEBUG, tag, format, ##__VA_ARGS__)
-#define LOGTV(tag, format, ...) ESP_LOG_LEVEL_LOCAL(ESP_LOG_VERBOSE, tag, format, ##__VA_ARGS__)
+#define UD_LOG_LEVEL_LOCAL(level, tag, format, ...)           \
+    do {                                                      \
+        if (UD_LOG_MAXIMUM_LEVEL >= (level)) {                \
+            ESP_LOG_LEVEL(level, tag, format, ##__VA_ARGS__); \
+        }                                                     \
+    } while (0)
+
+#define LOGTE(tag, format, ...) UD_LOG_LEVEL_LOCAL(ESP_LOG_ERROR, tag, format, ##__VA_ARGS__)
+#define LOGTW(tag, format, ...) UD_LOG_LEVEL_LOCAL(ESP_LOG_WARN, tag, format, ##__VA_ARGS__)
+#define LOGTI(tag, format, ...) UD_LOG_LEVEL_LOCAL(ESP_LOG_INFO, tag, format, ##__VA_ARGS__)
+#define LOGTD(tag, format, ...) UD_LOG_LEVEL_LOCAL(ESP_LOG_DEBUG, tag, format, ##__VA_ARGS__)
+#define LOGTV(tag, format, ...) UD_LOG_LEVEL_LOCAL(ESP_LOG_VERBOSE, tag, format, ##__VA_ARGS__)
 
 #define LOGE(format, ...) LOGTE(GLOBAL, format, ##__VA_ARGS__)
 #define LOGW(format, ...) LOGTW(GLOBAL, format, ##__VA_ARGS__)

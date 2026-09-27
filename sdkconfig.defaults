@@ -29,7 +29,8 @@ CONFIG_VFS_SUPPORT_SELECT=n
 # Less chatty
 CONFIG_BOOTLOADER_LOG_LEVEL_ERROR=y
 CONFIG_LOG_DEFAULT_LEVEL_WARN=y
-CONFIG_LOG_MAXIMUM_LEVEL_INFO=y
+# Compile IDF and third-party INFO strings out; our own logs have a separate ceiling (see Log.hpp)
+CONFIG_LOG_MAXIMUM_EQUALS_DEFAULT=y
 
 # We do our own coloring in debug mode
 CONFIG_LOG_COLORS=n
