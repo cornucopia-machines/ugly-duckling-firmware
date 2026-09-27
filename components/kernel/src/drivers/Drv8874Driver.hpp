@@ -51,12 +51,15 @@ public:
     void drive(MotorPhase phase, double duty) override {
         if (duty == 0) {
             LOGD("Stopping motor");
+            // Zero both inputs: the sleep pin may be shared with another motor, keeping this bridge awake
+            in1Channel.write(0);
+            in2Channel.write(0);
             enableHandle.release();
             return;
         }
         enableHandle.acquire();
 
-        auto dutyValue = static_cast<uint32_t>((in1Channel.maxValue() + in1Channel.maxValue() * duty) / 2);
+        auto dutyValue = static_cast<uint32_t>(in1Channel.maxValue() * duty);
         LOGD("Driving motor %s at %.2f%%",
             phase == MotorPhase::Forward ? "forward" : "reverse",
             duty * 100);
