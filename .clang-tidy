@@ -97,6 +97,9 @@ Checks:
 
 CheckOptions:
   readability-function-cognitive-complexity.Threshold: 500
+  # Branches inside macro expansions (e.g. Log v2's ESP_LOG_CONFIGS_DEFAULT ternaries in every
+  # LOG* call) are not complexity the reader of the function has to deal with
+  readability-function-cognitive-complexity.IgnoreMacros: true
   cppcoreguidelines-avoid-do-while.IgnoreMacros: true
   # Carried over from its alias cert-oop54-cpp, which we no longer run: warn on every
   # copy assignment without a self-assignment check, not only ones with pointer members.

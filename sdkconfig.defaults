@@ -31,6 +31,8 @@ CONFIG_BOOTLOADER_LOG_LEVEL_ERROR=y
 CONFIG_LOG_DEFAULT_LEVEL_WARN=y
 # Compile IDF and third-party INFO strings out; our own logs have a separate ceiling (see Log.hpp)
 CONFIG_LOG_MAXIMUM_EQUALS_DEFAULT=y
+# Log v2 (text mode) moves the "I (%lu) %s: " prefix out of every format string into esp_log()
+CONFIG_LOG_VERSION_2=y
 
 # We do our own coloring in debug mode
 CONFIG_LOG_COLORS=n

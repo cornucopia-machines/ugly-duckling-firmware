@@ -107,7 +107,7 @@ static void startDevice() {
          "  | | | |/ _` | | | | | | | | | | | |/ __| |/ / | | '_ \\ / _` |\n"
          "  | |_| | (_| | | |_| | | |_| | |_| | (__|   <| | | | | | (_| |\n"
          "   \\___/ \\__, |_|\\__, | |____/ \\__,_|\\___|_|\\_\\_|_|_| |_|\\__, |\n"
-         "         |___/   |___/                                    |___/ %s\n",
+         "         |___/   |___/                                    |___/ %s",
         firmwareVersion.c_str());
     LOGI("Initializing ugly duckling firmware version %s on %s with hostname '%s' and MAC address %s",
         firmwareVersion.c_str(),

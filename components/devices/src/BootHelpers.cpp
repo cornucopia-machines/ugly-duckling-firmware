@@ -70,7 +70,7 @@ std::shared_ptr<BatteryDriver> initBattery(const std::shared_ptr<DeviceDefinitio
         // due to the high current draw of the boot process.
         auto voltage = battery->getVoltage();
         if (voltage != 0 && voltage < battery->parameters.bootThreshold) {
-            ESP_LOGW("battery", "Battery voltage too low (%d mV < %d mV), entering deep sleep\n",
+            ESP_LOGW("battery", "Battery voltage too low (%d mV < %d mV), entering deep sleep",
                 voltage, battery->parameters.bootThreshold);
             enterLowPowerDeepSleep();
         }

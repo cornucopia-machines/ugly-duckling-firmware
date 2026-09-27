@@ -163,7 +163,7 @@ public:
 
 private:
     ~Task() {
-        LOGV("Finished task %s\n",
+        LOGV("Finished task %s",
             pcTaskGetName(nullptr));
         vTaskDelete(nullptr);
     }
