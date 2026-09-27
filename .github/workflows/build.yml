@@ -1,6 +1,10 @@
 name: CI Build
 on:
+  # Only branch pushes: publishing a release also pushes its tag, and building that tag push
+  # as well would produce a second, non-identical build of the same version. The release
+  # event's run publishes both the GitHub release assets and the R2 OTA images.
   push:
+    branches: ["**"]
   release:
     types: [published]
 
