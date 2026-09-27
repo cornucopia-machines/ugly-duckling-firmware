@@ -141,7 +141,7 @@ private:
 
     private:
         uint32_t toDutyValue(double duty) const {
-            return static_cast<uint32_t>((forwardChannel.maxValue() + forwardChannel.maxValue() * duty) / 2);
+            return static_cast<uint32_t>(forwardChannel.maxValue() * duty);
         }
 
         /**
