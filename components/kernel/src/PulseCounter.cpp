@@ -8,6 +8,7 @@
 #include <freertos/task.h>
 #include <hal/rtc_io_types.h>
 
+#include <atomic>
 #include <cinttypes>
 #include <cstddef>
 #include <cstdint>
@@ -73,8 +74,10 @@ namespace cornucopia::ugly_duckling::kernel {
 class UlpPulseCounter final : public PulseCounter {
 public:
     uint32_t getCount() const override {
-        if (ulp_started == 0U) {
-            // ULP not started yet, so no new pulses have been counted since lastSeen
+        if (!ulpStarted->load()) {
+            // ULP binary not loaded yet. RTC slow memory survives soft resets, so until
+            // PulseCounterManager::start() reloads it, ulp_started and ulp_pulse_count may
+            // still hold stale values from the previous boot — don't read them.
             return 0;
         }
         uint32_t current = ulp_pulse_count[channelIndex];
@@ -88,8 +91,10 @@ public:
     }
 
     uint32_t resetCount() override {
-        if (ulp_started == 0U) {
-            // ULP not started yet, so no new pulses have been counted since lastSeen
+        if (!ulpStarted->load()) {
+            // ULP binary not loaded yet. RTC slow memory survives soft resets, so until
+            // PulseCounterManager::start() reloads it, ulp_started and ulp_pulse_count may
+            // still hold stale values from the previous boot — don't read them.
             return 0;
         }
         uint32_t current = ulp_pulse_count[channelIndex];
@@ -109,9 +114,10 @@ public:
     }
 
 private:
-    UlpPulseCounter(InternalPinPtr pin, uint32_t channelIndex)
+    UlpPulseCounter(InternalPinPtr pin, uint32_t channelIndex, std::shared_ptr<const std::atomic<bool>> ulpStarted)
         : pin(std::move(pin))
-        , channelIndex(channelIndex) {
+        , channelIndex(channelIndex)
+        , ulpStarted(std::move(ulpStarted)) {
     }
 
     // Detects a coprocessor/CPU desync: current - lastSeen wraps around to a
@@ -133,6 +139,7 @@ private:
 
     const InternalPinPtr pin;
     const uint32_t channelIndex;
+    const std::shared_ptr<const std::atomic<bool>> ulpStarted;
     uint32_t lastSeen = 0;
 
     friend class PulseCounterManager;
@@ -157,10 +164,9 @@ std::shared_ptr<PulseCounter> PulseCounterManager::create(const PulseCounterConf
 
 void PulseCounterManager::start() {
 #ifdef CONFIG_ULP_COPROC_ENABLED
-    if (ulpStarted || ulpNextChannel == 0) {
+    if (ulpStarted->load() || ulpNextChannel == 0) {
         return;
     }
-    ulpStarted = true;
 
     // NOLINTNEXTLINE(clang-analyzer-security.PointerSub) -- linker-emitted symbols, not a real array
     auto size = static_cast<size_t>(ulp_pulse_counter_bin_end - ulp_pulse_counter_bin_start);
@@ -185,6 +191,10 @@ void PulseCounterManager::start() {
         ulp_debounce_us[i] = ulpChannelConfigs[i].debounceUs;
         ulp_pulse_count[i] = 0;
     }
+
+    // Counters may already be polling (e.g. FlowMeter's task starts in its constructor);
+    // let them read RTC memory only now that it has been reloaded and zeroed.
+    ulpStarted->store(true);
 
 #ifdef CONFIG_ULP_COPROC_TYPE_RISCV
     ESP_ERROR_THROW(ulp_riscv_run());
@@ -243,7 +253,7 @@ std::shared_ptr<PulseCounter> PulseCounterManager::createUlp(const PulseCounterC
     LOGTD(PULSE, "Registered ULP pulse counter on pin %s (channel %" PRIu32 ", debounce %" PRIu32 " us)",
         config.pin->getName().c_str(), index, debounceUs);
 
-    auto ulpCounter = std::shared_ptr<UlpPulseCounter>(new UlpPulseCounter(config.pin, index));
+    auto ulpCounter = std::shared_ptr<UlpPulseCounter>(new UlpPulseCounter(config.pin, index, ulpStarted));
     ulpCounters.push_back(ulpCounter);
     return ulpCounter;
 }

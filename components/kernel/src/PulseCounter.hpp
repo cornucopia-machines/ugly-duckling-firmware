@@ -203,7 +203,9 @@ private:
     static constexpr uint32_t ULP_MAX_CHANNELS = 4;
 
     // ULP/LP-core path
-    bool ulpStarted = false;
+    // Set once start() has reloaded the ULP binary (zeroing RTC shared memory). Shared with
+    // UlpPulseCounters, which must not trust RTC memory before then.
+    std::shared_ptr<std::atomic<bool>> ulpStarted = std::make_shared<std::atomic<bool>>(false);
     uint32_t ulpNextChannel = 0;
 
     struct UlpChannelConfig {
