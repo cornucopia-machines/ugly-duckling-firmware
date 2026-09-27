@@ -73,6 +73,7 @@ public:
         std::scoped_lock lock(mutex);
         esp_timer_stop(stopTimer);
 
+        // Blocks until the load rail has settled; only start the PWM after that
         enableHandle.acquire();
         sleepLock.emplace(PowerManager::noLightSleep);
         auto dutyValue = static_cast<uint32_t>(channel.maxValue() * duty);

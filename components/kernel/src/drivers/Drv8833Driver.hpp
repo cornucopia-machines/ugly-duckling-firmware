@@ -4,7 +4,6 @@
 #include <Log.hpp>
 #include <Pin.hpp>
 #include <PwmManager.hpp>
-#include <Task.hpp>
 #include <drivers/MotorDriver.hpp>
 #include <drivers/PulseTimer.hpp>
 #include <drivers/SharedEnable.hpp>
@@ -42,6 +41,16 @@ public:
         return motorB;
     }
 
+    /**
+     * @brief Whether the driver reports a fault (nFAULT low).
+     *
+     * @details Ignored until the enable has settled: nFAULT is asserted while VM is below UVLO,
+     * which it is while the load rail is still coming up.
+     */
+    bool hasFault() const {
+        return enable->isSettled() && faultPin->digitalRead() == 0;
+    }
+
     Drv8833Driver(
         const std::shared_ptr<PwmManager>& pwm,
         const InternalPinPtr& ain1Pin,
@@ -51,7 +60,8 @@ public:
         const PinPtr& faultPin,
         const std::shared_ptr<SharedEnable>& enable,
         bool reverse = false)
-        : faultPin(faultPin) {
+        : faultPin(faultPin)
+        , enable(enable) {
 
         LOGI("Initializing motor driver on pin fault = %s",
             faultPin->getName().c_str());
@@ -96,7 +106,7 @@ private:
                 return;
             }
 
-            enableRail();
+            enableHandle.acquire();
 
             uint32_t dutyValue = toDutyValue(duty);
             LOGD("Driving motor %s on pins %s/%s at %d%%",
@@ -112,14 +122,14 @@ private:
             LOGD("Braking motor on pins %s/%s",
                 forwardChannel.getName().c_str(),
                 reverseChannel.getName().c_str());
-            enableRail();
+            enableHandle.acquire();
             // xIN1 = xIN2 = 1: both low-side FETs on, slow decay
             forwardChannel.write(forwardChannel.maxValue());
             reverseChannel.write(reverseChannel.maxValue());
         }
 
         void drivePulse(MotorPhase phase, double duty, std::chrono::milliseconds duration) override {
-            enableRail();
+            enableHandle.acquire();
 
             uint32_t dutyValue = toDutyValue(duty);
             LOGD("Pulsing motor %s on pins %s/%s at %d%% for %lld ms",
@@ -157,26 +167,6 @@ private:
             return inactive.tryWrite(0);
         }
 
-        /**
-         * @brief Time for the load rail to come up after the enable is asserted.
-         *
-         * @details On boards where the enable also switches a load boost converter (MK14's
-         * TPS61378-Q1 has a true load disconnect, so VLOAD starts from 0 V with ~0.4 ms delay
-         * plus 2.5 ms soft-start), loading the rail during soft-start can trip the boost's hiccup
-         * protection. It also covers the DRV88xx wake-up time. Harmless on boards without a boost.
-         */
-        static constexpr std::chrono::milliseconds RAIL_SETTLE_TIME { 5 };
-
-        /**
-         * @brief Acquire the enable before touching the inputs, and wait for the rail if we just turned it on.
-         */
-        void enableRail() {
-            if (!enableHandle.isAcquired()) {
-                enableHandle.acquire();
-                Task::delay(RAIL_SETTLE_TIME);
-            }
-        }
-
         const PwmPin& forwardChannel;
         const PwmPin& reverseChannel;
         SharedEnable::Handle enableHandle;
@@ -185,6 +175,7 @@ private:
     std::shared_ptr<Drv8833MotorDriver> motorA;
     std::shared_ptr<Drv8833MotorDriver> motorB;
     const PinPtr faultPin;
+    const std::shared_ptr<SharedEnable> enable;
 };
 
 }    // namespace cornucopia::ugly_duckling::kernel::drivers
