@@ -18,6 +18,7 @@
 static const std::string firmwareVersion(esp_app_get_description()->version);
 
 #include <BootConfig.hpp>
+#include <BootCounter.hpp>
 #include <BootHelpers.hpp>
 #include <BootMessage.hpp>
 #include <ConfigUpdate.hpp>
@@ -64,6 +65,8 @@ static void startDevice() {
     auto battery = initBattery(deviceDefinition, i2c);
 
     initNvsFlash();
+    auto bootCount = BootCounter::recordBoot();
+    LOGD("Boot count: %" PRIu32, bootCount);
 
     // Install GPIO ISR service
     ESP_ERROR_CHECK(gpio_install_isr_service(0));
@@ -177,7 +180,7 @@ static void startDevice() {
     // TODO(legacy-v1-topics): remove fallback and the macAddress parameter
     auto clientId = "ugly-duckling-" + (networkConfig->id.get().empty() ? macAddress : networkConfig->id.get());
     auto mqttRoot = initMqtt(states, clientId, networkConfig, states->mqttReady);
-    MqttLog::init(boot.deviceConfig->publishLogs.get(), logRecords, mqttRoot);
+    MqttLog::init(boot.deviceConfig->publishLogs.get(), bootCount, logRecords, mqttRoot);
     registerBasicCommands(mqttRoot);
     registerNvsCommands(mqttRoot);
 
@@ -279,7 +282,7 @@ static void startDevice() {
     // Enable power saving once we are done initializing
     WiFiDriver::setPowerSaveMode(boot.deviceConfig->sleepWhenIdle.get());
 
-    publishBootMessage(mqttRoot, resetReason, consecutiveCrashes, firmwareVersion, macAddress, networkConfig, runtime.initState, peripheralsInitJson, functionsInitJson,
+    publishBootMessage(mqttRoot, resetReason, bootCount, consecutiveCrashes, firmwareVersion, macAddress, networkConfig, runtime.initState, peripheralsInitJson, functionsInitJson,
         powerManager, deviceDefinition, hardwareVersion, rejectionToReport, firmwareDownloadRejection, rollback);
 
     states->kernelReady.set();

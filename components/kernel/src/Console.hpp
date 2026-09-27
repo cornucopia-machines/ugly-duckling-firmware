@@ -2,7 +2,9 @@
 #include <Log.hpp>
 #include <Queue.hpp>
 
+#include <atomic>
 #include <cstdarg>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <utility>
@@ -64,7 +66,9 @@ private:
         // A format string ending in '\n' completes the line before Log v2 writes its own newline,
         // which then arrives here alone; print it, but don't record an empty line
         if (level <= recordedLevel && message != "\n") {
-            logRecords->offer(level, message);
+            // Take the number even if the queue is full and the record gets dropped: the gap is
+            // what tells the server that records were lost (issue #635)
+            logRecords->offer(nextSeq++, level, message);
         }
 
         int count = 0;
@@ -165,6 +169,7 @@ private:
     static vprintf_like_t originalVprintf;
     static std::shared_ptr<Queue<LogRecord>> logRecords;
     static Level recordedLevel;
+    static std::atomic<uint32_t> nextSeq;
     static std::mutex bufferMutex;
     static constexpr size_t BUFFER_SIZE = 128;
     static char buffer[];
@@ -176,6 +181,7 @@ private:
 vprintf_like_t ConsoleProvider::originalVprintf;
 std::shared_ptr<Queue<LogRecord>> ConsoleProvider::logRecords;
 Level ConsoleProvider::recordedLevel;
+std::atomic<uint32_t> ConsoleProvider::nextSeq { 0 };
 std::mutex ConsoleProvider::bufferMutex;
 char ConsoleProvider::buffer[BUFFER_SIZE];
 std::mutex ConsoleProvider::partialMessageMutex;

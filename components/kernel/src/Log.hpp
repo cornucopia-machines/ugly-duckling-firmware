@@ -3,6 +3,7 @@
 #include <esp_log.h>
 #include <string.h>
 
+#include <cstdint>
 #include <string>
 
 namespace cornucopia::ugly_duckling::kernel {
@@ -18,6 +19,12 @@ enum class Level : uint8_t {
 };
 
 struct LogRecord {
+    /**
+     * Per-boot sequence number, assigned when the record is enqueued, so it reflects emission
+     * order even when publishing reorders records. A record dropped anywhere on the way to the
+     * server (queue overflow, publish failure, an outbox purged on disconnect) leaves a gap.
+     */
+    const uint32_t seq;
     const Level level;
     const std::string message;
 };

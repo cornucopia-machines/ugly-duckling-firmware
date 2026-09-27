@@ -8,22 +8,13 @@
 #include "mqtt/MqttDriver.hpp"
 #include "mqtt/MqttRoot.hpp"
 #include <BootMessage.hpp>
+#include <CrashManager.hpp>
 
-#include "esp_attr.h"
 #include "esp_sleep.h"
 #include "esp_system.h"
 #include <bits/chrono.h>
 
 #include <chrono>
-
-namespace {
-// NOLINTBEGIN(cppcoreguidelines-avoid-non-const-global-variables)
-RTC_DATA_ATTR int bootCount = 0;
-// NOLINTEND(cppcoreguidelines-avoid-non-const-global-variables)
-}    // namespace
-
-#include <CrashManager.hpp>
-
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -51,6 +42,7 @@ using namespace cornucopia::ugly_duckling::kernel;
 void publishBootMessage(
     const std::shared_ptr<MqttRoot>& mqttRoot,
     esp_reset_reason_t resetReason,
+    uint32_t bootCount,
     uint32_t consecutiveCrashes,
     const std::string& firmwareVersion,
     const std::string& macAddress,
@@ -87,7 +79,7 @@ void publishBootMessage(
             json["reset"] = resetReason;
             json["consecutiveCrashes"] = consecutiveCrashes;
             json["wakeup"] = esp_sleep_get_wakeup_causes();
-            json["bootCount"] = bootCount++;
+            json["bootCount"] = bootCount;
             json["time"] = duration_cast<seconds>(system_clock::now().time_since_epoch()).count();
             json["state"] = static_cast<int>(initState);
             json["peripherals"].to<JsonArray>().set(peripheralsInitJson);
