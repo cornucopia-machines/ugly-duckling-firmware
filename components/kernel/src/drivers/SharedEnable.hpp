@@ -4,11 +4,8 @@
 #include <Pin.hpp>
 #include <Task.hpp>
 
-#include <esp_timer.h>
-
 #include <atomic>
 #include <chrono>
-#include <cstdint>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -162,7 +159,7 @@ public:
      * that aren't meaningful while the enabled rail is still coming up.
      */
     bool isSettled() const {
-        return readyAtMicros.load() != NOT_ACTIVE
+        return readyAt.load() != NOT_ACTIVE
             && remainingSettleTime() == std::chrono::microseconds::zero();
     }
 
@@ -171,12 +168,14 @@ private:
      * @brief Time left until the output has been active for the settle time; zero if it has, or if it is inactive.
      */
     std::chrono::microseconds remainingSettleTime() const {
-        int64_t readyAt = readyAtMicros.load();
-        if (readyAt == NOT_ACTIVE) {
+        auto deadline = readyAt.load();
+        if (deadline == NOT_ACTIVE) {
             return std::chrono::microseconds::zero();
         }
-        int64_t now = esp_timer_get_time();
-        return std::chrono::microseconds(now < readyAt ? readyAt - now : 0);
+        auto now = std::chrono::steady_clock::now();
+        return now < deadline
+            ? std::chrono::ceil<std::chrono::microseconds>(deadline - now)
+            : std::chrono::microseconds::zero();
     }
 
     void waitUntilSettled() const {
@@ -194,23 +193,23 @@ private:
         std::scoped_lock lock(mutex);
         if (++activeCount == 1) {
             actuate(true);
-            readyAtMicros.store(esp_timer_get_time() + settleTime.count());
+            readyAt.store(std::chrono::steady_clock::now() + settleTime);
         }
     }
 
     void handleReleased() {
         std::scoped_lock lock(mutex);
         if (--activeCount == 0) {
-            readyAtMicros.store(NOT_ACTIVE);
+            readyAt.store(NOT_ACTIVE);
             actuate(false);
         }
     }
 
-    static constexpr int64_t NOT_ACTIVE = -1;
+    static constexpr std::chrono::steady_clock::time_point NOT_ACTIVE = std::chrono::steady_clock::time_point::min();
 
     Actuator actuate;
     const std::chrono::microseconds settleTime;
-    std::atomic<int64_t> readyAtMicros = NOT_ACTIVE;
+    std::atomic<std::chrono::steady_clock::time_point> readyAt = NOT_ACTIVE;
     int activeCount = 0;
     std::mutex mutex;
 };
