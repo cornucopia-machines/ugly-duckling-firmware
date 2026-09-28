@@ -41,8 +41,8 @@ public:
             LP_SCL,
             BatteryParameters {
                 .maximumVoltage = 4100,
-                .bootThreshold = 3300,
-                .shutdownThreshold = 3100,
+                .bootThreshold = 3600,
+                .shutdownThreshold = 3500,
             });
     }
 

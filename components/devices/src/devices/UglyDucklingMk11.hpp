@@ -36,8 +36,8 @@ public:
             2,    // RBATL1 (5.6 MΩ) / RBATL2 (5.6 MΩ) voltage divider: V_VBAT = V_BAT_LEVEL × 2
             BatteryParameters {
                 .maximumVoltage = 4100,
-                .bootThreshold = 3300,
-                .shutdownThreshold = 3100,
+                .bootThreshold = 3600,
+                .shutdownThreshold = 3500,
             });
     }
 
