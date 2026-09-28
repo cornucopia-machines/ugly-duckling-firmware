@@ -28,12 +28,12 @@ using namespace cornucopia::ugly_duckling::kernel;
  * bodies (docs/Configuration.md, "BOOT, SYNC, UPDATE") -- fingerprints are reported separately
  * by SYNC (initSyncTask), gated on kernelReady. `rejection` is present only when a
  * requested-set revert (this boot or an earlier, unreported one) left one recorded. Published at
- * QoS 1, like telemetry, sync and responses (log is the one holdout, see MqttLog) -- BOOT's
- * payload carries no delta/counter state, so a duplicate delivery is harmless here (issue #634).
+ * QoS 1, like telemetry, sync, responses and log -- BOOT's payload carries no delta/counter state,
+ * so a duplicate delivery is harmless here (issue #634).
  *
  * Fire-and-forget: this used to block the boot task for up to 5s waiting for the broker's ack,
  * but the wait never affected delivery (the driver enqueues into esp-mqtt's outbox either way)
- * and the PublishStatus was discarded. All it did was delay `kernelReady` and, behind it,
+ * and nothing read its outcome. All it did was delay `kernelReady` and, behind it,
  * `confirmFirmwareValid()` -- gating firmware confirmation on an unread MQTT ack, which left a
  * freshly-flashed partition in PENDING_VERIFY for 5s longer than necessary. BOOT still precedes
  * SYNC on the wire: both traverse the same eventQueue and client in FIFO order, and BOOT is

@@ -38,7 +38,7 @@ pending migration, it's `.../devices/ugly-duckling/$INSTANCE`. See
 
 | Topic | Direction | QoS | Carries |
 | --- | --- | --- | --- |
-| `boot` | device → server | `QoS 1` | Diagnostics: model/revision/platform, reset/wakeup reason, boot count, per-peripheral/function apply errors, and (see *Rejection reporting* below) a rejection code, if one is pending. **No configuration bodies.** |
+| `boot` | device → server | `QoS 1` | Diagnostics: model/revision/platform, reset/wakeup reason, boot count (persistent; the same number is `session` in `log`, see [Architecture.md](Architecture.md#log-records)), per-peripheral/function apply errors, and (see *Rejection reporting* below) a rejection code, if one is pending. **No configuration bodies.** |
 | `sync` | device → server | `QoS 1` | The fingerprint manifest of what the device has **applied and booted with** — `device`, `network`, and every function — proof-of-apply, not proof-of-receipt. Built from live in-memory state, never re-derived from NVS. Also carries a rejection code (see *Rejection reporting* below) on the first `SYNC` published after a revert, alongside `BOOT`. |
 | `update` | server → device | `QoS 1` (subscription ceiling; the server still publishes at 2) | New configuration: `{configurations: {device: envelope, network: envelope, <function>: envelope, ...}}`. |
 
