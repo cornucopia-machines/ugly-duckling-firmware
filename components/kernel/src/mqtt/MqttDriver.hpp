@@ -5,7 +5,6 @@
 #include <State.hpp>
 #include <Task.hpp>
 #include <config/Configuration.hpp>
-#include <mqtt/PendingMessages.hpp>
 
 #include <esp_event.h>
 #include <mqtt_client.h>
@@ -212,18 +211,10 @@ public:
 
 private:
     // Bounds how long we wait for the *network* to respond: esp-mqtt's transport read/write
-    // timeout, the connection attempt, and a subscription ack. Deliberately not the publish
-    // default -- see MQTT_PUBLISH_TIMEOUT.
+    // timeout, the connection attempt, and a subscription ack. Publishing never waits on the
+    // network at all, see publish().
     static constexpr milliseconds MQTT_NETWORK_TIMEOUT = 15s;
 
-    // How long `publish()` blocks its caller waiting for the broker's ack, by default: not at
-    // all. The wait never made the message go out -- `publishAndWait` hands it to `eventQueue`
-    // before awaiting anything, and the driver task enqueues it into esp-mqtt's outbox
-    // regardless -- and no call site reads the returned PublishStatus, so blocking only delayed
-    // the publishing task. Pass an explicit timeout to opt back in where the wait earns its
-    // keep. (MqttLog used to, to serialise log records, until issue #635 gave them an explicit
-    // sequence.)
-    static constexpr milliseconds MQTT_PUBLISH_TIMEOUT = 0s;
     static constexpr milliseconds MQTT_MESSAGE_RETRANSMIT_TIMEOUT = 5s;
     static constexpr milliseconds MQTT_CONNECTION_TIMEOUT = MQTT_NETWORK_TIMEOUT;
     static constexpr milliseconds MQTT_SESSION_KEEP_ALIVE = 120s;
@@ -239,7 +230,6 @@ private:
         std::string topic;
         std::string payload;
         QoS qos;
-        PendingMessagePtr pending;
         LogPublish log;
     };
 
@@ -252,11 +242,6 @@ private:
         std::string topic;
         QoS qos;
         SubscriptionHandler handle;
-    };
-
-    struct MessagePublished {
-        int messageId;
-        bool success;
     };
 
     struct Subscribed {
@@ -273,52 +258,36 @@ private:
         std::function<void()> callback;
     };
 
-    PublishStatus publish(const std::string& topic, const JsonDocument& json, QoS qos, ticks timeout = MQTT_PUBLISH_TIMEOUT, LogPublish log = LogPublish::Log) {
+    /**
+     * Fire-and-forget: hands the message to the driver task, which enqueues it into esp-mqtt's
+     * outbox. Nothing waits for the broker's ack. A wait never affected delivery, and no caller
+     * acted on the outcome, so it only delayed the publishing task. MqttLog was the last caller
+     * to wait, to keep log records in order, until issue #635 gave them an explicit sequence.
+     */
+    void publish(const std::string& topic, const JsonDocument& json, QoS qos, LogPublish log = LogPublish::Log) {
         std::string payload;
         serializeJson(json, payload);
         if (log == LogPublish::Log) {
 #ifdef DUMP_MQTT
-            LOGTD(MQTT, "Queuing topic '%s' (qos = %d, timeout = %lld ms): %s",
+            LOGTD(MQTT, "Queuing topic '%s' (qos = %d): %s",
                 topic.c_str(),
                 static_cast<int>(qos),
-                duration_cast<milliseconds>(timeout).count(),
                 payload.c_str());
 #else
-            LOGTV(MQTT, "Queuing topic '%s' (qos = %d, timeout = %lld ms)",
+            LOGTV(MQTT, "Queuing topic '%s' (qos = %d)",
                 topic.c_str(),
-                static_cast<int>(qos),
-                duration_cast<milliseconds>(timeout).count());
+                static_cast<int>(qos));
 #endif
         }
-        return publishAndWait(topic, payload, qos, timeout);
-    }
-
-    PublishStatus publishAndWait(const std::string& topic, const std::string& payload, QoS qos, ticks timeout) {
-        // Fire-and-forget publishes (timeout == 0) don't get a pending-outcome slot at all --
-        // there's nobody around to wait on it.
-        auto pending = timeout == ticks::zero() ? nullptr : std::make_shared<PendingMessage>();
-
-        bool offered = eventQueue.offerIn(
+        // A full queue is already reported by Queue itself
+        eventQueue.offerIn(
             MQTT_QUEUE_TIMEOUT,
             OutgoingMessage {
                 .topic = topic,
                 .payload = payload,
                 .qos = qos,
-                .pending = pending,
-                .log = LogPublish::Log,
+                .log = log,
             });
-
-        if (!offered) {
-            return PublishStatus::QueueFull;
-        }
-        if (pending == nullptr) {
-            return PublishStatus::Pending;
-        }
-
-        // This timeout is purely how long *this call* is willing to block -- if it expires
-        // before the real outcome arrives, we just stop waiting; `pending` keeps the outcome
-        // slot alive for whoever (if anyone) still holds a reference to it (see PendingMessages).
-        return pending->await(timeout);
     }
 
     bool subscribe(const std::string& topic, QoS qos, SubscriptionHandler handler) {
@@ -422,15 +391,8 @@ private:
                             state = MqttState::Disconnected;
                             stopClient();
 
-                            // Clear pending messages and notify waiting tasks
-                            pendingMessages.clear();
-
                             // Clear pending subscriptions
                             pendingSubscriptions.clear();
-                        },
-                        [&](const MessagePublished& arg) {
-                            LOGTV(MQTT, "Processing message published: %d", arg.messageId);
-                            pendingMessages.handlePublished(arg.messageId, arg.success);
                         },
                         [&](const Subscribed& arg) {
                             LOGTV(MQTT, "Processing subscribed event: %d", arg.messageId);
@@ -546,12 +508,10 @@ private:
             }
             case MQTT_EVENT_PUBLISHED: {
                 LOGTV(MQTT, "Published, message ID %d", event->msg_id);
-                eventQueue.offerIn(MQTT_QUEUE_TIMEOUT, MessagePublished { .messageId = event->msg_id, .success = true });
                 break;
             }
             case MQTT_EVENT_DELETED: {
                 LOGTV(MQTT, "Deleted, message ID %d", event->msg_id);
-                eventQueue.offerIn(MQTT_QUEUE_TIMEOUT, MessagePublished { .messageId = event->msg_id, .success = false });
                 break;
             }
             case MQTT_EVENT_DATA: {
@@ -586,9 +546,6 @@ private:
                         // Nothing to report
                         break;
                 }
-                if (event->msg_id != 0) {
-                    eventQueue.offerIn(MQTT_QUEUE_TIMEOUT, MessagePublished { .messageId = event->msg_id, .success = false });
-                }
                 break;
             }
             default: {
@@ -608,22 +565,21 @@ private:
             0,    // Never retain: nothing the device publishes is a retained message
             true);
 
+        // Silent publishes (log records) must not log here: the log line would be published in
+        // turn, and a full outbox would then feed itself. A lost log record still shows up as a
+        // gap in its `seq`.
+        if (message.log == LogPublish::Silent) {
+            return;
+        }
         if (ret < 0) {
             LOGTD(MQTT, "Error publishing to '%s': %s",
                 message.topic.c_str(), ret == -2 ? "outbox full" : "failure");
-            if (message.pending != nullptr) {
-                message.pending->resolve(PublishStatus::Failed);
-            }
-        } else {
-            auto messageId = ret;
-#ifdef DUMP_MQTT
-            if (message.log == LogPublish::Log) {
-                LOGTV(MQTT, "Published to '%s' (size: %d), message ID: %d",
-                    message.topic.c_str(), message.payload.length(), messageId);
-            }
-#endif
-            pendingMessages.waitOn(messageId, message.pending);
+            return;
         }
+#ifdef DUMP_MQTT
+        LOGTV(MQTT, "Published to '%s' (size: %d), message ID: %d",
+            message.topic.c_str(), message.payload.length(), ret);
+#endif
     }
 
     void processSubscriptions(const std::vector<Subscription>& subscriptions, std::vector<PendingSubscription>& pendingSubscriptions) {
@@ -760,13 +716,12 @@ private:
     uint32_t port {};
     esp_mqtt_client_handle_t client;
 
-    using MqttEvent = std::variant<Connected, Disconnected, MessagePublished, Subscribed, OutgoingMessage, Subscription, ConnectedListenerRegistration>;
+    using MqttEvent = std::variant<Connected, Disconnected, Subscribed, OutgoingMessage, Subscription, ConnectedListenerRegistration>;
     Queue<MqttEvent> eventQueue;
     Queue<IncomingMessage> incomingQueue;
     // TODO Use a map instead
     std::vector<Subscription> subscriptions;
     std::vector<std::function<void()>> connectedListeners;
-    PendingMessages pendingMessages;
 
     std::atomic<int> disconnectCount { 0 };
 

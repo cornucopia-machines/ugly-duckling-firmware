@@ -33,7 +33,7 @@ using namespace cornucopia::ugly_duckling::kernel;
  *
  * Fire-and-forget: this used to block the boot task for up to 5s waiting for the broker's ack,
  * but the wait never affected delivery (the driver enqueues into esp-mqtt's outbox either way)
- * and the PublishStatus was discarded. All it did was delay `kernelReady` and, behind it,
+ * and nothing read its outcome. All it did was delay `kernelReady` and, behind it,
  * `confirmFirmwareValid()` -- gating firmware confirmation on an unread MQTT ack, which left a
  * freshly-flashed partition in PENDING_VERIFY for 5s longer than necessary. BOOT still precedes
  * SYNC on the wire: both traverse the same eventQueue and client in FIFO order, and BOOT is

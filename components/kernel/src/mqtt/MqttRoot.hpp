@@ -51,22 +51,20 @@ public:
      * @brief Publishes to the given topic under the topic prefix.
      *
      * `qos` has no default on purpose: it is the one parameter that genuinely differs per channel,
-     * and the old default (QoS 0) was a footgun no call site ever wanted. Everything after it does
-     * have a sensible default -- don't wait for the ack, do log -- so the common case
-     * is `publish("topic", populate, QoS::AtLeastOnce)`.
+     * and the old default (QoS 0) was a footgun no call site ever wanted. `log` defaults to
+     * logging the publish, so the common case is `publish("topic", populate, QoS::AtLeastOnce)`.
      *
-     * A non-zero `timeout` blocks the calling task until the broker acks; it does not affect
-     * whether the message is sent (see MqttDriver::publishAndWait). No call site wants that today.
+     * Fire-and-forget: this never waits for the broker's ack (see MqttDriver::publish).
      */
-    PublishStatus publish(const std::string& suffix, const JsonDocument& json, QoS qos, ticks timeout = MqttDriver::MQTT_PUBLISH_TIMEOUT, LogPublish log = LogPublish::Log) {
-        return mqtt->publish(fullTopic(suffix), json, qos, timeout, log);
+    void publish(const std::string& suffix, const JsonDocument& json, QoS qos, LogPublish log = LogPublish::Log) {
+        mqtt->publish(fullTopic(suffix), json, qos, log);
     }
 
-    PublishStatus publish(const std::string& suffix, const std::function<void(JsonObject&)>& populate, QoS qos, ticks timeout = MqttDriver::MQTT_PUBLISH_TIMEOUT, LogPublish log = LogPublish::Log) {
+    void publish(const std::string& suffix, const std::function<void(JsonObject&)>& populate, QoS qos, LogPublish log = LogPublish::Log) {
         JsonDocument doc;
         JsonObject root = doc.to<JsonObject>();
         populate(root);
-        return publish(suffix, doc, qos, timeout, log);
+        publish(suffix, doc, qos, log);
     }
 
     void registerCommand(const std::string& name, const CommandHandler& handler) {

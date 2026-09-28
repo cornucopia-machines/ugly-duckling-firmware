@@ -53,7 +53,7 @@ public:
                         json["level"] = level;
                         json["message"] = message;
                     },
-                    QoS::AtLeastOnce, 0s, LogPublish::Silent);
+                    QoS::AtLeastOnce, LogPublish::Silent);
             });
         });
     }
