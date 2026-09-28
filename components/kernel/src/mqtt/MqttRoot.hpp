@@ -56,7 +56,7 @@ public:
      * is `publish("topic", populate, QoS::AtLeastOnce)`.
      *
      * A non-zero `timeout` blocks the calling task until the broker acks; it does not affect
-     * whether the message is sent (see MqttDriver::publishAndWait). Only MqttLog wants that today.
+     * whether the message is sent (see MqttDriver::publishAndWait). No call site wants that today.
      */
     PublishStatus publish(const std::string& suffix, const JsonDocument& json, QoS qos, ticks timeout = MqttDriver::MQTT_PUBLISH_TIMEOUT, LogPublish log = LogPublish::Log) {
         return mqtt->publish(fullTopic(suffix), json, qos, timeout, log);

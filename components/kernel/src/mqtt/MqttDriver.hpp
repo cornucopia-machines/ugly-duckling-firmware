@@ -221,7 +221,8 @@ private:
     // before awaiting anything, and the driver task enqueues it into esp-mqtt's outbox
     // regardless -- and no call site reads the returned PublishStatus, so blocking only delayed
     // the publishing task. Pass an explicit timeout to opt back in where the wait earns its
-    // keep (MqttLog does, to serialise log records; see issue #635).
+    // keep. (MqttLog used to, to serialise log records, until issue #635 gave them an explicit
+    // sequence.)
     static constexpr milliseconds MQTT_PUBLISH_TIMEOUT = 0s;
     static constexpr milliseconds MQTT_MESSAGE_RETRANSMIT_TIMEOUT = 5s;
     static constexpr milliseconds MQTT_CONNECTION_TIMEOUT = MQTT_NETWORK_TIMEOUT;

@@ -243,6 +243,7 @@ d/$ID/                                     ← device root (re-addressed devices
     sync                                   ← fingerprint manifest of applied config
     update                                 ← incoming configuration
     telemetry                              ← periodic telemetry (all features)
+    log                                    ← log records (see below)
     commands/$COMMAND                      ← retained command messages
     responses/$COMMAND                     ← command responses
 ```
@@ -250,6 +251,60 @@ d/$ID/                                     ← device root (re-addressed devices
 Legacy devices still pending migration use `/devices/ugly-duckling/$INSTANCE/` as the topic root.
 
 See [Configuration.md](Configuration.md) for how `boot`/`sync`/`update` reconcile configuration.
+
+## Log records
+
+Every log line at or above the `publishLogs` level (device config; `Info` in release builds, `Verbose` in
+debug builds) is published to `log`, one message per line, at **QoS 1, fire-and-forget**:
+
+```json
+{ "session": 42, "seq": 1234, "level": 4, "message": "WiFi connected" }
+```
+
+| Field | Meaning |
+|---|---|
+| `session` | The device's boot count, persisted in NVS (`boot` namespace, `count` key) and incremented once per boot, early in startup. The same number is reported as `bootCount` in BOOT. First boot is 1; 0 means NVS could not be opened. |
+| `seq` | Per-boot sequence number, restarting at 0 on every boot. |
+| `level` | `2` error, `3` warning, `4` info, `5` debug, `6` verbose. |
+| `message` | The log line without its level prefix and trailing newline. |
+
+### Pipeline
+
+`ConsoleProvider` hooks ESP-IDF's log output (`esp_log_set_vprintf`), so our own `LOG*` macros and IDF /
+third-party logs all pass through it. Each complete line at or above `publishLogs` is stamped with the next
+`seq` and offered to a bounded queue (32 records in release builds, 128 in debug builds); log callers never
+block on MQTT. The `mqtt:log` task drains that queue and hands each record to the MQTT driver without waiting
+for the broker's ack.
+
+`seq` is assigned when a record is *enqueued*, not when it is published, so it reflects emission order even
+when the transport reorders records: esp-mqtt keeps no in-flight window on MQTT 3.1.1, so an outbox
+retransmit can deliver an older record after a newer one. A record is never skipped once it has a number --
+one with nothing after its level prefix is published with an empty `message` -- so every gap in `seq` is a
+real loss: the queue overflowed, the publish failed, or the esp-mqtt outbox was purged on disconnect.
+
+`session` never changes during a boot, so it is attached at publish time; records logged before NVS is read
+need no special handling. It has to be persisted: an RTC-memory counter would reset on every power cycle
+(and an `RTC_DATA_ATTR` one on every reset other than a deep-sleep wake), reusing values all the time.
+
+### Ordering on the server
+
+The server (cornucopia-app#509) assigns each device an **epoch at ingest**: a record whose `session` differs
+from the device's latest one opens a new epoch. Records are then read with `ORDER BY epoch, seq`, and
+duplicates from QoS 1 redeliveries are dropped on `(epoch, seq)`.
+
+- **Boots are ordered by arrival.** This is sound because a device only has one live MQTT connection at a
+  time: a reboot tears the connection down and the RAM outbox goes with it, so nothing from an earlier boot
+  can reach the broker after the next boot has connected. Reordering only happens *within* a boot, and `seq`
+  resolves that.
+- **`session` values are only checked for equality, never compared.** The count restarts after an NVS erase
+  (factory reset, reflash), so a device can reuse a `session`; matching it against an older epoch would file
+  a new boot's logs under an old one, so a changed `session` always opens a new epoch.
+- **Losses are visible.** A gap in `seq` within an epoch is "N records lost"; a jump between consecutive
+  boot counts (41 → 43) means a whole boot's logs never arrived.
+
+`log` used to be published at QoS 2 with a 2s blocking wait per record. QoS 2 never ordered anything; the
+wait kept one record in flight at a time, which is what made arrival order match emission order, at the cost
+of a broker round trip of `mqtt:log` time per line. `session`/`seq` replaced it (issue #635).
 
 ## Component dependency graph
 

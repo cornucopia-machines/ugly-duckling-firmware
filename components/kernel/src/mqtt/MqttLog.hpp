@@ -13,18 +13,15 @@ namespace cornucopia::ugly_duckling::kernel::mqtt {
  * Every record carries `session` (the persistent boot count, see BootCounter) and `seq` (a per-boot
  * sequence number assigned when the record is enqueued, see LogRecord). The server orders boots by
  * reception time and records within a boot by `seq`; a gap in `seq` means records were lost
- * (issue #635).
+ * (issue #635, cornucopia-app#509).
  *
- * Alone among the outbound channels, `log` stayed at QoS 2 with a blocking publish when issue #634
- * moved everything else to QoS 1 fire-and-forget. Not because QoS 2 buys ordering -- it doesn't:
- * esp-mqtt keeps no in-flight window on MQTT 3.1.1, so an outbox retransmit reorders records at
- * either QoS level. It's that the 2s wait keeps one record in flight at a time, and that accident
- * is what makes arrival order match emission order for servers that don't yet order on
- * `session`/`seq`.
- *
- * Both the QoS and the timeout drop once the server orders on `session`/`seq`
- * (cornucopia-app#509). Changing either before then would degrade log ordering with nothing to take
- * over.
+ * Published at QoS 1 fire-and-forget, like every other outbound channel (issue #634). `log` used
+ * to be the holdout, at QoS 2 with a 2s blocking publish: not because QoS 2 buys ordering -- it
+ * doesn't, esp-mqtt keeps no in-flight window on MQTT 3.1.1, so an outbox retransmit reorders
+ * records at either QoS level -- but because the wait kept one record in flight at a time, which
+ * made arrival order match emission order. That cost a broker round trip of `mqtt:log` time per
+ * record, and `session`/`seq` now order records explicitly. A QoS 1 redelivery is harmless too:
+ * the server drops duplicates on `session`/`seq`.
  */
 class MqttLog {
 public:
@@ -56,7 +53,7 @@ public:
                         json["level"] = level;
                         json["message"] = message;
                     },
-                    QoS::ExactlyOnce, 2s, LogPublish::Silent);
+                    QoS::AtLeastOnce, 0s, LogPublish::Silent);
             });
         });
     }
