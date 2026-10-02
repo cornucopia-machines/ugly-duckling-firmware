@@ -242,6 +242,17 @@ report. See `components/kernel/src/PowerManager.hpp` and `sdkconfig.pm_diagnosti
 idf.py build -DUD_PM_DIAGNOSTICS=1
 ```
 
+You can set `-DUD_CONNECTIVITY=CELLULAR` (default `WIFI`) to build for the NB-IoT modem on the
+Desert Lark daughter board, on Carrot boards that have the connector (MK13+). Work in progress:
+for now the modem driver only starts next to WiFi, configures the modem and logs what it
+reports, while WiFi still carries all traffic. See [docs/specs/NB-IoT.md](docs/specs/NB-IoT.md)
+for the plan. The console must not be on UART0 (`UD_UART0_CONSOLE`), which uses the modem's
+pins; the driver then leaves the modem alone. Use a separate build directory:
+
+```bash
+idf.py -B build-carrot-cellular -DUD_CONNECTIVITY=CELLULAR build flash monitor
+```
+
 #### Pinning to a specific model (development / simulation)
 
 Pass `UD_GEN` to skip MAC detection and force a specific model.

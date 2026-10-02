@@ -1,0 +1,152 @@
+Quectel BC660K-GL
+ Compact NB-IoT Module with                                17.7 mm
+
+ Ultra-low Power Consumption
+
+                                                                        15.8 mm
+                                                                                              2.0 mm
+
+BC660K-GL is a high-performance LTE Cat NB2 module which supports multiple frequency bands of B1/ 2/ 3/ 4/ 5/ 8/
+12/ 13/ 17/ 18/ 19/ 20/ 25/ 28/ 66/ 70/ 85 with extremely low power consumption. The module’s ultra-compact
+profile (17.7 mm × 15.8 mm × 2.0 mm) makes it a perfect choice for size-sensitive applications. Designed to be
+compatible with Quectel GSM/GPRS M66 module and NB-IoT BC66/BC66-NA, BC65 and BC68-GV modules, it
+provides a flexible and scalable platform for the migration from GSM/GPRS to NB-IoT networks.
+
+BC660K-GL adopts the surface-mount technology, which makes it an ideal solution for durable and rugged designs.
+The module’s small LCC package allows it to be easily embedded into space-constrained applications and to enjoy
+reliable connection with the applications. This kind of package suits well large-scale manufacturing which has strict
+requirements on cost and efficiency.
+
+Due to the ultra-compact profile, super-low power consumption and extended temperature range, BC660K-GL is one
+of the best choices for a wide range of IoT applications, such as smart metering, bike sharing, smart parking, smart
+city, smart safety, asset tracking, home appliances, agricultural and environmental monitoring. It is able to provide a
+complete range of SMS and data transmission services to meet various user demands.
+
+
+
+
+         Key Features
+
+    Compact-sized, multi-band LTE Cat NB2 module                         Compact Size           Multi-Band            Extended Temperature
+                                                                                                 NB-IoT               Range: -40 °C to +85 °C
+    Ultra-low power consumption
+    Ultra-low cost
+    eSIM reserved with 2.552 ×2.722 mm package
+                                                                         LCC Package           Multiple Serial           Ultra-low Power
+    Wide power supply range: 2.2–4.3 V
+                                                                                                   Ports                  Consumption
+
+    LCC package facilitating large-volume manufacturing
+    Compatible with Quectel GSM/GPRS M66 and NB-IoT
+    BC66/BC66-NA, BC65 and BC68-GV modules, which means easier
+    future upgrading                                                                          Quectel Enhanced
+                                                                        Embedded Internet
+                                                                         Service Protocols     AT Commands
+    Embedded with abundant internet service protocols
+    Multi-band and rich external interfaces ensuring convenient
+    application
+                                                                                                       Version: 1.8   Status: Released
+
+
+
+EMAIL US: info@quectel.com                                                                   VISIT US: www.quectel.com
+                                                                                                                            Quectel BC660K-GL
+ LTE NB2                                                BC660K-GL
+ Region/Operator                                        Global
+ General Features
+ Pins                                                   58
+ Package                                                LCC
+ Dimensions (mm)                                        17.7 × 15.8 × 2.0
+ Weight (g)                                             1.0 ±0.2
+ Temperature Range
+ Operating Temperature                                  -35 °C to +75 °C
+ Extended Temperature                                   -40 °C to +85 °C
+ Frequency Bands
+ Cat NB2                                                B1/ 2/ 3/ 4/ 5/ 8/ 12/ 13/ 17/ 18/ 19/ 20/ 25/ 28/ 66/ 70/ 85
+ Certifications
+                                                        GCF (Global)
+                                                        PTCRB (North America)
+                                                        CE/ATEX (Europe)
+                                                        FCC (America)
+                                                        IC (Canada)
+                                                        Anatel (Brazil)
+ Regulatory                                             KC (South Korea)
+                                                        RCM (Australia/New Zealand)
+                                                        IMDA (Singapore)
+                                                        NBTC (Thailand)
+                                                        ICASA (South Africa)
+                                                        JATE/TELEC (Japan)
+                                                        NCC (China Taiwan)
+                                                        Vodafone/ Deutsche Telekom (Europe)
+                                                        Verizon/ AT&T /T-Mobile (America)
+                                                        KT/ LGU+ (South Korea)
+ Carrier                                                Telefónica (Spain)
+                                                        Orange (France)
+                                                        Telstra/Optus (Australia)
+                                                        Spark (New Zealand)
+ Data Rates
+ Single-tone (kbps)                                     25.5 (DL)/ 16.7 (UL)
+ Multi-tone (kbps)                                      127 (DL)/ 158.8 (UL)
+ Interfaces
+ USIM                                                   ×1
+ UART                                                   ×2 (for QuecOpen® version, ×3, only one for debug)
+ RI                                                     ×1
+ ADC                                                    × 1 (for QuecOpen® version, ×2)
+ RESET_N                                                ×1
+ BOOT                                                   ×1
+ NETLIGHT                                               ×1
+ Antenna                                                ×1
+ GRFC                                                   ×2
+ GPIO                                                   × 4 (for QuecOpen® version, ×16)
+
+ PSM_EINT                                               × 1 (for QuecOpen® version, ×2)
+
+ SPI                                                    × 1 (for QuecOpen® version only)
+ I2C                                                    × 1 (for QuecOpen® version only)
+ PWM                                                    × 1 (for QuecOpen® version only)
+ SMS
+ Short Message Service
+                                                        Text Mode
+ (Point-to-point MO and MT)
+Copyright © 2023 Quectel Wireless Solutions Co., Ltd. All Rights Reserved http://www.quectel.com
+HQ address: Building 5, Shanghai Business Park Phase III (Area B), No.1016 Tianlin Road, Minhang District, Shanghai 200233, China
+Tel: +86 21 51086236        Email: info@quectel.com
+                                                                                                                            Quectel BC660K-GL
+ LTE NB2                                                           BC660K-GL
+ Enhanced Features
+ DFOTA: Delta Firmware Upgrade Over-The-Air                        ●
+ RAI: Release Assistance Indication                                ●
+ eSIM: Embedded SIM①                                               ●
+ Software Features
+ Protocol Stacks                                                   UDP/ TCP/ PING/ LwM2M/ SNTP/ COAP/ COAPS*/ HTTP/ HTTPS*/ MQTT/ MQTTS/ SSL/ TLS
+ Download Methods                                                  Main UART/ DFOTA
+                                                                   3GPP TS 27.007
+ AT Commands                                                       3GPP TS 27.005
+                                                                   Quectel Enhanced AT Commands
+ Electrical Characteristics
+ Supply Voltage Range                                              2.2–4.3 V, typical 3.3 V②
+
+ Maximum Output Power                                              23 dBm ±2.7 dB
+
+ Sensitivity                                                       -116 dBm
+
+                                                                   800 nA @ PSM
+                                                                   0.22 mA @ Idle (DRX = 1.28 s, ECL = 0)
+ Power Consumption (Typical)③                                      0.11 mA @ Idle (DRX = 2.56 s, ECL = 0)
+                                                                   0.038 mA @ Idle (eDRX = 40.96 s, PTW = 10.24 s, ECL = 0)
+                                                                   67 mA @ Connected Tx 0 dBm
+                                                                   330 mA @ Connected Tx 23 dBm
+
+
+
+
+  Notes:
+  1. ①: eSIM is reserved but not included by default.
+  2. ②: 3GPP performance for QCX212 chipset is guaranteed from VBAT supply 3.0–4.3 V.
+  3. ③: Reference data provided by baseband chip platform.
+  4. ●: Supported.
+  5. *: Under development/ planning.
+Copyright © 2023 Quectel Wireless Solutions Co., Ltd. All Rights Reserved http://www.quectel.com
+HQ address: Building 5, Shanghai Business Park Phase III (Area B), No.1016 Tianlin Road, Minhang District, Shanghai 200233, China
+Tel: +86 21 51086236        Email: info@quectel.com
+

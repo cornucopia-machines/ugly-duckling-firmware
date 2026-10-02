@@ -1,0 +1,3395 @@
+BC660K-GL
+Hardware Design
+
+NB-IoT Module Series
+
+Version: 1.5
+
+Date: 2025-06-12
+
+Status: Released
+                                                                                 NB-IoT Module Series
+
+
+At Quectel, our aim is to provide timely and comprehensive services to our customers. If you
+require any assistance, please contact our headquarters:
+
+Quectel Wireless Solutions Co., Ltd.
+Building 5, Shanghai Business Park Phase III (Area B), No.1016 Tianlin Road, Minhang District, Shanghai
+200233, China
+Tel: +86 21 5108 6236
+Email: info@quectel.com
+
+Or our local offices. For more information, please visit:
+http://www.quectel.com/support/sales.htm.
+
+For technical support, or to report documentation errors, please visit:
+http://www.quectel.com/support/technical.htm.
+Or email us at: support@quectel.com.
+
+
+Legal Notices
+We offer information as a service to you. The provided information is based on your requirements and we
+make every effort to ensure its quality. You agree that you are responsible for using independent analysis
+and evaluation in designing intended products, and we provide reference designs for illustrative purposes
+only. Before using any hardware, software or service guided by this document, please read this notice
+carefully. Even though we employ commercially reasonable efforts to provide the best possible
+experience, you hereby acknowledge and agree that this document and related services hereunder are
+provided to you on an “as available” basis. We may revise or restate this document from time to time at
+our sole discretion without any prior notice to you.
+
+
+Use and Disclosure Restrictions
+License Agreements
+Documents and information provided by us shall be kept confidential, unless specific permission is
+granted. They shall not be accessed or used for any purpose except as expressly provided herein.
+
+
+Copyright
+Our and third-party products hereunder may contain copyrighted material. Such copyrighted material
+shall not be copied, reproduced, distributed, merged, published, translated, or modified without prior
+written consent. We and the third party have exclusive rights over copyrighted material. No license shall
+be granted or conveyed under any patents, copyrights, trademarks, or service mark rights. To avoid
+ambiguities, purchasing in any form cannot be deemed as granting a license other than the normal
+non-exclusive, royalty-free license to use the material. We reserve the right to take legal action for
+noncompliance with abovementioned requirements, unauthorized use, or other illegal or malicious use of
+the material.
+
+
+
+
+BC660K-GL_Hardware_Design                                                                         1 / 67
+                                                                                     NB-IoT Module Series
+
+
+
+Trademarks
+Except as otherwise set forth herein, nothing in this document shall be construed as conferring any rights
+to use any trademark, trade name or name, abbreviation, or counterfeit product thereof owned by Quectel
+or any third party in advertising, publicity, or other aspects.
+
+
+Third-Party Rights
+This document may refer to hardware, software and/or documentation owned by one or more third parties
+(“third-party materials”). Use of such third-party materials shall be governed by all restrictions and
+obligations applicable thereto.
+
+We make no warranty or representation, either express or implied, regarding the third-party materials,
+including but not limited to any implied or statutory, warranties of merchantability or fitness for a particular
+purpose, quiet enjoyment, system integration, information accuracy, and non-infringement of any
+third-party intellectual property rights with regard to the licensed technology or use thereof. Nothing herein
+constitutes a representation or warranty by us to either develop, enhance, modify, distribute, market, sell,
+offer for sale, or otherwise maintain production of any our products or any other hardware, software,
+device, tool, information, or product. We moreover disclaim any and all warranties arising from the course
+of dealing or usage of trade.
+
+
+Privacy Policy
+To implement module functionality, certain device data are uploaded to Quectel’s or third-party’s servers,
+including carriers, chipset suppliers or customer-designated servers. Quectel, strictly abiding by the
+relevant laws and regulations, shall retain, use, disclose or otherwise process relevant data for the
+purpose of performing the service only or as permitted by applicable laws. Before data interaction with
+third parties, please be informed of their privacy and data security policy.
+
+
+Disclaimer
+a)   We acknowledge no liability for any injury or damage arising from the reliance upon the information.
+b)   We shall bear no liability resulting from any inaccuracies or omissions, or from the use of the
+     information contained herein.
+c)   While we have made every effort to ensure that the functions and features under development are
+     free from errors, it is possible that they could contain errors, inaccuracies, and omissions. Unless
+     otherwise provided by valid agreement, we make no warranties of any kind, either implied or express,
+     and exclude all liability for any loss or damage suffered in connection with the use of features and
+     functions under development, to the maximum extent permitted by law, regardless of whether such
+     loss or damage may have been foreseeable.
+d)   We are not responsible for the accessibility, safety, accuracy, availability, legality, or completeness of
+     information, advertising, commercial offers, products, services, and materials on third-party websites
+     and third-party resources.
+
+Copyright © Quectel Wireless Solutions Co., Ltd. 2025. All rights reserved.
+
+
+
+BC660K-GL_Hardware_Design                                                                               2 / 67
+                                                                                    NB-IoT Module Series
+
+
+
+
+Safety Information
+The following safety precautions must be observed during all phases of operation, such as usage, service
+or repair of any terminal or mobile incorporating the module. Manufacturers of the terminal should notify
+users and operating personnel of the following safety information by incorporating these guidelines into all
+manuals of the product. Otherwise, Quectel assumes no liability for customers’ failure to comply with
+these precautions.
+
+
+
+                       Full attention must be paid to driving at all times in order to reduce the risk of an
+                       accident. Using a mobile while driving (even with a handsfree kit) causes
+                       distraction and can lead to an accident. Please comply with laws and regulations
+                       restricting the use of wireless devices while driving.
+
+                       Switch off the terminal or mobile before boarding an aircraft. The operation of
+                       wireless appliances in an aircraft is forbidden to prevent interference with
+                       communication systems. If there is an Airplane Mode, it should be enabled prior to
+                       boarding an aircraft. Please consult the airline staff for more restrictions on the use
+                       of wireless devices on an aircraft.
+
+
+                       Wireless devices may cause interference on sensitive medical equipment, so
+                       please be aware of the restrictions on the use of wireless devices when in
+                       hospitals, clinics or other healthcare facilities.
+
+
+                       Terminals or mobiles operating over radio signal and cellular network cannot be
+                       guaranteed to connect in certain conditions, such as when the mobile bill is unpaid
+                       or the (U)SIM card is invalid. When emergency help is needed in such conditions,
+                       use emergency call if the device supports it. In order to make or receive a call, the
+                       terminal or mobile must be switched on in a service area with adequate cellular
+                       signal strength. In an emergency, the device with emergency call function cannot
+                       be used as the only contact method considering network connection cannot be
+                       guaranteed under all circumstances.
+
+
+                       The terminal or mobile contains a transceiver. When it is ON, it receives and
+                       transmits radio frequency signals. RF interference can occur if it is used close to
+                       TV sets, radios, computers or other electric equipment.
+
+
+                       In locations with explosive or potentially explosive atmospheres, obey all posted
+                       signs and turn off wireless devices such as mobile phone or other terminals. Areas
+                       with explosive or potentially explosive atmospheres include fueling areas, below
+                       decks on boats, fuel or chemical transfer or storage facilities, and areas where the
+                       air contains chemicals or particles such as grain, dust or metal powders.
+
+
+
+
+BC660K-GL_Hardware_Design                                                                             3 / 67
+                                                                   NB-IoT Module Series
+
+
+
+
+About the Document
+
+Revision History
+
+Version   Date         Author          Description
+
+                       Clifton HE/
+-         2020-09-30   Ellison WANG/   Creation of the document
+                       Randy LI
+                       Clifton HE/
+1.0       2021-01-12   Ellison WANG/   First official release
+                       Randy LI
+                                       1.   Deleted the relevant part of B14.
+                                       2.   Chapter 1: Added table 1.
+                       Clifton HE/     3.   Chapter 2.2: Updated the status of MQTT
+1.1       2021-06-03   Ellison WANG/        protocol.
+                       Randy LI        4.   Chapter 5.1: Added this section.
+                                       5.   Chapter 7.1 and 7.2: Updated the requirements
+                                            on storage, manufacturing and soldering.
+                                       1.   Deleted PDU mode in SMS feature (Table 3).
+                       Winks WANG/     2.   Added the load current of DC characteristics for
+1.2       2022-09-09   Ellison WANG/        VDD_EXT (Table 5).
+                       Randy LI        3.   Added information about ultrasonic cleaning
+                                            (Chapter 7.2).
+                                       1.   Added the network protocols CoAP, CoAPS,
+                                            HTTP and HTTPS (Table 2).
+                                       2.   Updated the output power supply (VDD_EXT)
+                                            from 1.8/3.3 V to 1.8 V/3.1–3.3 V.
+                       Weida LIU/      3.   Added TVS selection parameter requirements
+1.3       2023-06-02   Hugh ZHANG/          (Table 9).
+                       Yance YANG      4.   Added voltage stability requirements (Chapter
+                                            3.5.2).
+                                       5.   Added the truth table of GRFC interfaces (Table
+                                            20).
+                                       6.   Updated the recommended reflow soldering
+
+
+
+
+BC660K-GL_Hardware_Design                                                           4 / 67
+                                                               NB-IoT Module Series
+
+
+                                         thermal profile and the relevant parameters.
+                                         (Figure 32 and Table 34).
+                                    7.   Updated the recommended reflow soldering
+                                         thermal profile and the relevant parameters.
+                                         (Figure 32 and Table 34).
+                                    1.  Added comment about adding test point to pin
+                                        VBAT,     VDD_EXT,        BOOT,      RESET_N,
+                                        MAIN_TXD/RXD, DBG_TXD/RXD (Table 4).
+                                    2. Added comment about power domain to pin
+                                        RESET_N and PSM_EINT (Table 4).
+                                    3. Added        relevant      notes      on    pin
+                                        RESET_N/PSM_EINT. (Chapter 3.2).
+                                    4. Added a note of recommending to use AT
+                                        command before powering off the module
+                                        (Chapter 3.6.2).
+                                    5. Updated the data of parasitic capacitance of
+                                        TVS array from 50 pF to 15 pF, and added a
+                                        note of connecting the GND of the USIM card
+                      Lynne WEI/
+                                        connector to ground (Chapter 3.8).
+1.4      2024-12-27   Hugh ZHANG/
+                                    6. Updated reference circuit for RF antenna
+                      Kiki JIANG
+                                        interface    and     added      relevant  note
+                                        (Chapter 4.3).
+                                    7. Updated the typical and maximum data of
+                                        power consumption in normal mode (Table 31).
+                                    8. Updated the module’s coplanarity requirement
+                                        (Chapter 6.1).
+                                    9. Updated      the    reference     document  for
+                                        recommended module stencil thickness
+                                        (Chapter 7.2).
+                                    10. Added a note of avoid using materials that
+                                        contain mercury (Hg), prohibiting storage or
+                                        use of unprotected modules in environments
+                                        containing corrosive gases (Chapter 7.2).
+                                    1.   Added a comment regarding the support for
+                                         USIM cards under different VBAT conditions
+                                         and maximum supply current of the USIM_VDD
+                                         pin (Table 4 & Table 14)
+                      Claire LI/    2.   Added module’s software reset method
+1.5      2025-06-12   Kun WANG/          (Chapter 3.6.3).
+                      Kiki JIANG    3.   Updated the note of reference circuit for RF
+                                         antenna interface (Chapter 4.3).
+                                    4.   Added a note about the impedance condition for
+                                         power consumption test (Chapter 5.3).
+                                    5.   Updated the pre-baking time to 24 h (Chapter
+
+
+
+BC660K-GL_Hardware_Design                                                      5 / 67
+                                                       NB-IoT Module Series
+
+
+                                 7.1).
+                            6.   Updated the chapter of packaging specification
+                                 (Chapter 7.3).
+
+
+
+
+BC660K-GL_Hardware_Design                                              6 / 67
+                                                                                                                           NB-IoT Module Series
+
+
+
+
+Contents
+
+Safety Information ...................................................................................................................................... 3
+About the Document .................................................................................................................................. 4
+Contents ...................................................................................................................................................... 7
+Table Index .................................................................................................................................................. 9
+Figure Index .............................................................................................................................................. 10
+
+1     Introduction ....................................................................................................................................... 11
+
+2     Product Overview ............................................................................................................................. 12
+      2.1. Frequency Bands and Functions ............................................................................................. 12
+      2.2. Key Features ............................................................................................................................ 13
+      2.3. Functional Diagram .................................................................................................................. 14
+      2.4. TE-B Kit .................................................................................................................................... 15
+
+3     Application Functions and Interfaces ............................................................................................ 16
+      3.1. Pin Assignment ........................................................................................................................ 17
+      3.2. Pin Description ......................................................................................................................... 18
+      3.3. Operating Modes...................................................................................................................... 22
+      3.4. Power Saving Modes ............................................................................................................... 23
+          3.4.1.      Light Sleep Mode .......................................................................................................... 23
+          3.4.2.      Deep Sleep Mode ......................................................................................................... 23
+      3.5. Power Supply ........................................................................................................................... 25
+          3.5.1.      Power Supply Pins........................................................................................................ 25
+          3.5.2.      Voltage Stability Requirements .................................................................................... 25
+          3.5.3.      Power Supply Reference Design.................................................................................. 26
+          3.5.4.      Power Supply Voltage Monitoring ................................................................................ 27
+      3.6. Turn-on/Turn-off Scenario........................................................................................................ 27
+          3.6.1.      Turn On ......................................................................................................................... 27
+          3.6.2.      Turn Off ......................................................................................................................... 28
+          3.6.3.      RESET_N ..................................................................................................................... 28
+          3.6.4.      Download Mode ............................................................................................................ 30
+      3.7. UART Interfaces....................................................................................................................... 31
+          3.7.1.      Main UART Interface .................................................................................................... 31
+          3.7.2.      Debug UART Interface ................................................................................................. 32
+          3.7.3.      UART Interface Application .......................................................................................... 32
+      3.8. USIM Interface ......................................................................................................................... 35
+      3.9. ADC Interface........................................................................................................................... 37
+      3.10. RI .............................................................................................................................................. 37
+      3.11. GPIO Interfaces ....................................................................................................................... 38
+      3.12. GRFC Interfaces ...................................................................................................................... 39
+      3.13. NETLIGHT ............................................................................................................................... 39
+
+4     RF Specifications .............................................................................................................................. 41
+
+
+
+BC660K-GL_Hardware_Design                                                                                                                            7 / 67
+                                                                                                                   NB-IoT Module Series
+
+
+    4.1.     Antenna Interface ..................................................................................................................... 41
+    4.2.     Operating Frequency ............................................................................................................... 41
+    4.3.     Reference Design .................................................................................................................... 42
+    4.4.     RF Routing Guidelines ............................................................................................................. 43
+    4.5.     Antenna Design Requirements ................................................................................................ 45
+    4.6.     Transmitting Power .................................................................................................................. 46
+    4.7.     Receiver Sensitivity .................................................................................................................. 46
+    4.8.     RF Connector Recommendation ............................................................................................. 47
+
+5   Electrical Characteristics and Reliability ....................................................................................... 49
+    5.1. Absolute Maximum Ratings ..................................................................................................... 49
+    5.2. Operating and Storage Temperatures ..................................................................................... 49
+    5.3. Power Consumption ................................................................................................................. 50
+    5.4. Digital I/O Characteristics ........................................................................................................ 52
+    5.5. ESD Protection......................................................................................................................... 53
+
+6   Mechanical Information .................................................................................................................... 54
+    6.1. Mechanical Dimensions ........................................................................................................... 54
+    6.2. Recommended Footprint ......................................................................................................... 56
+    6.3. Top and Bottom Views ............................................................................................................. 57
+
+7   Storage, Manufacturing and Packaging ......................................................................................... 58
+    7.1. Storage Conditions................................................................................................................... 58
+    7.2. Manufacturing and Soldering ................................................................................................... 59
+    7.3. Packaging Specification ........................................................................................................... 61
+        7.3.1.  Carrier Tape .................................................................................................................. 61
+        7.3.2.  Plastic Reel ................................................................................................................... 62
+        7.3.3.  Mounting Direction ........................................................................................................ 62
+        7.3.4.  Packaging Process ....................................................................................................... 63
+
+8   Appendix References ....................................................................................................................... 64
+
+
+
+
+BC660K-GL_Hardware_Design                                                                                                                   8 / 67
+                                                                                                                     NB-IoT Module Series
+
+
+
+
+Table Index
+
+Table 1: Frequency Bands of BC660K-GL ................................................................................................ 12
+Table 2: Key Features ................................................................................................................................ 13
+Table 3: I/O Parameter Definition .............................................................................................................. 18
+Table 4: Pin Description ............................................................................................................................. 18
+Table 5: Application Processor (AP) Operating Modes ............................................................................. 22
+Table 6: Modem Operating Modes ............................................................................................................ 22
+Table 7: Module Operating Modes ............................................................................................................. 23
+Table 8: Power Supply Pins ....................................................................................................................... 25
+Table 9: TVS Selection Parameter Requirements ..................................................................................... 27
+Table 10: Pin Description of RESET_N ..................................................................................................... 29
+Table 11: Pin Description of BOOT ............................................................................................................ 30
+Table 12: Pin Description of UART Interfaces ........................................................................................... 31
+Table 13: Pin Description of VIO_SEL ....................................................................................................... 32
+Table 14: Pin Description of USIM Interface .............................................................................................. 35
+Table 15: Pin Description of ADC Interface ............................................................................................... 37
+Table 16: Pin Description of RI Interface ................................................................................................... 38
+Table 17: RI Signal Status ......................................................................................................................... 38
+Table 18: Pin Description of GPIO Interfaces ............................................................................................ 38
+Table 19: Pin Description of GRFC Interfaces........................................................................................... 39
+Table 20: Truth Table of GRFC Interfaces................................................................................................. 39
+Table 21: Pin Description of NETLIGHT .................................................................................................... 40
+Table 22: Pin Description of NB-IoT Antenna Interface............................................................................. 41
+Table 23: Module Operating Frequency .................................................................................................... 41
+Table 24: Antenna Cable Insertion Loss Requirements ............................................................................ 45
+Table 25: Required Antenna Parameters .................................................................................................. 45
+Table 26: Transmitting Power .................................................................................................................... 46
+Table 27: Receiver Sensitivity without Retransmission (Throughput ≥ 95 %) ........................................... 46
+Table 28: Receiver Sensitivity in 128 Retransmission (Throughput ≥ 95 %) ............................................ 46
+Table 29: Absolute Maximum Ratings ....................................................................................................... 49
+Table 30: Operating and Storage Temperatures ....................................................................................... 49
+Table 31: Module Power Consumption (3.3 V VBAT Power Supply) ........................................................ 50
+Table 32: Other I/O Requirements ............................................................................................................. 52
+Table 33: Electrostatic Discharge Characteristics (Temperature: 25–30 ºC, Humidity: 40 ±5 %) ............ 53
+Table 34: Recommended Thermal Profile Parameters ............................................................................. 60
+Table 35: Carrier Tape Dimension Table (Unit: mm) ................................................................................. 61
+Table 36: Plastic Reel Dimension Table (Unit: mm) .................................................................................. 62
+Table 37: Related Documents.................................................................................................................... 64
+Table 38: Terms and Abbreviations ........................................................................................................... 64
+
+
+
+
+BC660K-GL_Hardware_Design                                                                                                                     9 / 67
+                                                                                                                    NB-IoT Module Series
+
+
+
+
+Figure Index
+
+Figure 1: Functional Diagram ..................................................................................................................... 14
+Figure 2: Pin Assignment ........................................................................................................................... 17
+Figure 3: Module Power Consumption in Different Modem Modes ........................................................... 24
+Figure 4: Timing of Waking Up Module from Deep Sleep ......................................................................... 25
+Figure 5: Power Supply Limits during Heavy Load .................................................................................... 26
+Figure 6: Reference Design for Power Supply .......................................................................................... 26
+Figure 7: Turn-on Timing............................................................................................................................ 27
+Figure 8: Turn-off Timing............................................................................................................................ 28
+Figure 9: Reference Design for RESET_N Controlled with an OC/OD Driving Circuit ............................. 29
+Figure 10: Reference Design for RESET_N Controlled with a Button ...................................................... 29
+Figure 11: Reference Design for BOOT Controlled with a Button ............................................................. 30
+Figure 12: Reference Design for Main UART Interface Connection ......................................................... 32
+Figure 13: Reference Design for Debug UART Interface Connection....................................................... 32
+Figure 14: Reference Design for UART Interface Connection .................................................................. 33
+Figure 15: Reference Design for Module-PC Communication via RS-232 Interface ................................ 34
+Figure 16: Reference Design for Level-shifting Circuit .............................................................................. 35
+Figure 17: Reference Design for USIM Interface with a 6-pin USIM Card Connector .............................. 36
+Figure 18: RI Behaviour When a URC/SMS Message Is Received .......................................................... 38
+Figure 19: Reference Design for NETLIGHT ............................................................................................. 40
+Figure 20: Reference Design for the Antenna Interface ............................................................................ 43
+Figure 21: Microstrip on a 2-layer PCB ...................................................................................................... 44
+Figure 22: Coplanar Waveguide on a 2-layer PCB.................................................................................... 44
+Figure 23: Coplanar Waveguide on a 4-layer PCB (Layer 3 as Reference Ground) ................................ 44
+Figure 24: Coplanar Waveguide on a 4-layer PCB (Bottom Layer as Reference Ground)....................... 44
+Figure 25: Dimensions of the Receptacle (Unit: mm) ................................................................................ 47
+Figure 26: Specifications of Mated Plugs .................................................................................................. 47
+Figure 27: Space Factor of Mated Connectors (Unit: mm) ........................................................................ 48
+Figure 28: Module Top and Side Dimensions............................................................................................ 54
+Figure 29: Module Bottom Dimensions ...................................................................................................... 55
+Figure 30: Recommended Footprint .......................................................................................................... 56
+Figure 31: Top and Bottom Views of the Module....................................................................................... 57
+Figure 32: Recommended Reflow Soldering Thermal Profile ................................................................... 59
+Figure 33: Carrier Tape Dimension Drawing (Unit: mm) ........................................................................... 61
+Figure 34: Plastic Reel Dimension Drawing .............................................................................................. 62
+Figure 35: Mounting Direction .................................................................................................................... 62
+Figure 36: Packaging Process ................................................................................................................... 63
+
+
+
+
+BC660K-GL_Hardware_Design                                                                                                                    10 / 67
+                                                                           NB-IoT Module Series
+
+
+
+
+1 Introduction
+This document defines BC660K-GL and describes its air interface and hardware interfaces which are
+connected with your applications.
+
+With this document, you can quickly understand module interface specifications, electrical and
+mechanical details, as well as other related information of the module. The document, coupled with
+application notes and user guides, makes it easy to design and set up mobile applications with the
+module.
+
+
+
+
+BC660K-GL_Hardware_Design                                                                  11 / 67
+                                                                                NB-IoT Module Series
+
+
+
+
+2 Product Overview
+2.1. Frequency Bands and Functions
+
+BC660K-GL is a high-performance NB-IoT module with extremely low power consumption. It is designed
+to communicate with infrastructures of mobile network operators through NB-IoT radio protocols
+supported by 3GPP Rel-13 and Rel-14. BC660K-GL supports a broad range of frequency bands as listed
+below.
+
+
+
+Table 1: Frequency Bands of BC660K-GL
+
+
+ Mode              Frequency Bands
+
+ LTE HD-FDD        B1/B2/B3/B4/B5/B8/B12/B13/B17/B18/B19/B20/B25/B28/B66/B70/B85
+
+
+BC660K-GL is an SMD type module with LCC and LGA package, and has an ultra-compact profile of
+17.7 mm × 15.8 mm × 2.0 mm, which makes it easily embedded into size-constrained applications and
+provide reliable connectivity with the applications.
+
+BC660K-GL provides abundant external interfaces (UARTS, ADC, USIM and so on) and protocol stacks
+(UDP/TCP/LwM2M/MQTT, and so on), which facilitate the module’s application.
+
+The module’s compact form factor, ultra-low power consumption and extended temperature range make it
+one of the best choices for a wide range of IoT application. It also provides a complete range of SMS and
+data transmission services to meet various user demands.
+
+
+
+
+BC660K-GL_Hardware_Design                                                                        12 / 67
+                                                                                      NB-IoT Module Series
+
+
+
+2.2. Key Features
+
+The following table describes the detailed features of BC660K-GL.
+
+
+
+Table 2: Key Features
+
+
+    Feature                       Details
+
+                                  VBAT:
+    Power Supply                  ⚫ Supply voltage: 2.2–4.3 V
+                                  ⚫ Typical supply voltage: 3.3 V
+
+    Power Saving                  Average power consumption (in Deep Sleep mode): 0.8 μA
+
+                                  LTE Cat NB2:
+    Frequency Bands
+                                  B1/B2/B3/B4/B5/B8/B12/B13/B17/B18/B19/B20/B25/B28/B66/B70/B85
+
+    Transmitting Power            23 dBm ±2.7 dB
+
+    eSIM 1                        Reserved with 2.552 × 2.722 mm package
+
+                                  Main UART Interface:
+                                  ⚫ Used for AT command communication and data transmission, where the
+                                      baud rate is 115200 bps by default. For more details, see Chapter 3.7.1.
+                                  ⚫ Used for firmware upgrade, where the baud rate is 921600 bps by
+    UART Interfaces
+                                      default.
+                                  Debug UART Interface:
+                                  ⚫ Used for software debugging
+                                  ⚫ Default baud rate: 6 Mbps
+
+    USIM Interface                Supports 1.8/3.0 V USIM card
+
+                                  UDP/TCP/PING/LwM2M/SNTP/MQTT/MQTTS/SSL/TLS/CoAP/CoAPS/
+    Network Protocols
+                                  HTTP/HTTPS
+                                  ⚫     Text Mode
+    SMS
+                                  ⚫     Point-to-point MO and MT
+    Data Transmission             ⚫     Single-tone (max.): 25.5 kbps (DL)/16.7 kbps (UL)
+    Features                      ⚫     Multi-tone (max.): 127 kbps (DL)/158.5 kbps (UL)
+                                  ⚫     3GPP TS 27.005/3GPP TS 27.007 AT commands (3GPP Rel-13)
+    AT Commands
+                                  ⚫     Quectel enhanced AT commands
+                                  ⚫     Main UART interface
+    Firmware Upgrade
+                                  ⚫     DFOTA
+
+    Real Time Clock               Supported
+
+
+
+1   eSIM is reserved and not included by default.
+
+
+
+BC660K-GL_Hardware_Design                                                                             13 / 67
+                                                                                                                                         NB-IoT Module Series
+
+
+                                ⚫     Size: (17.7 ±0.15) mm × (15.8 ±0.15) mm × (2.0 ±0.2) mm
+    Physical Characteristics
+                                ⚫     Weight: 1.0 ±0.2 g
+                                ⚫     Operating temperature range: -35 to +75 °C 2
+    Temperature Range           ⚫     Extended temperature range: -40 to +85 °C 3
+                                ⚫     Storage temperature range: -40 to +90 °C
+
+    Antenna Interface           50 Ω impedance
+
+    RoHS                        All hardware components are fully compliant with EU RoHS directive
+
+
+
+
+2.3. Functional Diagram
+
+The following figure shows a block diagram of the module and illustrates the major functional parts.
+
+⚫      RF Transceiver and Subsystem
+⚫      Baseband
+⚫      Power Management Unit
+⚫      Peripheral Interfaces
+
+
+
+                        VBAT                                                                                                            ANT_RF
+
+                                                                   Switch
+
+
+
+                                                                                   HB TX HPM
+                                                           LB TX HPM
+
+                                                                       HB TX LPM
+                                                                                                                           XO
+                                                                                                 LB RX   HB RX   26 MHz
+
+                                                           LB TX LPM
+
+                                                                                                                          XTAL
+
+                                     DC-DC                    RF Transceiver                                                            GRFCs
+                                                              and Subsystem                                                      eSIM
+
+
+                                                                                                                          USIM
+                                                                                                                                        USIM
+
+                                      LDO
+                                              PMU                        Baseband
+                    VDD_EXT                                                                                                             Main UART
+                                                                                               Flash                                    Debug UART
+                    RESET_N
+                                                                                               SRAM                                     GPIOs
+                                       RTC BLOCK
+
+
+
+
+                                     32 kHz
+
+                                              PSM_EINT   BOOT            RI                    NETLIGHT ADC           VIO_SEL
+
+
+
+
+                                              Figure 1: Functional Diagram
+
+2 Within this range, the module’s indicators comply with 3GPP specification requirements.
+3 Within this range, the module retains the ability to establish and maintain functions such as SMS and data transmission,
+without any unrecoverable malfunction. Radio spectrum and radio network remain uninfluenced, whereas the value of one
+or more parameters, such as Pout, may decrease and fall below the range of the 3GPP specified tolerances. When the
+temperature returns to the normal operating temperature range, the module’s indicators will comply with 3GPP specification
+requirements again.
+
+
+
+BC660K-GL_Hardware_Design                                                                                                                              14 / 67
+                                                                        NB-IoT Module Series
+
+
+
+2.4. TE-B Kit
+
+Quectel supplies an evaluation board (BC660K-GL TE-B) with accessories to develop and test the
+module. For more details, see document [1].
+
+
+
+
+BC660K-GL_Hardware_Design                                                              15 / 67
+                                                                            NB-IoT Module Series
+
+
+
+
+3 Application Functions and Interfaces
+The module is equipped with 58 pins, including 44 LCC pins and 14 LGA pins. The subsequent chapters
+provide detailed descriptions of the following functions/pins/interfaces:
+
+⚫   Power Supply
+⚫   PSM_EINT
+⚫   RESET_N
+⚫   BOOT
+⚫   UART Interfaces
+⚫   USIM Interface
+⚫   ADC Interface
+⚫   RI
+⚫   GPIO interfaces
+⚫   GRFC interfaces
+⚫   NETLIGHT
+
+
+
+
+BC660K-GL_Hardware_Design                                                                   16 / 67
+                                                                                                                                                                            NB-IoT Module Series
+
+
+
+3.1. Pin Assignment
+
+
+
+
+                                      RESERVED                                                               DBG_TXD    DBG_R XD
+                                     44              43 VBAT       VBAT
+                                                                  42           GND
+                                                                              41             40  GND       39          38              37 GND           GND
+                                                                                                                                                       36
+
+
+
+
+                      1                                                                                                                                                     35
+                     GND                                                                                                                                                  ANT_R F
+
+                      2                                                                                                                                                     34
+                 RESERVED                                                                                                                                                  GND
+
+                      3                                                                                                                                                     33
+                   GPIO1
+                                                                   58
+                                                                   GND
+                                                                                           57
+                                                                                           GND
+                                                                                                            56
+                                                                                                            GND
+                                                                                                                                                                         RESERVED
+
+                      4                                                                                                                                                     32
+                   GPIO2                                                                                                                                                 RESERVED
+
+                      5                            45
+                                                  RESERVED
+                                                                                                                                    55
+                                                                                                                                   GRFC2                                    31
+                   GPIO3                                                                                                                                                 RESERVED
+
+                      6                                                                                                                                                     30
+                   GPIO4
+                                                   46              BC660K-GL                                                        54
+                                                                                                                                   GRFC1
+                                                                                                                                                                         RESERVED
+                                                  RESERVED
+                      7                                                                                                                                                     29
+                   BOOT                                                                                                                                                  RESERVED
+
+                      8
+                 RESERVED
+                                                   47
+                                                  RESERVED
+                                                                         Top View                                                   53
+                                                                                                                                   RESERVED
+                                                                                                                                                                            28
+                                                                                                                                                                         RESERVED
+
+                      9                                                                                                                                                     27
+                     ADC 0                         48                                                                               52                                     GND
+                                                  RESERVED                                                                         V IO_S E L
+                     10                                                                                                                                                     26
+                 USIM_GND                                                                                                                                                RESERVED
+
+                     11                                            49
+                                                                  RESERVED
+                                                                                           50
+                                                                                          RESERVED
+                                                                                                            51
+                                                                                                           RESERVED
+                                                                                                                                                                            25
+                 US IM_ DA TA                                                                                                                                            RESERVED
+
+                     12                                                                                                                                                     24
+                 USIM_R ST                                                                                                                                               VDD _EXT
+
+                     13                                                                                                                                                     23
+                 USIM_C LK                                                                                                                                               RESERVED
+
+
+
+
+                                      USIM_VD D        RESET_N     NETLIGHT    MAIN_TXD        MAIN_R XD    PSM_EINT                        RESERVED    RESERVED
+                                     14              15           16          17             18            19          20   RI         21              22
+
+
+
+
+             Power           GND   UART                          USIM                        ANT                            GRFC                                   RESERVED         Others
+
+
+
+
+                                                    Figure 2: Pin Assignment
+
+
+
+ NOTE
+
+Keep all RESERVED and unused pins unconnected.
+
+
+
+
+BC660K-GL_Hardware_Design                                                                                                                                                                    17 / 67
+                                                                                 NB-IoT Module Series
+
+
+
+3.2. Pin Description
+
+
+Table 3: I/O Parameter Definition
+
+
+ Type                            Description
+
+ AI                              Analog Input
+
+ AIO                             Analog Input/Output
+
+ DI                              Digital Input
+
+ DO                              Digital Output
+
+ DIO                             Digital Input/Output
+
+ PI                              Power Input
+
+ PO                              Power Output
+
+
+DC characteristics include power domain and rated current.
+
+
+
+Table 4: Pin Description
+
+
+ Power Supply
+
+                 Pin
+ Pin Name                  I/O      Description         DC Characteristics          Comment
+                 No.
+                                                        Vmax = 4.3 V                Test points are
+                                    Power supply
+ VBAT            42, 43    PI                           Vmin = 2.2 V                recommended to be
+                                    for the module
+                                                        Vnom = 3.3 V                reserved.
+                                                                                    No voltage output in
+                                                                                    Deep/Light Sleep
+                                                                                    mode.
+                                    1.8 V/3.1–3.3 V                                 It is intended to
+                                    output power                                    supply power for
+                                    supply              Vnom = 1.8 V/3.1–3.3 V      the module’s pull-up
+ VDD_EXT         24        PO
+                                    (Controlled by      Iomax = 40 mA               circuits, and is not
+                                    VIO_SEL, 1.8 V                                  recommended to
+                                    by default)                                     supply power for
+                                                                                    external circuits.
+                                                                                    A test point is
+                                                                                    recommended to be
+
+
+
+BC660K-GL_Hardware_Design                                                                       18 / 67
+                                                                              NB-IoT Module Series
+
+
+                                                                                 reserved.
+
+
+GND             1, 27, 34, 36, 37, 40, 41, 56–58
+
+BOOT
+
+                Pin
+Pin Name                 I/O     Description        DC Characteristics           Comment
+                No.
+                                                                                 Active low.
+                                 Make the
+                                                    VILmax = 0.2 × VDD_EXT       A test point is
+BOOT            7        DI      module enter
+                                                    VIHmin = 0.7 × VDD_EXT       recommended to be
+                                 download mode
+                                                                                 reserved.
+
+Reset
+
+                Pin
+Pin Name                 I/O     Description        DC Characteristics           Comment
+                No.
+                                                                                 1.9–2.1 V power
+                                                                                 domain.
+                                                    VILmax = 0.38 V
+                                 Reset the                                       Active low.
+RESET_N         15       DI                         VIHmin = 1.47 V
+                                 module                                          A test point is
+                                                    VIHmax = 2.1 V
+                                                                                 recommended to be
+                                                                                 reserved if unused.
+
+PSM_EINT Interface
+
+                Pin
+Pin Name                 I/O     Description        DC Characteristics           Comment
+                No.
+                                 External
+                                 interrupt pin
+                                                                                 1.9–2.1 V power
+                                 dedicated to       VILmax = 0.38 V
+                                                                                 domain.
+PSM_EINT        19       DI      waking up the      VIHmin = 1.47 V
+                                                                                 Active on falling
+                                 module from        VIHmax = 2.1 V
+                                                                                 edge.
+                                 Deep/Light
+                                 Sleep mode.
+
+Network Status Indication
+
+                Pin
+Pin Name                 I/O     Description        DC Characteristics           Comment
+                No.
+                                 Indicate the
+                                 module's           VOLmax = 0.15 × VDD_EXT
+NETLIGHT        16       DO
+                                 network activity   VOHmin = 0.8 × VDD_EXT
+                                 status
+
+ADC Interface
+
+                Pin
+Pin Name                 I/O     Description        DC Characteristics           Comment
+                No.
+
+
+
+
+BC660K-GL_Hardware_Design                                                                     19 / 67
+                                                                         NB-IoT Module Series
+
+
+                             General-purpos    Input Voltage range:
+ADC0             9     AI
+                             e ADC interface   0–1.2 V
+
+Main UART Interface
+
+                 Pin
+Pin Name               I/O   Description       DC Characteristics           Comment
+                 No.
+                             Main UART         VILmax = 0.2 × VDD_EXT
+MAIN_RXD         18    DI                                                   Test points are
+                             receive           VIHmin = 0.7 × VDD_EXT
+                                                                            recommended to be
+                             Main UART         VOLmax = 0.15 × VDD_EXT
+MAIN_TXD         17    DO                                                   reserved.
+                             transmit          VOHmin = 0.8 × VDD_EXT
+
+Debug UART Interface
+
+                 Pin
+Pin Name               I/O   Description       DC Characteristics           Comment
+                 No.
+                             Debug UART        VILmax = 0.2 × VDD_EXT
+DBG_RXD          38    DI
+                             receive           VIHmin = 0.7 × VDD_EXT       Test points must be
+                             Debug UART        VOLmax = 0.15 × VDD_EXT      reserved.
+DBG_TXD          39    DO
+                             transmit          VOHmin = 0.8 × VDD_EXT
+
+RI
+
+                 Pin
+Pin Name               I/O   Description       DC Characteristics           Comment
+                 No.
+                                               VOLmax = 0.15 × VDD_EXT
+RI               20    DO    Ring indication
+                                               VOHmin = 0.8 × VDD_EXT
+
+USIM Interface
+
+                 Pin
+Pin Name               I/O   Description       DC Characteristics           Comment
+                 No.
+                                                                            When 3.0 V ≤ VBAT
+                                                                            ≤ 4.3 V, 1.8/3.0 V
+                                                                            USIM card is
+                                                                            supported;
+                                                                            When 2.2 V ≤ VBAT
+                             USIM card
+USIM_VDD         14    PO                      Vnom = 1.8/3.0 V             < 3.0 V, only 1.8 V
+                             power supply
+                                                                            USIM card is
+                                                                            supported.
+                                                                            Maximum supply
+                                                                            current:
+                                                                            about 80 mA.
+                             USIM card         VOLmax = 0.15 × USIM_VDD
+USIM_CLK         13    DO
+                             clock             VOHmin = 0.8 × USIM_VDD
+                             USIM card         VOLmax = 0.15 × USIM_VDD
+USIM_RST         12    DO
+                             reset             VOHmin = 0.8 × USIM_VDD
+
+
+
+
+BC660K-GL_Hardware_Design                                                               20 / 67
+                                                                       NB-IoT Module Series
+
+
+                                             VILmax = 0.2 × USIM_VDD
+                                             VIHmin = 0.7 × USIM_VDD
+USIM_DATA     11    DIO     USIM card data
+                                             VOLmax = 0.15 × USIM_VDD
+                                             VOHmin = 0.8 × USIM_VDD
+                            Dedicated
+USIM_GND      10            ground for
+                            USIM card
+
+Antenna Interface
+
+              Pin
+Pin Name            I/O     Description      DC Characteristics           Comment
+              No.
+                            RF antenna                                    50 Ω characteristic
+ANT_RF        35    AIO
+                            interface                                     impedance.
+
+GPIO Interfaces
+
+              Pin
+Pin Name            I/O     Description      DC Characteristics           Comment
+              No.
+                            General-
+GPIO1         3     DIO     purpose
+                            input/output
+                            General-
+GPIO2         4     DIO     purpose          VILmax = 0.2 × VDD_EXT
+                            input/output     VIHmin = 0.7 × VDD_EXT       If unused, keep
+                            General-         VOLmax = 0.15 × VDD_EXT      these pins open.
+GPIO3         5     DIO     purpose          VOHmin = 0.8 × VDD_EXT
+                            input/output
+                            General-
+GPIO4         6     DIO     purpose
+                            input/output
+
+GRFC Interfaces
+
+              Pin
+Pin Name            I/O     Description      DC Characteristics           Comment
+              No.
+                            Generic RF       VOLmax = 0.27 V              1.8 V power
+GRFC1         54    DO
+                            controller       VOHmin = 1.44 V              domain.
+                            Generic RF       VOLmax = 0.27 V              If unused, keep
+GRFC2         55    DO
+                            controller       VOHmin = 1.44 V              these pins open.
+
+Others
+
+              Pin
+Pin Name            I/O     Description      DC Characteristics           Comment
+              No.
+
+VIO_SEL       52    DI      I/O voltage                                   Control   VDD_EXT
+
+
+
+
+BC660K-GL_Hardware_Design                                                             21 / 67
+                                                                                 NB-IoT Module Series
+
+
+                                     selection                                       voltage selection 4
+
+
+    Reserved Pins
+
+                     Pin
+    Pin Name                  I/O    Description       DC Characteristics            Comment
+                     No.
+                                                                                     Keep these      pins
+    RESERVED         2, 8, 21–23, 25, 26, 28–33, 44–51, 53
+                                                                                     open.
+
+
+
+      NOTE
+
+    1.     The RESET_N/PSM_EINT pin has an internal design to prevent current backflow, so the voltage of
+           these pins measured with a multimeter is not the real voltage inside the chip.
+    2.     When VIO_SEL is grounded and VBAT ≥ 3.3 V, VDD_EXT does not output the exact typical
+           voltage of 3.3 V, the actual output voltage is between 3.1–3.3 V.
+    3.     Keep all reserved and unused pins unconnected.
+
+
+
+
+3.3. Operating Modes
+
+The following table briefly describes the three working modes of the module.
+
+
+
+Table 5: Application Processor (AP) Operating Modes
+
+
+    Mode             Description
+
+    Normal           In normal mode, the AP handles tasks such as AT command communication.
+
+    Idle             When all tasks are suspended, the AP enters idle mode.
+
+
+
+Table 6: Modem Operating Modes
+
+
+    Mode             Description
+
+                     The network is connected and the module supports data transmission. In such a case,
+    Connected
+                     the modem can switch to DRX/eDRX mode.
+                     The modem is in idle mode, and downlink data can be received during PTW only. In
+    DRX/eDRX
+                     such a case, the modem can switch to PSM or connected mode.
+
+
+
+4When VIO_SEL is grounded and VBAT ˂ 3.3 V, VDD_EXT = VBAT; When VIO_SEL is grounded and VBAT ≥ 3.3 V,
+VDD_EXT = 3.1–3.3 V; When VIO_SEL is floating, VDD_EXT = 1.8 V.
+
+
+
+BC660K-GL_Hardware_Design                                                                         22 / 67
+                                                                              NB-IoT Module Series
+
+
+                 In power saving mode, the modem is disconnected from the network and cannot
+ PSM             receive any downlink data. In such a case, the modem can switch to eDRX/DRX mode,
+                 then quickly switch to connected mode.
+
+
+
+Table 7: Module Operating Modes
+
+
+ Mode            Description
+
+                 When the AP is in normal mode and the modem is in connected mode, the module is
+ Active          active and supports all services and functions.
+                 The current consumption in active mode is higher than that in sleep modes.
+                 Generally, when the AP is in idle mode and the modem is not in PSM mode, the module
+ Light Sleep     enters Light Sleep mode.
+                 In Light Sleep mode, the current consumption of the module is reduced greatly.
+                 When the AP is in idle mode and the modem is in PSM, the module enters Deep Sleep
+ Deep Sleep      mode in which the CPU is powered off and only the 32 kHz RTC clock keeps working.
+                 In Deep Sleep mode, the current consumption is minimized (average value: 0.8 μA).
+
+
+
+
+3.4. Power Saving Modes
+
+
+3.4.1. Light Sleep Mode
+
+In Light Sleep mode, the UART interfaces do not work, and the module can be woken up on the falling
+edge of PSM_EINT or by sending the AT command to it via the main UART interface (this AT command
+will be lost).
+
+
+
+3.4.2. Deep Sleep Mode
+
+The module consumes extremely low current in Deep Sleep mode (average value: 0.8 μA). The main
+purpose of Deep Sleep is to reduce the power consumption of the module and prolong the power supply
+duration of the battery. In this mode, the UART interfaces do not work.
+
+The following figure shows the power consumption of the module in different modes.
+
+
+
+
+BC660K-GL_Hardware_Design                                                                    23 / 67
+                                                                              NB-IoT Module Series
+
+
+
+
+     Power Consumption
+                         Reception
+
+
+
+                            Transmission   Idle                               Idle
+                                                    PSM
+                                           T3324
+              UE inactive time                     T3412                   TAU
+
+
+                         Figure 3: Module Power Consumption in Different Modem Modes
+
+
+When the modem remains in PSM and the AP is in idle mode, the module will enter Deep Sleep mode.
+The procedure of the modem entering PSM is as follows:
+
+The modem requests to enable PSM with an ATTACH REQUEST or TAU REQUEST message during
+ATTACH or TAU (Tracking Area Update) procedure. Then the network accepts the request and provides
+an active time value (T3324) to the modem and the mobile reachable timer starts. When the T3324 timer
+expires, the modem enters PSM. Please note that the module cannot request entering PSM when
+establishing an emergency attachment or initializing the PDN (Public Data Network) connection.
+
+When the module is in Deep Sleep mode, it can be woken up in the following cases:
+
+⚫   After the T3412 timer expires, the module will exit from Deep Sleep automatically.
+⚫   After the MCU sends an AT command to the module (this AT command will be lost), and pulls down
+    the MAIN_RXD, the module will be woken up from Deep Sleep in MAIN_RXD’s falling edge.
+⚫   Pulling down PSM_EINT (falling edge) will wake up the module from Deep Sleep.
+
+The timing of waking up the module from Deep Sleep is illustrated below.
+
+
+
+
+BC660K-GL_Hardware_Design                                                                    24 / 67
+                                                                                NB-IoT Module Series
+
+
+
+                         VBAT
+
+
+                     PSM_EINT
+
+                                           ˂ 1 ms
+
+
+                       VDD_EXT
+
+
+
+                        Module
+                        Status      Deep Sleep             Running
+
+
+
+                       Figure 4: Timing of Waking Up Module from Deep Sleep
+
+
+
+
+3.5. Power Supply
+
+
+3.5.1. Power Supply Pins
+
+The module provides two VBAT pins for connection with an external power supply. The table below
+describes the module's VBAT and ground pins.
+
+
+
+Table 8: Power Supply Pins
+
+
+ Pin Name     Pin No.            Description            Min.          Typ.        Max.            Unit
+
+                                 Power supply for the
+ VBAT         42, 43                                    2.2           3.3         4.3             V
+                                 module
+
+ GND          1, 27, 34, 36, 37, 40, 41, 56, 57, 58
+
+
+
+3.5.2. Voltage Stability Requirements
+
+The power supply range of the module is from 2.2 V to 4.3 V. Make sure that the input voltage will never
+drop below 2.2 V. The following figure shows the voltage drop during heavy load.
+
+
+
+
+BC660K-GL_Hardware_Design                                                                        25 / 67
+                                                                                           NB-IoT Module Series
+
+
+
+                                            Heavy                        Heavy
+                                            Load                         Load
+
+
+
+
+                    Load (A)
+
+                    Power
+                    Supply (V)
+                                                                                          Ripple
+                                                         Drop
+
+
+
+
+                           Figure 5: Power Supply Limits during Heavy Load
+
+
+
+3.5.3. Power Supply Reference Design
+
+Power design for a module is critical to its performance. It is recommended to use a low quiescent current
+LDO with an output capacity of 0.5 A to regulate the power supply for BC660K-GL. Lithium-thionyl
+chloride (Li-SOCl2) batteries and Lithium manganese oxide (LiMn2O4) batteries can be used as the
+power supply. The supply voltage of the module ranges from 2.2 V to 4.3 V. When the module is working,
+ensure its input voltage never drops below 2.2 V; otherwise, the module cannot work normally.
+
+For better power performance, it is recommended to place a 100 μF capacitor with low ESR (ESR = 0.7 Ω)
+and three ceramic capacitors (100 nF, 100 pF and 22 pF) near the VBAT pins. Also, it is recommended to
+add a TVS on the VBAT trace (near VBAT pins) to improve surge voltage withstanding capability. In
+principle, the longer the VBAT trace is, the wider it should be. A reference circuit for power supply is
+illustrated in the following figure.
+
+
+                                                                                 Module
+                                     VBAT
+
+
+                                                                                 VBAT
+
+
+                                     D1     +    C1      C2       C3     C4
+
+                                    TVS
+                                                100 μF   100 nF   100 pF 22 pF
+
+
+                                                                                 GND
+
+
+
+
+                                            GND
+
+
+                                 Figure 6: Reference Design for Power Supply
+
+
+
+
+BC660K-GL_Hardware_Design                                                                                26 / 67
+                                                                                        NB-IoT Module Series
+
+
+Table 9: TVS Selection Parameter Requirements
+
+ Symbol     Parameter                  Min.        Typ.    Max.          Unit   Test Condition
+            Reverse operating
+ VRWM                                  -           -       4.85          V      -
+            voltage
+ VBR        Breakdown voltage          4.9         5.3     6             V      IBR = 1 mA
+
+ VC         Clamping voltage           -           5.5     -             V      IPP = 16 A (tP = 100 ns)
+
+ VC         Clamping voltage           -           5.5     -             V      IPP = 10 A (8 × 20 μs pulse)
+
+ VC         Clamping voltage           -           9.5     -             V      IPP = 180 A (8 × 20 μs pulse)
+
+ VC         Clamping voltage           -           7.5     -             V      VESD = 8 kV
+            Reverse leakage
+ IR                                    -           -       1.0           μA     VRWM = 4.85 V
+            current
+
+
+
+3.5.4. Power Supply Voltage Monitoring
+
+You can use AT+CBC to monitor and query the current VBAT voltage. The unit of the voltage value is mV
+(millivolt). For detailed information about the command, see document [2].
+
+
+
+
+3.6. Turn-on/Turn-off Scenario
+
+3.6.1. Turn On
+
+After the module VBAT is powered up, keep the RESET_N and BOOT high (both pins are at high level by
+default), and the module will turn on automatically. The turn-on timing is illustrated in the following figure.
+
+                                              ˂ 10 ms
+
+                                                          ˃ 500 ms
+                           VBAT
+                      RESET_N
+
+                         BOOT
+
+                          Status                               Booting              Active
+
+
+                                           Figure 7: Turn-on Timing
+
+
+
+
+BC660K-GL_Hardware_Design                                                                              27 / 67
+                                                                                 NB-IoT Module Series
+
+
+
+     NOTE
+
+    1.    After cutting off the VBAT, the module can be turned on again only after its VBAT voltage drops
+          below 0.7 V. The actual discharging time of VBAT needs to be determined based on circuit tests
+          and enough time margin should be left to avoid turning on abnormally.
+    2.    The power-up time of VBAT must be within 10 ms, and after VBAT is powered up, RESET_N and
+          BOOT automatically rise to high level due to internal pull-ups.
+    3.    It is recommended that the MCU retains a RESET_N controlling pin so that the RESET_N can
+          reset the module to exit the abnormal state when the module is operating abnormally due to the
+          abnormal power-up sequence or dropping supply voltage of VBAT.
+
+
+
+3.6.2. Turn Off
+
+The module can be turned off through cutting off its VBAT power supply.
+
+                                      Delay > 5 ms
+                           VBAT
+
+
+
+
+                         RESET_N
+
+
+
+
+                                         Figure 8: Turn-off Timing
+
+
+     NOTE
+
+    It is recommended to execute AT+CFUN=0 and return to OK before powering down the module. For
+    detailed information about the command, see document [2].
+
+
+
+3.6.3. RESET_N
+
+The module can be reset through the following methods:
+
+⚫        Hardware reset: driving RESET_N low for at least 50 ms will reset the module.
+⚫        Software reset: sending AT+QRST. For more details about the AT command, see document [2].
+
+
+
+
+BC660K-GL_Hardware_Design                                                                        28 / 67
+                                                                                 NB-IoT Module Series
+
+
+Table 10: Pin Description of RESET_N
+
+
+ Pin Name       Pin No.   I/O    Description          DC Characteristics        Comment
+
+                                                                                1.9–2.1 V power domain.
+                                                      VILmax = 0.38 V           Active low.
+ RESET_N        15        DI     Reset the module.    VIHmin = 1.47 V           A test point is
+                                                      VIHmax = 2.1 V            recommended to be
+                                                                                reserved if unused.
+
+
+The reference designs for resetting the module are shown below. An open drain/collector driving circuit or
+a button can be used to control the RESET_N pin.
+
+
+                                                                              RESET_N
+
+
+
+                                                                              NM
+                                            4.7 kΩ
+                                                                             100 nF
+                      Reset pulse
+
+                                                           47 kΩ
+
+
+
+
+        Figure 9: Reference Design for RESET_N Controlled with an OC/OD Driving Circuit
+
+
+
+
+                                       S1
+                                                                        RESET_N
+
+                                                                   NM
+                                               TVS               100 nF
+
+
+
+                                               Close to S1
+
+
+                Figure 10: Reference Design for RESET_N Controlled with a Button
+
+
+
+
+BC660K-GL_Hardware_Design                                                                         29 / 67
+                                                                               NB-IoT Module Series
+
+
+
+   NOTE
+
+ It is recommended to reserve a 100 nF capacitor position, and the capacitor is not mounted by default.
+
+
+
+3.6.4. Download Mode
+
+Table 11: Pin Description of BOOT
+
+
+ Pin Name    Pin No.    I/O      Description         DC Characteristics            Comment
+
+                                                                                   Active low.
+                                 Make the module
+                                                     VILmax = 0.2 × VDD_EXT        A test point is
+ BOOT        7          DI       enter download
+                                                     VIHmin = 0.7 × VDD_EXT        recommended to be
+                                 mode
+                                                                                   reserved.
+
+
+In the process of resetting or powering on the module, drive and keep the BOOT pin low and the module
+will enter the download mode.
+
+In the download mode, the firmware can be downloaded through the main UART interface. After the
+download is completed, the module needs to be reset to exit from the download mode.
+
+A reference design is shown below.
+
+
+                                     S1
+                                                                   BOOT
+
+
+
+                                               TVS
+
+
+
+                                               Close to S1
+
+
+                 Figure 11: Reference Design for BOOT Controlled with a Button
+
+
+
+  NOTE
+
+ If the BOOT is connected to a filter capacitor in parallel, the capacitance of the capacitor cannot be
+ higher than 33 pF.
+
+
+
+
+BC660K-GL_Hardware_Design                                                                       30 / 67
+                                                                                NB-IoT Module Series
+
+
+
+3.7. UART Interfaces
+
+The module provides two UART interfaces: the main UART interface and the debug UART interface.
+
+
+
+Table 12: Pin Description of UART Interfaces
+
+
+ Interface         Pin Name        Pin No.    I/O       Description                  Comment
+
+                   MAIN_TXD        17         DO        Main UART transmit           Test points are
+ Main UART
+                                                                                     recommended to
+ Interface
+                   MAIN_RXD        18         DI        Main UART receive            be reserved.
+
+                   DBG_RXD         38         DI        Debug UART receive
+ Debug UART                                                                          Test points must
+ Interface                                                                           be reserved.
+                   DBG_TXD         39         DO        Debug UART transmit
+
+ Ring Indication   RI              20         DO        Ring indication
+
+
+
+3.7.1. Main UART Interface
+
+The main UART interface supports AT command communication, data transmission and firmware
+upgrade.
+
+⚫   Default baud rate: 115200 bps
+⚫   Supported baud rates: 2400 bps, 4800 bps, 9600 bps, 19200 bps, 38400 bps, 57600 bps,
+    115200 bps, 230400 bps, 460800 bps
+
+When the interface is used for firmware upgrade, the baud rate is 921600 bps by default.
+
+When the module is in Deep Sleep/Light Sleep mode, the MCU can wake up it by sending AT commands
+through the main UART interface and meanwhile the MCU pulls down the MAIN_RXD. The module will
+be woken up from Deep Sleep in MAIN_RXD’s falling edge. It is recommended to keep sending the AT
+command until OK is returned before sending AT commands for other services.
+
+The figure below shows the connection between the module and the MCU.
+
+
+
+
+BC660K-GL_Hardware_Design                                                                      31 / 67
+                                                                               NB-IoT Module Series
+
+
+
+                           Module                                     MCU
+
+
+                              MAIN_TXD                             TXD_MCU
+
+
+
+                              MAIN_RXD                             RXD_MCU
+
+
+
+
+                                     GND                       GND
+
+
+
+
+                Figure 12: Reference Design for Main UART Interface Connection
+
+
+
+3.7.2. Debug UART Interface
+
+Through debug tools, the debug UART interface can be used to output logs for software debugging. Its
+baud rate is 6 Mbps by default. The following is a reference design of debug UART interface. This UART
+interface only supports outputting log, and cannot be used for data transmission.
+
+
+                        Module                                         MCU
+
+
+                           DBG_TXD                             TXD_MCU
+
+                           DBG_RXD                             RXD_MCU
+
+
+
+                                GND                            GND
+
+
+
+
+               Figure 13: Reference Design for Debug UART Interface Connection
+
+
+
+3.7.3. UART Interface Application
+
+Table 13: Pin Description of VIO_SEL
+
+
+ Pin Name        Pin No.       I/O         Description                       Comment
+
+                                                                             Control VDD_EXT voltage
+ VIO_SEL         52            DI          I/O Voltage selection
+                                                                             selection
+
+
+
+
+BC660K-GL_Hardware_Design                                                                     32 / 67
+                                                                                   NB-IoT Module Series
+
+
+The UART interface voltage domain of this module is optional. You can select the appropriate voltage
+domain through VIO_SEL according to actual situation. When VIO_SEL is floating, the VDD_EXT voltage
+domain is 1.8 V; when VIO_SEL is grounded, the VDD_EXT voltage domain is 3.1–3.3 V or equals to the
+VBAT voltage 5. If the voltage domain of your application system is 1.8 V, VIO_SEL should be floating; If
+the voltage domain of your application system is 3.1–3.3 V, VIO_SEL must be grounded.
+
+The following figure shows the reference design of UART interfaces:
+
+
+                 Module                                                         MCU
+
+
+
+                       VDD_EXT           VDD_EXT             VDD_IN      VDD
+                                               R2
+                       MAIN_TXD                                          RXD
+                                                    1 kΩ
+                                               R3
+                      MAIN_RXD                                           TXD
+                                                    1 kΩ
+                                               R4
+                       DBG_TXD                                           RXD_DBG
+                                               R5 1 kΩ
+                       DBG_RXD                                           TXD_DBG
+                                                    1 kΩ
+                                               R6
+                             RI                                          GPIO
+                                    R1              1 kΩ
+                          VIO_SEL
+                                    0Ω
+                             GND                                         GND
+                            VBAT     VBAT GND
+                           BOOT      BOOT
+                       RESET_N       RESET_N          TEST POINTS
+
+
+
+
+                    Figure 14: Reference Design for UART Interface Connection
+
+
+The following circuit shows a reference design for the communication between the module and a PC with
+a standard RS-232 interface. Make sure to select appropriate voltage domain through VIO_SEL
+according to the actual situation.
+
+
+
+
+5When VIO_SEL is grounded and VBAT ˂ 3.3 V, VDD_EXT = VBAT; When VIO_SEL is grounded and VBAT ≥ 3.3 V,
+VDD_EXT = 3.1–3.3 V; When VIO_SEL is floating, VDD_EXT = 1.8 V.
+
+
+
+BC660K-GL_Hardware_Design                                                                        33 / 67
+                                                                                          NB-IoT Module Series
+
+
+
+
+                                              C1+                   V+            GND
+
+                                              C1-                  GND            GND
+
+                                              C2+                  VCC    3.3 V
+               Module
+                                              C2-                   V-            GND
+
+                                              T1IN             T2OUT
+
+                 MAIN_TXD                     T2IN             T1OUT
+
+                                              T3IN             T5OUT
+                                                                                    To PC Main UART Interface
+                        RI                    T4IN             T3OUT
+
+                                              T5IN             T4OUT
+                                                                                         6            1
+                                              R1OUT
+                                                                                                      2
+                 MAIN_RXD                     R1OUT                R1IN                  7
+                                                                                                      3
+                                              R2OUT                R2IN
+                               R1                                                        8
+                  VIO_SEL                                                                             4
+                                              R3OUT                R3IN
+                               0Ω                                                        9
+                                                                                                      5
+                     GND
+                                                       RS-232
+                                                                                                          GND
+                                                     Transceiver
+
+
+
+
+         Figure 15: Reference Design for Module-PC Communication via RS-232 Interface
+
+
+Please visit vendors’ websites to select a suitable RS-232 transceiver, such as http://www.exar.com and
+http://www.maximintegrated.com.
+
+
+
+  NOTE
+
+  1.   If the voltage domain of your application system is 1.8 V, keep the R1 in red not mounted; if it is
+       3.1-3.3 V, keep the R1 in red mounted.
+  2. “ ” represents the test points of UART interfaces. It is recommended to reserve the test points of
+     VBAT, BOOT and RESET_N for convenient firmware upgrade and software debugging when
+     necessary.
+  3. MAIN_RXD cannot be pulled up to VDD_EXT directly. To pull up MAIN_RXD to VDD_EXT, you
+     need to connect a Schottky diode in series first, and then add a pull-up resistor of 4.7–20 kΩ. For
+     more details, see document [3].
+
+
+If the voltage domain of your application system is neither 1.8 V nor 3.1–3.3 V, it is recommended to use a
+level-shifting circuit. For the design of the circuit shown in the dotted line, refer to that shown in the solid
+lines, and pay attention to the connection direction. In this case, the design of RI–GPIO circuit can refer to
+that of the MAIN_TXD–RXD circuit.
+
+
+
+
+BC660K-GL_Hardware_Design                                                                                       34 / 67
+                                                                                               NB-IoT Module Series
+
+
+
+                             Module                                                                MCU
+                                                                 1 kΩ
+                               MAIN_RXD                                                      TXD_MCU
+                               MAIN_TXD                                                     RXD_MCU
+                                                                       1 nF
+                                                                                    10 kΩ
+                                                       VDD_EXT
+                                                                       4.7 kΩ   VCC_MCU
+                                       RI                                                    GPIO
+                                     GND                                                     GND
+                                                  R1
+                                VIO_SEL
+                                                  0Ω
+
+
+
+
+                                     Figure 16: Reference Design for Level-shifting Circuit
+
+
+
+                NOTE
+ nected to the 1.
+                TXD ofDue to the anti-backflow design of the MAIN_RXD pin, it can be directly connected to the TXD of
+D in Deep Sleep/Light the peripheral in 1.8–3.3 V voltage domain. If wake-up function of MAIN_RXD in Deep Sleep/Light
+ -shifting circuit so as
+                      Sleep mode is enabled, it is recommended that MAIN_RXD not use any level-shifting circuit so as
+                   to avoid abnormal wake-up.
+               2. If you apply the level-shifting circuit, don’t mount the R1 marked in red.
+ D to VDD_EXT, 3. you
+                   MAIN_RXD cannot be pulled up to VDD_EXT directly. To pull up MAIN_RXD to VDD_EXT, you
+tor of 4.7–20 kΩ. For
+                   need to connect a Schottky diode in series first, and then add a pull-up resistor of 4.7–20 kΩ. For
+                   more details, see document [3].
+xceeding 460 4.
+              kbps.Transistor solution is not suitable for applications with baud rates exceeding 460 kbps.
+
+
+
+
+             3.8. USIM Interface
+
+             The USIM card is powered by USIM_VDD. Both 1.8 V and 3.0 V USIM cards are supported.
+
+
+
+             Table 14: Pin Description of USIM Interface
+
+
+              Pin Name          Pin No.     I/O          Description             Comment
+
+                                                                                 When 3.0 V ≤ VBAT ≤ 4.3 V, 1.8/3.0 V
+                                                         USIM card power
+              USIM_VDD          14          PO                                   USIM card is supported; When 2.2 V ≤
+                                                         supply
+                                                                                 VBAT < 3.0 V, only 1.8 V USIM card is
+
+
+
+
+             BC660K-GL_Hardware_Design                                                                          35 / 67
+                                                                                               NB-IoT Module Series
+
+
+                                                                               supported.
+                                                                               Maximum supply current: about 80 mA.
+
+ USIM_CLK                13           DO        USIM card clock
+
+ USIM_RST                12           DO        USIM card reset
+
+ USIM_DATA               11           DIO       USIM card data
+
+                                                Dedicated ground
+ USIM_GND                10
+                                                for USIM card
+
+
+A reference design for the USIM interface with a 6-pin USIM card connector is below.
+
+
+
+                          USIM_GND                                    100 nF
+                                                                                     USIM Card Connector
+
+                          USIM_VDD                                                   VCC           GND
+                          USIM_RST             22 Ω
+                                                                                     RST           VPP
+                Module                         22 Ω
+                          USIM_CLK                                                   CLK            IO
+                                 10 kΩ
+                                            22 Ω
+                          USIM_DATA
+
+
+                                            33 pF 33 pF 33 pF 33 pF
+
+                                                                                   TVS array
+
+
+
+                                                      GND                  GND
+
+
+
+             Figure 17: Reference Design for USIM Interface with a 6-pin USIM Card Connector
+
+
+
+     NOTE
+
+    1.    If your PCB board has a complete ground plane on the GND between the module and the USIM
+          card connector, you can directly connect the GND of the USIM card connector to the nearest GND
+          plane. Otherwise, it is recommended to connect the GND of the USIM card connector to the
+          USIM_GND, and the shorter the USIM_GND trace is, the better.
+    2.    The pull-up resistor of 10 kΩ on the USIM_DATA can improve anti-jamming capability and should
+          be placed close to the USIM card connector.
+
+
+To enhance the reliability and availability of the USIM card in applications, follow the criteria below in
+USIM circuit design:
+
+⚫        Place the USIM card connector as close to the module as possible. Keep the trace length as short as
+         possible, at most 200 mm.
+⚫        Keep USIM card signal lines away from RF and power supply traces.
+
+
+
+BC660K-GL_Hardware_Design                                                                                    36 / 67
+                                                                                NB-IoT Module Series
+
+
+⚫     Make the trace between the ground of the module and that of the USIM card connector short and
+      wide and ensure the trace width not less than 0.5 mm avoid any decrease in electric potential. The
+      decoupling capacitor between USIM_VDD and GND should be not more than 1 μF and be placed
+      close to the USIM card connector.
+⚫     To avoid cross-talk between USIM_DATA and USIM_CLK, keep them away from each other and
+      shield them separately with surrounding ground.
+⚫     For better ESD protection, it is recommended to add a TVS array whose parasitic capacitance should
+      be not more than 15 pF. Place the ESD protection component as close to the USIM card connector
+      as possible, and ensure the USIM card signal lines from the USIM card connector go through the
+      ESD protection component before reaching the module. The 22 Ω resistors should be connected in
+      series between the module and the USIM card connector to suppress EMI and enhance ESD
+      protection. Note that the module’s USIM peripheral devices should be placed close to the USIM card
+      connector.
+⚫     Add 33 pF capacitors in parallel among USIM_DATA, USIM_CLK and USIM_RST signal traces to
+      filter out RF interference.
+
+
+
+
+3.9. ADC Interface
+
+The module provides a 12-bit ADC input channel to read the voltage value.
+
+
+
+Table 15: Pin Description of ADC Interface
+
+
+ Pin Name        Pin No.      I/O      Description                          Comment
+
+                                                                            Input voltage range:
+ ADC0            9            AI       General-purpose ADC interface
+                                                                            0–1.2 V.
+
+
+
+    NOTE
+
+    A 320 kΩ pull-down resistor is integrated inside the ADC0 pin. This resistor needs to be considered
+    when you calculate the voltage division relationship.
+
+
+
+
+3.10. RI
+
+When there is a message received or a URC output, the module will notify the peripheral through the RI
+interface.
+
+
+
+
+BC660K-GL_Hardware_Design                                                                          37 / 67
+                                                                                    NB-IoT Module Series
+
+
+Table 16: Pin Description of RI Interface
+
+
+ Pin Name        Pin No.       I/O     Description                 Comment
+
+ RI              20            DO      Ring indication             VDD_EXT power domain
+
+
+
+Table 17: RI Signal Status
+
+
+ Module Status               RI Signal Level
+
+ Idle                        High
+
+ URC/SMS Message
+                             Low for at least 120 ms before starting data output.
+ Arrives
+
+
+
+                                                                Output data
+
+
+                              RI                     At least
+                 HIGH                                120 ms
+
+
+
+
+                 LOW
+                              Idle          A URC or SMS message is received
+
+
+                 Figure 18: RI Behaviour When a URC/SMS Message Is Received
+
+
+
+
+3.11. GPIO Interfaces
+
+The module provides four general-purpose input and output (GPIO) interfaces. AT+QCFG="gpio"
+command can be used to configure the status of the GPIO pins. For more details about the AT command,
+see document [2].
+
+
+
+Table 18: Pin Description of GPIO Interfaces
+
+
+ Pin Name    Pin No.         I/O                Description                    Comment
+
+ GPIO1       3               DIO                General-purpose                If unused, keep these pins
+
+
+
+
+BC660K-GL_Hardware_Design                                                                         38 / 67
+                                                                                NB-IoT Module Series
+
+
+
+ GPIO2        4               DIO               input/output                 open.
+
+
+ GPIO3        5               DIO
+
+ GPIO4        6               DIO
+
+
+
+
+3.12. GRFC Interfaces
+
+The module provides two generic RF control interfaces for the control of external antenna tuners.
+
+
+
+Table 19: Pin Description of GRFC Interfaces
+
+
+ Pin Name         Pin No.      I/O       Description                 Comment
+
+ GRFC1            54           DO        Generic RF controller
+                                                                     1.8 V power domain.
+                                                                     If unused, keep these pins open.
+ GRFC2            55           DO        Generic RF controller
+
+
+
+Table 20: Truth Table of GRFC Interfaces
+
+
+ GRFC1 Level           GRFC2 Level   Frequency Range (MHz)        Band
+
+ Low                   Low           880–2180                     B1, B2, B3, B4, B8, B25, B66, B70
+
+ Low                   High          791–894                      B5, B18, B19, B20
+
+ High                  Low           698–803                      B12, B13, B17, B28, B85
+
+ High                  High          -                            Disabled
+
+
+
+
+3.13. NETLIGHT
+
+NETLIGHT can be used to indicate the network status of the module.
+
+
+
+
+BC660K-GL_Hardware_Design                                                                           39 / 67
+                                                                            NB-IoT Module Series
+
+
+Table 21: Pin Description of NETLIGHT
+
+
+ Pin Name        Pin No.    I/O       Description                     Comment
+
+                                      Indicate the module's network   VOLmax = 0.15 × VDD_EXT
+ NETLIGHT        16         DO
+                                      activity status                 VOHmin = 0.8 × VDD_EXT
+
+
+A reference design for NETLIGHT is shown below.
+
+                                                               VBAT
+
+
+
+                                  Module
+
+
+                                                           2.2 kΩ
+
+                                                  4.7 kΩ
+                                   NETLIGHT
+                                                           47 kΩ
+
+
+
+
+                           Figure 19: Reference Design for NETLIGHT
+
+
+
+
+BC660K-GL_Hardware_Design                                                                  40 / 67
+                                                                                  NB-IoT Module Series
+
+
+
+
+4 RF Specifications
+Appropriate antenna type and design should be used with matched antenna parameters according to
+specific application. It is required to perform a comprehensive functional test for the RF design before
+mass production of terminal products. The entire content of this chapter is provided for illustration only.
+Analysis, evaluation and determination are still necessary when designing target products.
+
+The pin 35 is the RF antenna pad. The antenna interface has an impedance of 50 Ω.
+
+
+
+4.1. Antenna Interface
+
+
+Table 22: Pin Description of NB-IoT Antenna Interface
+
+
+ Pin Name                   Pin No.                    I/O                        Description
+
+ ANT_RF                     35                         AIO                        RF antenna interface
+
+ GND                        34, 36, 37                                            Ground
+
+
+
+
+4.2. Operating Frequency
+
+
+Table 23: Module Operating Frequency
+
+
+ Frequency Band                       Receiving Frequency                Transmitting Frequency
+
+ B1                                   2110–2170 MHz                      1920–1980 MHz
+
+ B2                                   1930–1990 MHz                      1850–1910 MHz
+
+ B3                                   1805–1880 MHz                      1710–1785 MHz
+
+ B4                                   2110–2155 MHz                      1710–1755 MHz
+
+ B5                                   869–894 MHz                        824–849 MHz
+
+
+
+
+BC660K-GL_Hardware_Design                                                                          41 / 67
+                                                                                NB-IoT Module Series
+
+
+
+ B8                                  925–960 MHz                       880–915 MHz
+
+ B12                                 729–746 MHz                       699–716 MHz
+
+ B13                                 746–756 MHz                       777–787 MHz
+
+ B17                                 734–746 MHz                       704–716 MHz
+
+ B18                                 860–875 MHz                       815–830 MHz
+
+ B19                                 875–890 MHz                       830–845 MHz
+
+ B20                                 791–821 MHz                       832–862 MHz
+
+ B25                                 1930–1995 MHz                     1850–1915 MHz
+
+ B28                                 758–803 MHz                       703–748 MHz
+
+ B66                                 2110–2180 MHz                     1710–1780 MHz
+
+ B70                                 1995–2020 MHz                     1695–1710 MHz
+
+ B85                                 728–746 MHz                       698–716 MHz
+
+
+
+
+4.3. Reference Design
+
+BC660K-GL provides an RF antenna pin for external NB-IoT antenna connection.
+
+⚫     The RF trace on the host PCB should be a coplanar waveguide or microstrip whose characteristic
+      impedance is 50 Ω.
+⚫     The module comes with ground pads which are next to the antenna pad to give a better grounding.
+⚫     To achieve better RF performance, it is recommended to reserve a dual L-type circuit and place the
+      dual L-type components (R1/C1/C2/C3) as close to the antenna as possible. By default, the
+      capacitors (C1/C2) are not mounted and a 0 Ω resistor is mounted on R1.
+
+A reference design of the RF interface is shown below.
+
+
+
+
+BC660K-GL_Hardware_Design                                                                       42 / 67
+                                                                                  NB-IoT Module Series
+
+
+
+                                            C3              R1
+                               GND
+                             ANT_RF
+                                           100 pF           0Ω
+                                GND
+                                                         C1      C2
+                         Module                          NM      NM
+
+
+
+
+                        Figure 20: Reference Design for the Antenna Interface
+
+
+
+. NOTE
+  Notes on C3:
+      1) If there is DC power at the antenna ports, place capacitor on C3 to prevent short circuit to
+          ground. The capacitance value is recommended to be 100 pF, which can be adjusted
+          according to the debugging results.
+      2) If there is no DC power in the peripheral design:
+          a) Do not reserve C3.
+          b) If C3 has already been reserved, it should be mounted with a component, and it is
+               recommended to use a 0 Ω resistor. You can also match the component according to the
+               debugging results.
+
+
+
+
+4.4. RF Routing Guidelines
+
+For user’s PCB, the characteristic impedance of all RF traces should be controlled to 50 Ω. The
+impedance of the RF traces is usually determined by the trace width (W), the materials’ dielectric constant,
+the height from the reference ground to the signal layer (H), and the spacing between RF traces and
+grounds (S). Microstrip or coplanar waveguide is typically used in RF layout to control characteristic
+impedance. The following are reference designs of microstrip or coplanar waveguide with different PCB
+structures.
+
+
+
+
+BC660K-GL_Hardware_Design                                                                          43 / 67
+                                                                      NB-IoT Module Series
+
+
+
+
+                 .
+
+                          Figure 21: Microstrip on a 2-layer PCB
+
+
+
+
+                     Figure 22: Coplanar Waveguide on a 2-layer PCB
+
+
+
+
+       Figure 23: Coplanar Waveguide on a 4-layer PCB (Layer 3 as Reference Ground)
+
+
+
+
+    Figure 24: Coplanar Waveguide on a 4-layer PCB (Bottom Layer as Reference Ground)
+
+
+BC660K-GL_Hardware_Design                                                             44 / 67
+                                                                                NB-IoT Module Series
+
+
+To ensure reliable RF performance, the following principles should be complied with in RF layout design:
+
+⚫   Use an impedance simulation tool to accurately control the characteristic impedance of RF traces at
+    50 Ω.
+⚫   The GND pins adjacent to the RF pin should not be designed as thermal relief pads, and should be
+    fully grounded.
+⚫   The distance between the RF pin and the RF connector should be as short as possible, and all the
+    right-angle traces should be changed to curve ones. The recommended trace angle is 135°.
+⚫   There should be clearance under the signal pin of the antenna connector or solder joint.
+⚫   The reference ground of RF traces should be complete. Meanwhile, adding some ground vias around
+    RF traces and the reference ground helps to improve RF performance. The distance between the
+    ground vias and RF traces should be at least twice the width of RF signal traces (2 × W).
+⚫   Keep RF traces away from interference sources (such as DC-DC, (U)SlM/USB/SDl0 high frequency
+    digital signals, display signals, and clock signals), and avoid intersection and paralleling between
+    traces on adjacent layers.
+
+For more details on the reference design of RF Layout, see document [4].
+
+
+
+
+4.5. Antenna Design Requirements
+
+To minimize the loss on RF trace and RF cable, pay attention to the antenna design. The following tables
+show the requirements on an NB-IoT antenna.
+
+
+
+Table 24: Antenna Cable Insertion Loss Requirements
+
+
+ Band                                                       Requirements
+
+ LTE B5/B8/B12/B13/B17/B18/B19/B20/B28/B85                  Cable insertion loss: < 1 dB
+
+ LTE B1/B2/B3/B4/B25/B66/B70                                Cable insertion loss: < 1.5 dB
+
+
+
+Table 25: Required Antenna Parameters
+
+
+ Parameter                          Requirements
+
+ Frequency Range                    698–2180 MHz
+
+ VSWR                               ≤2
+
+ Efficiency                         > 30 %
+
+
+
+
+BC660K-GL_Hardware_Design                                                                        45 / 67
+                                                                            NB-IoT Module Series
+
+
+
+ Max. Input Power (W)             50
+
+ Input Impedance (Ω)              50
+
+
+
+
+4.6. Transmitting Power
+
+
+Table 26: Transmitting Power
+
+
+ Frequency Band                         Max.                        Min.
+
+ B1/B2/B3/B4/B5/B8/B12/B13/B17/B18/
+                                        23 dBm ±2.7 dB              < -39 dBm
+ B19/B20/B25/B28/B66/B70/B85
+
+
+
+  NOTE
+
+ The design conforms to the NB-IoT radio protocols in 3GPP Rel-13 and Rel-14.
+
+
+
+
+4.7. Receiver Sensitivity
+
+
+Table 27: Receiver Sensitivity without Retransmission (Throughput ≥ 95 %)
+
+
+ Frequency Band                              Receiver Sensitivity               3GPP Requirement
+
+ B1/B2/B3/B4/B5/B8/B12/B13/B17/B18/B19/
+                                             -116 dBm                           -107.5 dBm
+ B20/B25/B28/B66/B70/B85
+
+
+
+Table 28: Receiver Sensitivity in 128 Retransmission (Throughput ≥ 95 %)
+
+
+ Frequency Band                                                            Receiving Sensitivity
+
+ B1/B2/B3/B4/B5/B8/B12/B13/B17/B18/B19/B20/B25/B28/B66/B70/B85             ≤ -129 dBm
+
+
+
+
+BC660K-GL_Hardware_Design                                                                    46 / 67
+                                                                              NB-IoT Module Series
+
+
+
+4.8. RF Connector Recommendation
+
+If RF connector is used for antenna connection, it is recommended to use the U.FL-R-SMT connector
+provided by Hirose.
+
+
+
+
+                       Figure 25: Dimensions of the Receptacle (Unit: mm)
+
+
+U.FL-LP series mated plugs listed in the following figure can be used to match the U.FL-R-SMT.
+
+
+
+
+                             Figure 26: Specifications of Mated Plugs
+
+
+
+BC660K-GL_Hardware_Design                                                                        47 / 67
+                                                                          NB-IoT Module Series
+
+
+The following figure describes the space factor of mated connectors.
+
+
+
+
+                      Figure 27: Space Factor of Mated Connectors (Unit: mm)
+
+
+For more details, visit http://www.hirose.com.
+
+
+
+
+BC660K-GL_Hardware_Design                                                               48 / 67
+                                                                                                NB-IoT Module Series
+
+
+
+
+5 Electrical Characteristics and
+            Reliability
+
+5.1. Absolute Maximum Ratings
+
+Absolute maximum ratings for power supply and voltage on digital and analog pins of the module are
+listed in the following table.
+
+
+
+Table 29: Absolute Maximum Ratings
+
+
+    Parameter                           Min.                 Max.                        Unit
+
+    VBAT                                -0.3                 4.5                         V
+
+    Voltage at Digital Pins             -0.3                 3.6                         V
+
+    Voltage at Analog Pins              -0.3                 3.6                         V
+
+
+
+
+5.2. Operating and Storage Temperatures
+
+The following table lists the operating and storage temperatures of the module.
+
+
+
+Table 30: Operating and Storage Temperatures
+
+
+    Parameter                                  Min.                Typ.            Max.                 Unit
+
+    Operating Temperature Range 6              -35                 +25             +75                  ºC
+
+
+
+
+6   Within this range, the module’s indicators comply with 3GPP specification requirements.
+
+
+
+BC660K-GL_Hardware_Design                                                                                      49 / 67
+                                                                                             NB-IoT Module Series
+
+
+
+    Extended Temperature Range 7             -40                -                +85                      ºC
+
+    Storage Temperature Range                -40                -                +90                      ºC
+
+
+
+
+5.3. Power Consumption
+
+The table below lists the power consumption of BC660K-GL under different states.
+
+
+
+Table 31: Module Power Consumption (3.3 V VBAT Power Supply)
+
+
+    Deep Sleep
+
+    AP Mode         Modem Mode                                          Min.         Avg.        Max.           Unit
+
+    Idle            PSM                                                 -            0.8         -              μA
+
+    Light Sleep
+
+    AP Mode         Modem Mode                                          Min.         Avg.        Max.           Unit
+
+                    eDRX = 40.96 s, PTW = 10.24 s, ECL = 0              -            38          -              µA
+
+    Idle            @ DRX = 1.28 s, ECL = 0                             -            220         -              μA
+
+                    @ DRX = 2.56 s, ECL = 0                             -            110         -              μA
+
+    Active 8
+
+    AP Mode         Modem Mode                                          Min.         Avg.        Max. 9         Unit
+
+                                               B1 @ 23.4 dBm            -            111         300            mA
+
+                    Single-tone                B2 @ 23.4 dBm            -            104         308            mA
+    Normal          (15 kHz subcarrier
+                    spacing)                   B3 @ 23.2 dBm            -            95          277            mA
+
+                                               B4 @ 23.2 dBm            -            94          275            mA
+
+
+
+7 Within this range, the module retains the ability to establish and maintain functions such as SMS and data transmission,
+without any unrecoverable malfunction. Radio spectrum and radio network remain uninfluenced, whereas the value of one
+or more parameters, such as Pout, may decrease and fall below the range of the 3GPP specified tolerances. When the
+temperature returns to the normal operating temperature range, the module’s indicators will comply with 3GPP specification
+requirements again.
+8 Power consumption under laboratory instrument test condition.
+9 The “maximum value” in “Active” mode refers to the maximum pulse current during RF emission.
+
+
+
+
+BC660K-GL_Hardware_Design                                                                                        50 / 67
+                                                               NB-IoT Module Series
+
+
+
+                                    B5 @ 23.1 dBm    -   98      270        mA
+
+                                    B8 @ 23.3 dBm    -   105     299        mA
+
+                                    B12 @ 23.2 dBm   -   120     332        mA
+
+                                    B13 @ 23.2 dBm   -   100     283        mA
+
+                                    B17 @ 23.2 dBm   -   115     325        mA
+
+                                    B18 @ 23.2 dBm   -   94      265        mA
+
+                                    B19 @ 23.2 dBm   -   95      270        mA
+
+                                    B20 @ 23.2 dBm   -   98      272        mA
+
+                                    B25 @ 22.8 dBm   -   108     301        mA
+
+                                    B28 @ 23.3 dBm   -   109     310        mA
+
+                                    B66 @ 23.2 dBm   -   95      277        mA
+
+                                    B70 @ 23.6 dBm   -   98      287        mA
+
+                                    B85 @ 23.2 dBm   -   115     329        mA
+
+                                    B1 @ 23.4 dBm    -   268     347        mA
+
+                                    B2 @ 23.5 dBm    -   256     332        mA
+
+                                    B3 @ 23.6 dBm    -   228     295        mA
+
+                                    B4 @ 23.6 dBm    -   225     291        mA
+
+                                    B5 @ 23.7 dBm    -   222     290        mA
+
+             Single-tone            B8 @ 23.4 dBm    -   239     311        mA
+             (3.75 kHz subcarrier
+             spacing)               B12 @ 23.4 dBm   -   271     349        mA
+
+                                    B13 @ 23.8 dBm   -   228     293        mA
+
+                                    B17 @ 23.4 dBm   -   267     344        mA
+
+                                    B18 @ 23.7 dBm   -   219     285        mA
+
+                                    B19 @ 23.6 dBm   -   220     286        mA
+
+                                    B20 @ 23.6 dBm   -   222     290        mA
+
+
+
+
+BC660K-GL_Hardware_Design                                                    51 / 67
+                                                                           NB-IoT Module Series
+
+
+
+                                      B25 @ 23.6 dBm    -            257     331          mA
+
+                                      B28 @ 23.5 dBm    -            256     330          mA
+
+                                      B66 @ 23.6 dBm    -            227     293          mA
+
+                                      B70 @ 23.6 dBm    -            222     287          mA
+
+                                      B85 @ 23.4 dBm    -            270     347          mA
+
+
+
+   NOTE
+
+ The above power consumption data are tested under 50 Ω impedance.
+
+
+
+
+5.4. Digital I/O Characteristics
+
+
+Table 31: USIM I/O Requirements
+
+
+ Parameter       Description                 Min.             Max.                 Unit
+
+ VIH             High-level input voltage    0.7 × USIM_VDD   -                    V
+
+ VIL             Low-level input voltage     -                0.2 × USIM_VDD       V
+
+ VOH             High-level output voltage   0.8 × USIM_VDD   -                    V
+
+ VOL             Low-level output voltage    -                0.15 × USIM_VDD      V
+
+
+
+Table 32: Other I/O Requirements
+
+
+ Parameter       Description                 Min.             Max.                 Unit
+
+ VIH             High-level input voltage    0.7 × VDD_EXT    -                    V
+
+ VIL             Low-level input voltage     -                0.2 × VDD_EXT        V
+
+ VOH             High-level output voltage   0.8 × VDD_EXT    -                    V
+
+ VOL             Low-level output voltage    -                0.15 × VDD_EXT       V
+
+
+
+
+BC660K-GL_Hardware_Design                                                                 52 / 67
+                                                                            NB-IoT Module Series
+
+
+
+5.5. ESD Protection
+
+Static electricity occurs naturally and it may damage the module. Therefore, applying proper ESD
+countermeasures and handling methods is imperative. For example, wear anti-static gloves during the
+development, production, assembly and testing of the module; add ESD protection components to the
+ESD sensitive interfaces and points in the product design.
+
+
+
+Table 33: Electrostatic Discharge Characteristics (Temperature: 25–30 ºC, Humidity: 40 ±5 %)
+
+
+ Tested Interface          Contact Discharge            Air Discharge                 Unit
+
+ VBAT, GND                 ±5                           ±10                           kV
+
+ Antenna interface         ±5                           ±10                           kV
+
+ Other interfaces          ±0.5                         ±1                            kV
+
+
+
+
+BC660K-GL_Hardware_Design                                                                    53 / 67
+                                                                               NB-IoT Module Series
+
+
+
+
+6 Mechanical Information
+This chapter describes the mechanical dimensions of the module. All dimensions are measured in
+millimeter (mm), and the dimensional tolerances are ±0.2 mm unless otherwise specified.
+
+
+
+
+6.1. Mechanical Dimensions
+
+
+                                             15.8±0.15
+                                               14.15                               2.0±0.2
+
+
+                                Pin 1
+
+                      0.7
+
+
+
+          17.7±0.15
+                        16.05
+
+
+
+
+                                                                                   0.6±0.1
+
+
+                                   Figure 28: Module Top and Side Dimensions
+
+
+
+
+BC660K-GL_Hardware_Design                                                                    54 / 67
+                                                                                          NB-IoT Module Series
+
+
+
+
+                                                                15.8 ±0.15
+
+                                                        4.4                        4.3
+                                                                                              0.7
+
+                                                                                                     2.25
+                         4.35     3.7                                                        Pin 1
+
+
+
+
+            17.7 ±0.15
+                                                              1.8
+
+
+
+
+                                0.7                                          1.0
+
+
+
+
+                                                                                                            1.9
+
+
+                                                          1.1
+                                1.5                                    4.4          3.5
+
+
+                                        Figure 29: Module Bottom Dimensions
+
+
+
+  NOTE
+
+ The module's coplanarity standard: ≤ 0.13 mm.
+
+
+
+
+BC660K-GL_Hardware_Design                                                                                         55 / 67
+                                                                    NB-IoT Module Series
+
+
+
+6.2. Recommended Footprint
+
+
+
+                                         18.10±0.15
+                                         15.80±0.15
+                                  0.35
+                                                        36
+
+                           6.10                                      1.00
+            Pin 1
+                    1                                   4.35
+
+
+
+            1.10
+                                                1.80                 0.35
+
+
+                                         1.80
+
+
+
+
+                           1.00
+
+                                                 1.00   6.15
+                                                                  23
+     0.70
+
+                           14
+                           2.50
+                                0.35
+                                                         4.30
+
+
+                            Figure 30: Recommended Footprint
+
+
+
+  NOTE
+
+ Keep at least 3 mm between the module and other components on the motherboard to improve
+ soldering quality and maintenance convenience.
+
+
+
+
+BC660K-GL_Hardware_Design                                                         56 / 67
+                                                                            NB-IoT Module Series
+
+
+
+6.3. Top and Bottom Views
+
+
+
+
+                        Figure 31: Top and Bottom Views of the Module
+
+
+
+  NOTE
+
+ Images above are for illustration purpose only and may differ from the actual module. For authentic
+ appearance and label, please refer to the module received from Quectel.
+
+
+
+
+BC660K-GL_Hardware_Design                                                                    57 / 67
+                                                                                            NB-IoT Module Series
+
+
+
+
+7 Storage, Manufacturing and
+          Packaging
+
+7.1. Storage Conditions
+
+The module is provided with vacuum-sealed packaging. MSL of the module is rated as 3. The storage
+requirements are shown below.
+
+1. Recommended Storage Condition: the temperature should be 23 ±5 °C and the relative humidity
+   should be 35–60 %.
+
+2. Shelf life (in a vacuum-sealed packaging): 12 months in Recommended Storage Condition.
+
+3. Floor life: 168 hours 10 in a factory where the temperature is 23 ±5 °C and relative humidity is below
+   60 %. After the vacuum-sealed packaging is removed, the module must be processed in reflow
+   soldering or other high-temperature operations within 168 hours. Otherwise, the module should be
+   stored in an environment where the relative humidity is less than 10 % (e.g., a dry cabinet).
+
+4. The module should be pre-baked to avoid blistering, cracks and inner-layer separation in PCB under
+   the following circumstances:
+
+     ⚫   The module is not stored in Recommended Storage Condition;
+     ⚫   Violation of the third requirement mentioned above;
+     ⚫   Vacuum-sealed packaging is broken, or the packaging has been removed for over 24 hours;
+     ⚫   Before module repairing.
+
+5. If needed, the pre-baking should follow the requirements below:
+
+     ⚫   The module should be baked for 24 hours at 120 ±5 °C;
+     ⚫   The module must be soldered to PCB within 24 hours after the baking, otherwise it should be put
+         in a dry environment such as in a dry cabinet.
+
+
+
+10 This floor life is only applicable when the environment conforms to IPC/JEDEC J-STD-033. It is recommended to start
+the solder reflow process within 24 hours after the package is removed if the temperature and moisture do not conform to,
+or are not sure to conform to IPC/JEDEC J-STD-033. Do not unpack the modules in large quantities until they are ready for
+soldering.
+
+
+
+BC660K-GL_Hardware_Design                                                                                       58 / 67
+                                                                                  NB-IoT Module Series
+
+
+   NOTE
+
+  1.   To avoid blistering, layer separation and other soldering issues, extended exposure of the module
+       to the air is forbidden.
+  2.   Take out the module from the package and put it on high-temperature-resistant fixtures before
+       baking. If shorter baking time is desired, see IPC/JEDEC J-STD-033 for the baking procedure.
+  3.   Pay attention to ESD protection, such as wearing anti-static gloves, when touching the modules.
+
+
+
+
+7.2. Manufacturing and Soldering
+
+Push the squeegee to apply the solder paste on the surface of stencil, thus making the paste fill the
+stencil openings and then penetrate to the PCB. Apply proper force on the squeegee to produce a clean
+stencil surface on a single pass. To guarantee module soldering quality, the thickness of stencil for the
+module is recommended to be 0.15–0.18 mm. For more details, see document [5].
+
+The recommended peak reflow temperature should be 235–246 ºC, with 246 ºC as the absolute
+maximum reflow temperature. To avoid damage to the module caused by repeated heating, it is
+recommended that the module should be mounted only after reflow soldering for the other side of PCB
+has been completed. The recommended reflow soldering thermal profile (lead-free reflow soldering) and
+related parameters are shown below.
+
+
+       Temp. (°C)
+                                                                      Reflow Zone
+                                                                      Ramp-up slope: Cool-down slope:
+                                                                        0–3 °C/s    C    -3–0 °C/s
+        246
+        235
+        217
+                                                                  B                 D
+        200
+                Soak Zone
+
+        150                 A
+
+
+        100
+                            Ramp-to-soak slope:
+                                0–3 °C/s
+
+
+
+
+                    Figure 32: Recommended Reflow Soldering Thermal Profile
+
+
+
+
+BC660K-GL_Hardware_Design                                                                               59 / 67
+                                                                               NB-IoT Module Series
+
+
+Table 34: Recommended Thermal Profile Parameters
+
+
+Factor                                                   Recommended Value
+
+Soak Zone
+
+Ramp-to-soak slope                                       0–3 °C/s
+
+Soak time (between A and B: 150 °C and 200 °C)           70–120 s
+
+Reflow Zone
+
+Ramp-up slope                                            0–3 °C/s
+
+Reflow time (D: over 217°C)                              40–70 s
+
+Max. temperature                                         235–246 °C
+
+Cool-down slope                                          -3–0 °C/s
+
+Reflow Cycle
+
+Max. reflow cycle                                        1
+
+
+
+  NOTE
+
+ 1. The above profile parameter requirements are for the measured temperature of the solder joints.
+    Both the hottest and coldest spots of solder joints on the PCB should meet the above requirements.
+ 2. During manufacturing and soldering, or any other processes that may contact the module directly,
+    NEVER wipe the module’s shielding can with organic solvents, such as acetone, ethyl alcohol,
+    isopropyl alcohol, trichloroethylene, etc. Otherwise, the shielding can may become rusted.
+ 3. The shielding can for the module is made of Cupro-Nickel base material. It is tested that after 12
+    hours’ Neutral Salt Spray test, the laser engraved label information on the shielding can is still
+    clearly identifiable and the QR code is still readable, although white rust may be found.
+ 4. If a conformal coating is necessary for the module, do NOT use any coating material that may
+    chemically react with the PCB or shielding cover, and prevent the coating material from flowing into
+    the module.
+ 5. Avoid using ultrasonic technology for module cleaning since it can damage crystals inside the
+    module.
+ 6. Avoid using materials that contain mercury (Hg), such as adhesives, for module processing, even if
+    the materials are RoHS compliant and their mercury content is below 1000 ppm (0.1 %).
+ 7. Corrosive gases may corrode the electronic components inside the module, affecting their reliability
+    and performance, and potentially leading to a shortened service life that fails to meet the designed
+    lifespan. Therefore, do not store or use unprotected modules in environments containing corrosive
+    gases such as hydrogen sulfide, sulfur dioxide, chlorine, and ammonia.
+ 8. Due to the complexity of the SMT process, please contact Quectel Technical Support in advance for
+
+
+
+BC660K-GL_Hardware_Design                                                                       60 / 67
+                                                                                   NB-IoT Module Series
+
+
+
+      any situation that you are not sure about, or any process (e.g. selective soldering, ultrasonic
+      soldering) that is not mentioned in document [6].
+
+
+
+
+7.3. Packaging Specification
+
+This chapter outlines the key packaging parameters and processes. All figures below are for reference
+purposes only, as the actual appearance and structure of packaging materials may vary in delivery.
+
+The modules are packed in a tape and reel packaging as specified in the sub-chapters below.
+
+
+
+7.3.1. Carrier Tape
+
+Carrier tape dimensions are illustrated in the following figure and table:
+
+
+
+
+                        Figure 33: Carrier Tape Dimension Drawing (Unit: mm)
+
+
+
+
+Table 35: Carrier Tape Dimension Table (Unit: mm)
+
+
+ W           P           T          A0           B0          K0              K1      F        E
+
+ 32          24          0.35       16.2         18.1        2.9             3.4     14.2     1.75
+
+
+
+
+BC660K-GL_Hardware_Design                                                                         61 / 67
+                                                                                    NB-IoT Module Series
+
+
+
+7.3.2. Plastic Reel
+
+Plastic reel dimensions are illustrated in the following figure and table:
+
+
+
+
+                               Figure 34: Plastic Reel Dimension Drawing
+
+
+
+
+Table 36: Plastic Reel Dimension Table (Unit: mm)
+
+
+ øD1                                  øD2                                    W
+
+ 380                                  100                                    32.5
+
+
+
+7.3.3. Mounting Direction
+
+
+
+
+                                      Figure 35: Mounting Direction
+
+
+
+
+BC660K-GL_Hardware_Design                                                                         62 / 67
+                                                                        NB-IoT Module Series
+
+
+
+7.3.4. Packaging Process
+
+
+
+                                                  Place the modules onto the carrier tape cavity
+                                                  and cover them securely with cover tape.
+                                                  Wind the heat-sealed carrier tape onto a
+                                                  plastic reel and apply a protective tape for
+                                                  additional protection. 1 plastic reel can pack
+                                                  1000 modules.
+
+
+
+
+Place the packaged plastic reel, humidity
+indicator card and desiccant bag into a
+vacuum bag, and vacuumize it.
+
+
+
+
+                                                  Place the vacuum-packed plastic reel into a
+                                                  pizza box.
+
+
+
+
+Place the 4 packaged pizza boxes into 1
+carton and seal it. 1 carton can pack 4000
+modules.
+
+
+
+
+                                Figure 36: Packaging Process
+
+
+
+
+BC660K-GL_Hardware_Design                                                                63 / 67
+                                                      NB-IoT Module Series
+
+
+
+
+8 Appendix References
+Table 37: Related Documents
+
+
+ Document Name
+
+ [1] Quectel_BC660K-GL-TE-B_User_Guide
+
+ [2] Quectel_BC660K-GL&BC950K-GL_AT_Commands_Manual
+
+ [3] Quectel_BC660K-GL_Reference_Design
+
+ [4] Quectel_RF_Layout_Application_Note
+
+ [5] Quectel_Module_Stencil_Design_Requirements
+
+ [6] Quectel_Module_SMT_Application_Note
+
+
+
+Table 38: Terms and Abbreviations
+
+
+ Abbreviation    Description
+
+ ADC             Analog-to-Digital Converter
+
+ AP              Application Processor
+
+ CPU             Central Processing Unit
+
+ DRX             Discontinuous Reception
+
+ DTLS            Datagram Transport Layer Security
+
+ ECL             Enhanced Coverage Level
+
+ eDRX            extended Discontinuous Reception
+
+ EMI             Electromagnetic Interference
+
+ ESD             Electrostatic Discharge
+
+
+
+
+BC660K-GL_Hardware_Design                                           64 / 67
+                                                                       NB-IoT Module Series
+
+
+
+ESR            Equivalent Series Resistance
+
+HD-FDD         Half Frequency Division Duplexing
+
+HTTP           Hyper Text Transfer Protocol
+
+HTTPS          Hyper Text Transfer Protocol over Secure Socket Layer
+
+I/O            Input/Output
+
+IPP            Peak Pulse Current
+
+IBR            Breakdown Current
+
+kbps           Kilobits per second
+
+LCC            Leadless Chip Carrier (package)
+
+LDO            Low-dropout Regulator
+
+LED            Light Emitting Diode
+
+LGA            Land Grid Array
+
+LTE            Long Term Evolution
+
+LwM2M          Lightweight M2M
+
+MSL            Moisture Sensitivity Levels
+
+MQTT           Message Queuing Telemetry Transport
+
+NB-IoT         Narrow Band-Internet of Things
+
+OC             Open Collector
+
+OD             Open Drain
+
+PC             Personal Computer
+
+PCB            Printed Circuit Board
+
+PDN            Public Data Network
+
+PMU            Power Management Unit
+
+PSM            Power Save Mode
+
+PTW            Paging Time Window
+
+
+
+
+BC660K-GL_Hardware_Design                                                            65 / 67
+                                                               NB-IoT Module Series
+
+
+
+RF             Radio Frequency
+
+RTC            Real Time Clock
+
+RXD            Receive Data
+
+SMD            Surface Mount Device
+
+SMS            Short Message Service
+
+TAU            Tracking Area Update
+
+TCP            Transmission Control Protocol
+
+TE             Terminal Equipment
+
+TLS            Transport Layer Security
+
+TXD            Transmitting Data
+
+UART           Universal Asynchronous Receiver & Transmitter
+
+UDP            User Datagram Protocol
+
+UE             User Equipment
+
+URC            Unsolicited Result Code
+
+(U)SIM         Universal Subscriber Identification Module
+
+VSWR           Voltage Standing Wave Ratio
+
+VESD           Electrostatic Discharge Voltage
+
+Vmax           Maximum Voltage
+
+Vnom           Nominal Voltage
+
+Vmin           Minimum Voltage
+
+VIHmax         Maximum High-level Input Voltage
+
+VIHmin         Minimum High-level Input Voltage
+
+VILmax         Maximum Low-level Input Voltage
+
+VILmin         Minimum Low-level Input Voltage
+
+VImax          Absolute Maximum Input Voltage
+
+
+
+
+BC660K-GL_Hardware_Design                                                    66 / 67
+                                                   NB-IoT Module Series
+
+
+
+VInom          Absolute Nominal Input Voltage
+
+VImin          Absolute Minimum Input Voltage
+
+VOHmax         Maximum High-level Output Voltage
+
+VOHmin         Minimum High-level Output Voltage
+
+VOLmax         Maximum Low-level Output Voltage
+
+VOLmin         Minimum Low-level Output Voltage
+
+VRWM           Working Peak Reverse Voltage
+
+
+
+
+BC660K-GL_Hardware_Design                                        67 / 67
+

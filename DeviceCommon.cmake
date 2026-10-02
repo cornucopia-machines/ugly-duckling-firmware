@@ -70,6 +70,28 @@ if(IDF_TARGET STREQUAL "esp32s3")
     add_compile_options(-mtext-section-literals) # To fix 'literal target out of range' errors
 endif()
 
+# UD_CONNECTIVITY — how the device reaches the server: WIFI (default) or CELLULAR, the NB-IoT
+# modem on the Desert Lark daughter board (Carrot only). A build-time choice for now; it is meant
+# to become a network-config setting (docs/specs/NB-IoT.md, "Choosing WiFi or NB-IoT").
+
+if(NOT DEFINED UD_CONNECTIVITY)
+    set(UD_CONNECTIVITY "$ENV{UD_CONNECTIVITY}")
+endif()
+if(UD_CONNECTIVITY STREQUAL "")
+    set(UD_CONNECTIVITY WIFI)
+endif()
+string(TOUPPER "${UD_CONNECTIVITY}" UD_CONNECTIVITY)
+
+if(UD_CONNECTIVITY STREQUAL "CELLULAR")
+    if(NOT _ud_platform STREQUAL "carrot")
+        message(FATAL_ERROR "Error: UD_CONNECTIVITY=CELLULAR is only supported on carrot, not '${_ud_platform}'")
+    endif()
+    message("Building with cellular connectivity")
+    add_compile_definitions(UD_CONNECTIVITY_CELLULAR)
+elseif(NOT UD_CONNECTIVITY STREQUAL "WIFI")
+    message(FATAL_ERROR "Error: Unrecognized UD_CONNECTIVITY '${UD_CONNECTIVITY}', expected WIFI or CELLULAR")
+endif()
+
 # UD_DEBUG
 
 if(NOT DEFINED UD_DEBUG)
@@ -188,7 +210,7 @@ if(WOKWI)
 endif()
 
 # Make sure we reconfigure if any of the debug parameters change
-set_property(DIRECTORY PROPERTY UD_DEBUG_TRACKER "${UD_DEBUG} ${UD_DEBUG_CONSOLE} ${UD_NOSLEEP} ${UD_PM_DIAGNOSTICS} ${UD_UART0_CONSOLE}")
+set_property(DIRECTORY PROPERTY UD_DEBUG_TRACKER "${UD_DEBUG} ${UD_DEBUG_CONSOLE} ${UD_NOSLEEP} ${UD_PM_DIAGNOSTICS} ${UD_UART0_CONSOLE} ${UD_CONNECTIVITY}")
 
 set(SDKCONFIG_FILES)
 list(APPEND SDKCONFIG_FILES "${CMAKE_CURRENT_LIST_DIR}/sdkconfig.defaults")

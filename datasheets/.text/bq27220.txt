@@ -1,0 +1,1457 @@
+                                 Product          Sample &           Technical                    Tools &               Support &
+                                 Folder           Buy                Documents                    Software              Community
+
+
+
+                                                                                                                                             bq27220
+                                                                                                             SLUSCB7A – MARCH 2016 – REVISED APRIL 2016
+
+                                           bq27220 Single-Cell CEDV Fuel Gauge
+1 Features                                                                   3 Description
+1•   Single-Cell Li-Ion Battery Fuel Gauge                                   The Texas Instruments bq27220 battery fuel gauge is
+                                                                             a single-cell gauge that requires minimal user-
+     – Resides in Pack or on System Board                                    configuration and system microcontroller firmware
+     – Supports Embedded or Removable Batteries                              development, leading to quick system bring-up. The
+     – Powers Directly from Battery with Integrated                          bq27220 device uses the Compensated End-of-
+         LDO                                                                 Discharge Voltage (CEDV) algorithm for fuel gauging,
+                                                                             and provides information such as remaining battery
+     – Supports a Low-Value (10-mΩ) External Sense                           capacity (mAh), state-of-charge (%), runtime-to-empty
+         Resistor                                                            (min), battery voltage (mV), temperature (°C), and
+•    Ultra-Low Power Consumption in NORMAL                                   state-of-health (%).
+     (50 µA) and SLEEP (9 µA) Modes
+                                                                             The bq27220 battery fuel gauge has ultra-low power
+•    Battery Fuel Gauging Based on Compensated                               consumption in NORMAL (50 μA) and SLEEP (9 μA)
+     End-of-Discharge Voltage (CEDV) Technology                              modes, leading to longer battery runtime.
+     – Reports Remaining Capacity and State-of-                              Configurable interrupts help save system power and
+         Charge (SOC) with Smoothing Filter                                  free up the host from continuous polling. Accurate
+                                                                             temperature sensing is supported via an external
+     – Adjusts Automatically for Battery Aging, Self-                        thermistor.
+         Discharge, Temperature, and Rate Changes
+                                                                             Customers can use preloaded CEDV parameters in
+     – Provides Battery State-of-Health (Aging)
+                                                                             ROM or can generate custom chemistry parameters
+         Estimation                                                          using TI's web-based tool, GAUGEPARCAL. Custom-
+•    Microcontroller Peripheral Supports:                                    generated parameters can be either programmed in
+     – 400-kHz I2C™ Serial Interface                                         the device RAM by the host on power up of the
+                                                                             system or customers can program the parameters to
+     – Configurable SOC Interrupt OR
+                                                                             an onboard One-Time Programmable (OTP) memory.
+         Battery Low Digital Output Warning
+     – Internal Temperature Sensor OR                                        Battery fuel gauging with the bq27220 device requires
+         Host-Reported Temperature OR                                        connections only to PACK+ (P+) and PACK– (P–) for
+                                                                             a removable battery pack or embedded battery
+         External Thermistor
+                                                                             circuit. The tiny, 9-ball, 1.62 mm × 1.58 mm, 0.5-mm
+                                                                             pitch NanoFree™ chip scale package (DSBGA) is
+2 Applications                                                               ideal for space-constrained applications.
+•    Smartphones and Feature Phones
+                                                                                                             Device Information(1)
+•    Tablets
+                                                                                   PART NUMBER                       PACKAGE         BODY SIZE (NOM)
+•    Wearables
+                                                                                  bq27220                     YZF (9)                1.62 mm × 1.58 mm
+•    Building Automation
+                                                                                  (1) For all available packages, see the orderable addendum at
+•    Portable Medical/Industrial Handsets                                             the end of the data sheet.
+•    Portable Audio
+•    Gaming
+
+                                                 Simplified Schematic (System-Side)
+
+                                  SCL                              SRN              VSYS
+                         I 2C                    Coulomb
+                         Bus      SDA
+                                                 Counter           SRP
+                                           CPU                                                               Battery Pack
+                                GPOUT
+                                                                   BAT                     PACKP
+                                                  ADC
+                                                                                                                            Li-Ion
+                                                                   BIN                            T                           Cell
+                                                                                                              Protection
+                                                                   VDD                                            IC
+                                                           1.8 V         2.2 µF            1 µF
+                                                            LDO                            PACKN
+                                                                   VSS                                        NFET   NFET
+
+
+
+
+1
+
+
+
+
+       An IMPORTANT NOTICE at the end of this data sheet addresses availability, warranty, changes, use in safety-critical applications,
+       intellectual property matters and other important disclaimers. PRODUCTION DATA.
+bq27220
+SLUSCB7A – MARCH 2016 – REVISED APRIL 2016                                                                                                                                        www.ti.com
+
+
+                                                                                Table of Contents
+    1   Features .................................................................. 1                          6.13 Typical Characteristics ............................................ 8
+    2   Applications ........................................................... 1                       7    Detailed Description .............................................. 9
+    3   Description ............................................................. 1                            7.1 Overview ................................................................... 9
+    4   Revision History..................................................... 2                                7.2 Functional Block Diagram (System-Side
+                                                                                                                   Configuration)............................................................. 9
+    5   Pin Configuration and Functions ......................... 3
+                                                                                                               7.3 Feature Description................................................... 9
+    6   Specifications......................................................... 4                              7.4 Device Functional Modes........................................ 11
+        6.1 Absolute Maximum Ratings ...................................... 4
+                                                                                                         8    Application and Implementation ........................ 12
+        6.2 ESD Ratings.............................................................. 4
+                                                                                                               8.1 Application Information............................................ 12
+        6.3 Recommended Operating Conditions....................... 5
+                                                                                                               8.2 Typical Applications ................................................ 12
+        6.4 Thermal Information .................................................. 5
+                                                                                                         9    Power Supply Recommendation ........................ 15
+        6.5 Supply Current .......................................................... 5
+                                                                                                               9.1 Power Supply Decoupling ....................................... 15
+        6.6 Digital Input and Output DC Characteristics ............. 5
+        6.7 LDO Regulator, Wake-up, and Auto-Shutdown DC
+                                                                                                         10 Layout................................................................... 15
+            Characteristics ........................................................... 6                      10.1 Layout Guidelines ................................................. 15
+        6.8 LDO Regulator, Wake-up, and Auto-shutdown AC                                                       10.2 Layout Example .................................................... 16
+            Characteristics ........................................................... 6                11 Device and Documentation Support ................. 17
+        6.9 ADC (Temperature and Cell Measurement)                                                             11.1     Documentation Support ........................................ 17
+            Characteristics ........................................................... 6                      11.2     Community Resources.......................................... 17
+        6.10 Integrating ADC (Coulomb Counter) Characteristics                                                 11.3     Trademarks ........................................................... 17
+            ................................................................................... 6
+                                                                                                               11.4     Electrostatic Discharge Caution ............................ 17
+        6.11 I2C-Compatible Interface Communication Timing
+            Characteristics ........................................................... 7                      11.5     Glossary ................................................................ 17
+        6.12 SHUTDOWN and WAKE-UP Timing ...................... 8                                        12 Mechanical, Packaging, and Orderable
+                                                                                                            Information ........................................................... 17
+
+
+
+4 Revision History
+                          DATE                                                                REVISION                                                      NOTES
+                       April 2016                                                                   A                              PRODUCT PREVIEW to Production Data
+
+
+
+
+2       Submit Documentation Feedback                                                                                              Copyright © 2016, Texas Instruments Incorporated
+
+                                                                              Product Folder Links: bq27220
+                                                                                                                                      bq27220
+www.ti.com                                                                                          SLUSCB7A – MARCH 2016 – REVISED APRIL 2016
+
+
+5 Pin Configuration and Functions
+                                                                     Top View
+
+
+
+                                                                     3        2        1
+
+
+                                                           C
+
+
+
+                                                           B
+
+
+
+                                                           A
+
+
+
+
+                                                                   Bottom View
+
+
+
+                                                                     1        2        3
+
+
+                                                           C
+
+
+
+                                                           B
+
+
+
+                                                           A
+
+
+
+
+                                                                 Pin Functions
+             PIN
+                                   TYPE                                                 DESCRIPTION
+      NAME         NUMBER
+                                               LDO regulator input and battery voltage measurement input. Kelvin sense connect to the positive
+BAT                  C3           PI, AI (1)   battery terminal (PACKP). Connect a capacitor (1 µF) between BAT and VSS. Place the capacitor
+                                               close to the gauge.
+                                               Battery insertion detection input. If OpConfig [BI_PU_EN] = 1 (default), a logic low on the pin is
+                                               detected as battery insertion. For a removable pack, the BIN pin can be connected to VSS
+                                               through a pulldown resistor on the pack, typically the 10-kΩ thermistor; the system board should
+                                               use a 1.8-MΩ pullup resistor to VDD to ensure the BIN pin is high when a battery is removed. If
+                                               the battery is embedded in the system or in the pack, it is recommended to leave [BI_PU_EN] =
+                                               1 and use a 10-kΩ pulldown resistor from BIN to VSS. If [BI_PU_EN] = 0, then the host must
+BIN                  B1              DI
+                                               inform the gauge of battery insertion and removal with the BAT_INSERT and BAT_REMOVE
+                                               subcommands. A 10-kΩ pulldown resistor should be placed between BIN and VSS, even if this
+                                               pin is unused.
+                                               NOTE: The BIN pin must not be shorted directly to VCC or VSS and any pullup resistor on the BIN
+                                               pin must be connected only to VDD and not an external voltage rail. If an external thermistor is
+                                               used for temperature input, the thermistor should be connected between this pin and VSS.
+
+
+
+
+(1)   IO = Digital input-output, AI = Analog input, P = Power connection
+Copyright © 2016, Texas Instruments Incorporated                                                        Submit Documentation Feedback            3
+                                                           Product Folder Links: bq27220
+bq27220
+SLUSCB7A – MARCH 2016 – REVISED APRIL 2016                                                                                              www.ti.com
+
+
+                                                        Pin Functions (continued)
+              PIN
+                                  TYPE                                                  DESCRIPTION
+      NAME          NUMBER
+                                              This open-drain output can be configured to indicate BAT_LOW when the OpConfig
+                                              [BATLOWEN] bit is set. By default [BATLOWEN] is cleared and this pin performs an interrupt
+                                              function (SOC_INT) by pulsing for specific events, such as a change in state-of-charge. Signal
+                                              polarity for these functions is controlled by the [GPIOPOL] configuration bit. This pin should not
+GPOUT                 A1            DO
+                                              be left floating, even if unused; therefore, a 10-kΩ pullup resistor is recommended. If the device
+                                              is in SHUTDOWN mode, toggling GPOUT makes the gauge exit SHUTDOWN. It is
+                                              recommended to connect GPOUT to a GPIO of the host MCU so that in case of any inadvertent
+                                              shutdown condition, the gauge can be commanded to come out of SHUTDOWN.
+SCL                   A3           DIO        Slave I2C serial bus for communication with system (Master). Open-drain pins. Use with external
+                                              10-kΩ pullup resistors (typical) for each pin. If the external pullup resistors will be disconnected
+SDA                   A2           DIO        from these pins during normal operation, recommend using external 1-MΩ pulldown resistors to
+                                              VSS at each pin to avoid floating inputs.
+SRN                   C2            AI        Coulomb counter differential inputs expecting an external 10-mΩ, 1% sense resistor. For system-
+                                              side configurations, Kelvin sense connect SRP to the positive battery terminal (PACKP) side of
+                                              the external sense resistor. Kelvin sense connect SRN to the other side of the external sense
+                                              resistor with the positive connection to the system (VSYS). For pack-side configurations with low-
+SRP                   C1            AI        side sensing, connect SRP to PACK– and SRN to Cell–. See the Simplified Schematic.
+                                              No calibration is required. The fuel gauge is pre-calibrated for a standard 10-mΩ, 1% sense
+                                              resistor.
+                                              1.8-V regulator output. Decouple with a 2.2-μF ceramic capacitor to VSS. This pin is not intended
+VDD                   B3            PO
+                                              to provide power for other devices in the system.
+VSS                   B2            PI        Ground pin
+
+
+6 Specifications
+6.1 Absolute Maximum Ratings
+Over operating free-air temperature range (unless otherwise noted) (1)
+                                                                                                        MIN                 MAX            UNIT
+VBAT            BAT pin input voltage range                                                             –0.3                  6              V
+                SRP and SRN pins input voltage range                                                    –0.3             VBAT + 0.3          V
+VSR
+                Differential voltage across SRP and SRN. ABS(SRP – SRN)                                                       2              V
+VDD             VDD pin supply voltage range (LDO output)                                               –0.3                  2              V
+VIOD            Open-drain IO pins (SDA, SCL)                                                           –0.3                  6              V
+VIOPP           Push-pull IO pins (BIN)                                                                 –0.3             VDD + 0.3           V
+TA              Operating free-air temperature range                                                    –40                  85             °C
+Storage temperature, Tstg                                                                               –65                 150             °C
+
+(1)   Stresses beyond those listed under "absolute maximum ratings" may cause permanent damage to the device. These are stress ratings
+      only, and functional operation of the device at these or any other conditions beyond those indicated under "recommended operating
+      conditions" is not implied. Exposure to absolute-maximum-rated conditions for extended periods may affect device reliability.
+
+6.2 ESD Ratings
+                                                                                                                          VALUE            UNIT
+             Electrostatic         Human body model (HBM), per ANSI/ESDA/JEDEC JS-001 (1)                                  ±1500
+V(ESD)                                                                                                                                       V
+             discharge             Charged-device model (CDM), per JEDEC specification JESD22-C101 (2)                      ±250
+
+(1)   JEDEC document JEP155 states that 500-V HBM allows safe manufacturing with a standard ESD control process.
+(2)   JEDEC document JEP157 states that 250-V CDM allows safe manufacturing with a standard ESD control process.
+
+
+
+
+4        Submit Documentation Feedback                                                               Copyright © 2016, Texas Instruments Incorporated
+
+                                                           Product Folder Links: bq27220
+                                                                                                                                        bq27220
+www.ti.com                                                                                             SLUSCB7A – MARCH 2016 – REVISED APRIL 2016
+
+
+6.3 Recommended Operating Conditions
+TA = 30°C and VBAT = 3.6 V (unless otherwise noted)
+                                                                                                           MIN        NOM       MAX      UNIT
+        (1)     External input capacitor for internal LDO
+CBAT                                                       Nominal capacitor values specified.                            0.1             μF
+                between BAT and VSS
+                                                           Recommend a 5% ceramic X5R-type
+                External output capacitor for internal LDO capacitor located close to the device.
+CLDO18 (1)                                                                                                                2.2             μF
+                between VDD and VSS
+                External pullup voltage for open-drain
+VPU (1)                                                                                                    1.62                   3.6     V
+                pins (SDA, SCL, GPOUT)
+
+(1)     Specified by design. Not production tested.
+
+6.4 Thermal Information
+                                                                                                                  bq27220
+                                                              (1)
+                                       THERMAL METRIC                                                           YZF (DSBGA)              UNIT
+                                                                                                                  9 PINS
+RθJA            Junction-to-ambient thermal resistance                                                             64.1                  °C/W
+RθJCtop         Junction-to-case (top) thermal resistance                                                          59.8                  °C/W
+RθJB            Junction-to-board thermal resistance                                                               52.7                  °C/W
+ψJT             Junction-to-top characterization parameter                                                          0.3                  °C/W
+ψJB             Junction-to-board characterization parameter                                                       28.3                  °C/W
+RθJCbot         Junction-to-case (bottom) thermal resistance                                                        2.4                  °C/W
+
+(1)     For more information about traditional and new thermal metrics, see the IC Package Thermal Metrics application report, SPRA953
+
+6.5 Supply Current
+TA = 30°C and VBAT = 3.6 V (unless otherwise noted)
+                     PARAMETER                                       TEST CONDITIONS                     MIN          TYP       MAX      UNIT
+ICC (1)         NORMAL mode current                         ILOAD > Sleep Current (2)                                     50              μA
+ISLP (1)        SLEEP mode current                          ILOAD < Sleep Current (2)                                      9              μA
+                                                            Fuel gauge in host commanded
+ISD (1)         SHUTDOWN mode current                       SHUTDOWN mode.                                                0.6             μA
+                                                            (LDO regulator output disabled)
+
+(1)     Specified by design. Not production tested.
+(2)     Wake Comparator Disabled.
+
+6.6 Digital Input and Output DC Characteristics
+TA = –40°C to 85°C, typical values at TA = 30°C and VBAT = 3.6 V (unless otherwise noted)(Force Note1) (1)
+                     PARAMETER                                       TEST CONDITIONS                     MIN          TYP       MAX      UNIT
+VIH(OD)         Input voltage, high (2)                     External pullup resistor to VPU         VPU × 0.7                             V
+                                      (3)
+VIH(PP)         Input voltage, high                                                                       1.4                             V
+VIL             Input voltage, low (2) (3)                                                                                       0.6      V
+VOL             Output voltage, low (2)                                                                                          0.6      V
+IOH             Output source current, high (2)                                                                                  0.5      mA
+IOL(OD)         Output sink current, low (2)                                                                                      –3      mA
+       (1)
+CIN             Input capacitance (2) (3)                                                                                          5      pF
+                Input leakage current
+Ilkg                                                                                                                               1      μA
+                (SCL, SDA, BIN, GPOUT)
+
+(1)     Specified by design. Not production tested.
+(2)     Open Drain pins: (SCL, SDA, GPOUT)
+(3)     Push-Pull pin: (BIN)
+
+
+
+
+Copyright © 2016, Texas Instruments Incorporated                                                          Submit Documentation Feedback         5
+                                                               Product Folder Links: bq27220
+bq27220
+SLUSCB7A – MARCH 2016 – REVISED APRIL 2016                                                                                      www.ti.com
+
+
+6.7 LDO Regulator, Wake-up, and Auto-Shutdown DC Characteristics
+TA = –40°C to 85°C, typical values at TA = 30°C and VBAT = 3.6 V (unless otherwise noted)(Force Note1) (1)
+                      PARAMETER                                 TEST CONDITIONS               MIN          TYP          MAX        UNIT
+VBAT             BAT pin regulator input                                                     2.45                         4.5        V
+VDD              Regulator output voltage                                                                  1.85                      V
+                 VBAT undervoltage lock-out
+UVLOIT+                                                                                                       2                      V
+                 LDO wake-up rising threshold
+                 VBAT undervoltage lock-out
+UVLOIT–                                                                                                    1.95                      V
+                 LDO auto-shutdown falling threshold
+                 GPOUT (input) LDO Wake-up rising       LDO Wake-up from SHUTDOWN
+VWU+ (1)                                                                                       1.2                                   V
+                 edge threshold (2)                     mode
+
+(1)    Specified by design. Not production tested.
+(2)    If the device is commanded to SHUTDOWN via I2C with VBAT > UVLOIT+, a wake-up rising edge trigger is required on GPOUT.
+
+6.8 LDO Regulator, Wake-up, and Auto-shutdown AC Characteristics
+TA = –40°C to 85°C, typical values at TA = 30°C and VBAT = 3.6 V (unless otherwise noted)
+                      PARAMETER                                 TEST CONDITIONS               MIN          TYP          MAX        UNIT
+        (1)                                             Time delay from SHUTDOWN
+tSHDN            SHUTDOWN entry time                                                                                      250       ms
+                                                        command to LDO output disable.
+                                                        Minimum low time of GPOUT (input)
+tSHUP (1)        SHUTDOWN GPOUT low time                                                       10                                   μs
+                                                        in SHUTDOWN before WAKEUP
+       (1)
+tVDD             Initial VDD output delay                                                                    13                     ms
+                                                        Time delay from rising edge of
+tWUVDD (1)       Wake-up VDD output delay               GPOUT (input) to nominal VDD                          8                     ms
+                                                        output.
+                                                        Time delay from rising edge of BAT
+tPUCD            Power-up communication delay           to the Active state. Includes                       250                     ms
+                                                        firmware initialization time.
+
+(1)    Specified by design. Not production tested.
+
+6.9 ADC (Temperature and Cell Measurement) Characteristics
+TA = –40°C to 85°C; typical values at TA = 30°C and VBAT = 3.6 V (unless otherwise noted) (Force Note1) (1)
+                      PARAMETER                                TEST CONDITIONS               MIN          TYP           MAX        UNIT
+VIN(BAT)         BAT pin voltage measurement            Voltage divider enabled              2.45                         4.5        V
+                 range
+tADC_CONV        Conversion time                                                                          125                       ms
+                 Effective resolution                                                                       15                      bits
+
+(1)    Specified by design. Not tested in production.
+
+6.10 Integrating ADC (Coulomb Counter) Characteristics
+TA = –40°C to 85°C; typical values at TA = 30°C and VBAT = 3.6 V (unless otherwise noted)(Force Note1) (1)
+                      PARAMETER                                TEST CONDITIONS               MIN          TYP           MAX        UNIT
+                 Input voltage range of SRN, SRP
+VSRCM                                                                                        VSS                         VBAT        V
+                 pins
+                 Input differential voltage range of
+VSRDM                                                                                                     ± 80                      mV
+                 VSRP–VSRN
+tSR_CONV         Conversion time                        Single conversion                                    1                       s
+                 Effective Resolution                   Single conversion                                   16                      bits
+
+(1)    Specified by design. Not tested in production.
+
+
+
+
+6            Submit Documentation Feedback                                                   Copyright © 2016, Texas Instruments Incorporated
+
+                                                           Product Folder Links: bq27220
+                                                                                                                                           bq27220
+www.ti.com                                                                                           SLUSCB7A – MARCH 2016 – REVISED APRIL 2016
+
+
+6.11 I2C-Compatible Interface Communication Timing Characteristics
+TA = –40°C to 85°C; typical values at TA = 30°C and VBAT = 3.6 V (unless otherwise noted) (Force Note1) (1)
+                                                                                                     MIN        NOM                  MAX    UNIT
+Standard Mode (100 kHz)
+td(STA)         Start to first falling edge of SCL                                                       4                                   μs
+tw(L)           SCL pulse duration (low)                                                              4.7                                    μs
+tw(H)           SCL pulse duration (high)                                                                4                                   μs
+tsu(STA)        Setup for repeated start                                                              4.7                                    μs
+tsu(DAT)        Data setup time                         Host drives SDA                               250                                    ns
+th(DAT)         Data hold time                          Host drives SDA                                  0                                   ns
+tsu(STOP)       Setup time for stop                                                                      4                                   μs
+t(BUF)          Bus free time between stop and          Includes Command Waiting Time
+                                                                                                       66                                    μs
+                start
+tf              SCL or SDA fall time (1)                                                                                             300     ns
+                                        (1)
+tr              SCL or SDA rise time                                                                                                 300     ns
+fSCL            Clock frequency (2)                                                                                                  100    kHz
+Fast Mode (400 kHz)
+td(STA)         Start to first falling edge of SCL                                                    600                                    ns
+tw(L)           SCL pulse duration (low)                                                             1300                                    ns
+tw(H)           SCL pulse duration (high)                                                             600                                    ns
+tsu(STA)        Setup for repeated start                                                              600                                    ns
+tsu(DAT)        Data setup time                         Host drives SDA                               100                                    ns
+th(DAT)         Data hold time                          Host drives SDA                                  0                                   ns
+tsu(STOP)       Setup time for stop                                                                   600                                    ns
+t(BUF)          Bus free time between stop and          Includes Command Waiting Time
+                                                                                                       66                                    μs
+                start
+tf              SCL or SDA fall time (1)                                                                                             300     ns
+                                        (1)
+tr              SCL or SDA rise time                                                                                                 300     ns
+fSCL            Clock frequency (2)                                                                                                  400    kHz
+
+(1)     Specified by design. Not production tested.
+(2)     If the clock frequency (fSCL) is > 100 kHz, use 1-byte write commands for proper operation. All other transactions types are supported at
+        400 kHz. (See I2C Interface and I2C Command Waiting Time.)
+
+                            tSU(STA)                      tw(H)             tw(L)              tf       tr          t(BUF)
+
+
+
+                   SCL
+
+
+
+                  SDA
+
+
+
+                              td(STA)                                                           tf             tsu(STOP)
+                                                   tr
+                                                                  th(DAT)           tsu(DAT)
+
+                                REPEATED                                                                     STOP            START
+                                  START
+
+                                           Figure 1. I2C-Compatible Interface Timing Diagram
+
+
+
+
+Copyright © 2016, Texas Instruments Incorporated                                                         Submit Documentation Feedback             7
+                                                           Product Folder Links: bq27220
+bq27220
+SLUSCB7A – MARCH 2016 – REVISED APRIL 2016                                                                                                                                                                                        www.ti.com
+
+
+6.12 SHUTDOWN and WAKE-UP Timing
+                                                                            tPUCD                                                                                           tSHUP              tPUCD
+                                                            tVDD                                                                                              tSHDN                 tWUVDD
+                                                 BAT
+
+                                                VDD
+
+                                              I2C Bus                                                                 SHUTDOWN _        SHUTDOWN
+                                                                                                                        ENABLE
+
+
+                                             GPOUT *
+
+                                                State        Off            WAKE-UP                                         Active                                        SHUTDOWN             WAKE-UP             Active
+
+
+
+                                                    * GPOUT is configured as an input for wake-up signaling.
+
+                                                                   Figure 2. SHUTDOWN and WAKE-UP Timing Diagram
+
+
+6.13 Typical Characteristics
+
+                             0.6%                                                                                                                                       0.45%
+
+                                                                                                                                                                        0.4%
+                             0.5%
+                                                                                                                                                                        0.35%
+
+
+
+
+    Current Accuracy Error                                                                                                                     Voltage Accuracy Error
+                             0.4%
+                                                                                                                                                                        0.3%
+                             0.3%                                                                                                                                       0.25%
+
+                             0.2%                                                                                                                                       0.2%
+
+                                                                                                                                                                        0.15%
+                             0.1%
+                                                                                                                                                                        0.1%
+                                 0
+                                                                                                                                                                        0.05%
+
+                             -0.1%                                                                                                                                          0
+                                  -50                   0                                                        50            100                                          -60     -40      -20         0     20      40   60   80    100
+                                                            Temperature (qC)                                                       D001
+                                                                                                                                                                                                         Temperature (qC)               D002
+                                     Figure 3. Current Accuracy Error vs. Temperature                                                                                       Figure 4. Voltage Accuracy Error vs. Temperature
+                                                                                                             0
+
+
+
+
+                                                                     Internal Temperature Accuracy Error
+                                                                                                           -1%
+
+
+                                                                                                           -2%
+
+
+                                                                                                           -3%
+
+
+                                                                                                           -4%
+
+
+                                                                                                           -5%
+
+
+                                                                                                           -6%
+                                                                                                              -50                  0                                       50                      100
+                                                                                                                                       Temperature (qC)                                             D003
+                                                                              Figure 5. Internal Temperature Accuracy Error vs. Temperature
+
+
+
+
+8                              Submit Documentation Feedback                                                                                                                                   Copyright © 2016, Texas Instruments Incorporated
+
+                                                                                                                      Product Folder Links: bq27220
+                                                                                                                                  bq27220
+www.ti.com                                                                                        SLUSCB7A – MARCH 2016 – REVISED APRIL 2016
+
+
+7 Detailed Description
+
+7.1 Overview
+The bq27220 fuel gauge accurately predicts the battery capacity and other operational characteristics of a single
+Li-based rechargeable cell. It can be interrogated by a system processor to provide cell information such as
+state-of-charge (SoC). The bq27220 monitors charge and discharge activity by sensing the voltage across a
+small value resistor (10 mΩ typical) between the SRP and SRN pins and in series with the battery. By integrating
+charge passing through the battery, the battery’s SOC is adjusted during battery charge or discharge.
+The fuel gauging is derived from the Compensated End of Discharge Voltage (CEDV) method, which uses a
+mathematical model to correlate remaining state of charge (RSOC) and voltage near to the end of discharge
+state. This requires a full discharge cycle for a single point FCC update. The implementation models cell voltage
+(OCV) as a function of battery state of charge (SOC), temperature, and current. The impedance is also a function
+of SOC and temperature, all of which can be satisfied by using seven parameters: EMF, C0, R0, T0, R1, TC, C1.
+
+                                                     NOTE
+               The following formatting conventions are used in this document:
+               Commands: italics with parentheses() and no breaking spaces, for example, Control().
+               Data Flash: italics, bold, and breaking spaces, for example, Design Capacity.
+               Register bits and flags: italics with brackets [ ], for example, [TDA]
+               Data flash bits: italics, bold, and brackets [ ], for example, [LED1]
+               Modes and states: ALL CAPITALS, for example, UNSEALED mode.
+
+
+7.2 Functional Block Diagram (System-Side Configuration)
+
+
+            SCL                                                SRN                 VSYS
+I 2C                                 Coulomb
+Bus        SDA
+                                     Counter                   SRP
+                         CPU                                                                                   Battery Pack
+       GPOUT
+                                                               BAT                         PACKP
+                                       ADC
+                                                                                                                               Li-Ion
+                                                               BIN                                T                              Cell
+                                                                                                                 Protection
+                                                               VDD                                                   IC
+                                                   1.8 V                 2.2 µF            1 µF
+                                                    LDO                                    PACKN
+                                                               VSS                                               NFET   NFET
+
+
+
+
+7.3 Feature Description
+Information is accessed through a series of commands called Standard Commands. Further capabilities are
+provided by the additional Extended Commands set. Both sets of commands, indicated by the general format
+Command), are used to read and write information within the control and status registers, as well as its data
+locations. Commands are sent from the system to the gauge using the I2C serial communications engine, and
+can be executed during application development, system manufacture, or end-equipment operation.
+The fuel gauge measures the charging and discharging of the battery by monitoring the voltage across a small-
+value sense resistor. When a cell is attached to the fuel gauge, cell impedance is computed based on cell
+current, cell open-circuit voltage (OCV), and cell voltage under loading conditions.
+The fuel gauge uses an integrated temperature sensor for estimating cell temperature. Alternatively, the host
+processor can provide temperature data for the fuel gauge.
+Copyright © 2016, Texas Instruments Incorporated                                                      Submit Documentation Feedback       9
+                                                           Product Folder Links: bq27220
+bq27220
+SLUSCB7A – MARCH 2016 – REVISED APRIL 2016                                                                                                 www.ti.com
+
+
+Feature Description (continued)
+For more details, see the bq27220 Technical Reference Manual (SLUUBD4).
+The external temperature sensing is optimized with the use of a high accuracy negative temperature coefficient
+(NTC) thermistor with R25 = 10.0 kΩ ±1%. B25/85 = 3435K ± 1% (such as Semitec NTC 103AT) on the BIN pin.
+Alternatively, the bq27220 can also be configured to use its internal temperature sensor or receive temperature
+data from the host processor. The bq27220 uses temperature to monitor the battery-pack environment, which is
+used for fuel gauging and cell protection functionality.
+
+7.3.1 Communications
+
+7.3.1.1 I2C Interface
+The fuel gauge supports the standard I2C read, incremental read, quick read, one-byte write, and incremental
+write functions. The 7-bit device address (ADDR) is the most significant 7 bits of the hex address and is fixed as
+1010101. The first 8 bits of the I2C protocol are, therefore, 0xAA or 0xAB for write or read, respectively.
+
+                    Host generated               Gauge generated
+
+     S       ADDR[6:0]       0 A     CMD [7:0]         A       DATA [7:0]      A P            S   ADDR[6:0]      1 A         DATA [7:0]      N P
+                                    (a) 1-byte write                                                          (b) quick read
+                         S    ADDR[6:0]     0 A            CMD [7:0]      A Sr     ADDR[6:0]      1 A       DATA [7:0]         N P
+                                                                       (c) 1- byte read
+
+         S     ADDR[6:0]      0 A      CMD [7:0]           A Sr    ADDR[6:0]       1 A        DATA [7:0]      A ...          DATA [7:0]      N P
+                                                                   (d) incremental read
+
+                         S    ADDR[6:0]     0 A            CMD[7:0]       A      DATA [7:0]       A     DATA [7:0]       A    ...    A P
+
+                                                                  (e) incremental write
+     (S = Start , Sr = Repeated Start , A = Acknowledge , N = No Acknowledge , and P = Stop).
+
+                                         Figure 6. I2C Interface Read and Write Functions
+
+The quick read returns data at the address indicated by the address pointer. The address pointer, a register
+internal to the I2C communication engine, increments whenever data is acknowledged by the fuel gauge or the
+I2C master. “Quick writes” function in the same manner and are a convenient means of sending multiple bytes to
+consecutive command locations (such as two-byte commands that require two bytes of data).
+The following command sequences are not supported:
+
+
+
+                  Figure 7. Attempt to Write a Read-Only Address (NACK After Data Sent By Master)
+
+
+
+
+                             Figure 8. Attempt to Read an Address Above 0x6B (NACK Command)
+
+7.3.1.2 I2C Time Out
+The I2C engine releases both SDA and SCL if the I2C bus is held low for 2 seconds. If the fuel gauge is holding
+the lines, releasing them frees them for the master to drive the lines. If an external condition is holding either of
+the lines low, the I2C engine enters the low-power SLEEP mode.
+
+
+
+
+10           Submit Documentation Feedback                                                              Copyright © 2016, Texas Instruments Incorporated
+
+                                                              Product Folder Links: bq27220
+                                                                                                                                   bq27220
+www.ti.com                                                                                          SLUSCB7A – MARCH 2016 – REVISED APRIL 2016
+
+
+Feature Description (continued)
+7.3.1.3 I2C Command Waiting Time
+To ensure proper operation at 400 kHz, a t(BUF) ≥ 66 μs bus-free waiting time must be inserted between all
+packets addressed to the fuel gauge. In addition, if the SCL clock frequency (fSCL) is > 100 kHz, use individual 1-
+byte write commands for proper data flow control. Figure 9 shows the standard waiting time required between
+issuing the control subcommand the reading the status result. For read-write standard commands, a minimum of
+2 seconds is required to get the result updated. For read-only standard commands, there is no waiting time
+required, but the host must not issue any standard command more than two times per second. Otherwise, the
+gauge could result in a reset issue due to the expiration of the watchdog timer.
+
+   S    ADDR [6:0]      0 A        CMD [7:0]        A      DATA [7:0]      A P       66ms
+
+   S    ADDR [6:0]      0 A        CMD [7:0]        A      DATA [7:0]      A P       66ms
+
+   S    ADDR [6:0]      0 A        CMD [7:0]        A Sr     ADDR [6:0]     1 A       DATA [7:0]     A       DATA [7:0]    N P     66ms
+                       Waiting time inserted between two 1-byte write packets for a subcommand and reading results
+                                                  (required for 100 kHz < fSCL £ 400 kHz)
+
+
+   S    ADDR [6:0]      0 A        CMD [7:0]        A      DATA [7:0]      A      DATA [7:0]       A P      66ms
+
+   S    ADDR [6:0]      0 A        CMD [7:0]        A Sr     ADDR [6:0]     1 A       DATA [7:0]     A       DATA [7:0]    N P     66ms
+                    Waiting time inserted between incremental 2-byte write packet for a subcommand and reading results
+                                                       (acceptable for fSCL £ 100 kHz)
+
+
+   S    ADDR [6:0]      0 A        CMD [7:0]        A Sr     ADDR [6:0]     1 A       DATA [7:0]     A      DATA [7:0]     A
+       DATA [7:0]      A       DATA [7:0]          N P     66ms
+
+                                            Waiting time inserted after incremental read
+
+                                                     Figure 9. Standard Waiting Time
+
+7.3.1.4 I2C Clock Stretching
+A clock stretch can occur during all modes of fuel gauge operation. In SLEEP mode, a short ≤ 100-µs clock
+stretch occurs on all I2C traffic as the device must wake-up to process the packet. In the other modes
+(INITIALIZATION, NORMAL), a ≤ 4-ms clock stretching period may occur within packets addressed for the fuel
+gauge as the I2C interface performs normal data flow control.
+
+7.4 Device Functional Modes
+To minimize power consumption, the fuel gauge has several power modes: INITIALIZATION, NORMAL, and
+SLEEP. The fuel gauge passes automatically between these modes, depending upon the occurrence of specific
+events, though a system processor can initiate some of these modes directly. For more details, see the bq27220
+Technical Reference Manual (SLUUBD4).
+
+
+
+
+Copyright © 2016, Texas Instruments Incorporated                                                         Submit Documentation Feedback     11
+                                                           Product Folder Links: bq27220
+bq27220
+SLUSCB7A – MARCH 2016 – REVISED APRIL 2016                                                                                                                                  www.ti.com
+
+
+8 Application and Implementation
+
+                                                         NOTE
+             Information in the following application section is not part of the TI component
+             specification, and TI does not warrant its accuracy or completeness. TI’s customers are
+             responsible for determining suitability of components for their purposes. Customers should
+             validate and test their design implementation to confirm system functionality.
+
+
+8.1 Application Information
+The bq27220 fuel gauge is a microcontroller peripheral that provides system-side or pack-side fuel gauging for
+single-cell Li-Ion batteries. The device requires minimal configuration and uses One-Time Programmable (OTP)
+Non-Volatile Memory (NVM). Battery fuel gauging with the fuel gauge requires connections only to PACK+ and
+PACK– for a removable battery pack or embedded battery circuit. To allow for optimal performance in the end
+application, special considerations must be taken to ensure minimization of measurement error through proper
+printed circuit board (PCB) board layout. Such requirements are detailed in Design Requirements.
+
+8.2 Typical Applications
+                                   Ext VCC
+           EXT_VCC               TP4         EXT_VCC                                                                J3
+              GND
+                                                                                                             VDD                 VDD
+                     J4
+
+                             PGND                                                                                             R2
+                                                                                                                              1.8 Meg
+                                 EXT_VCC
+                                                                                                                                 BIN
+                                                JP1              JP2
+                                                                                                                                     EXT_VCC
+                                                                                                                              R3
+                                                                                                                    J2        5.1k
+                                                       R4      R5                                           GPOUT
+                     J1                                10.0k   10.0k                                                                 GPOUT
+                             4
+               SDA           3         SDA
+               SCL           2         SCL
+                             1
+               VSS                                                                            U1                                           VDD
+                                                                                         C3   BAT     VDD   B3                           TP5
+                                                                                                                                                     VDD
+                                   PGND
+                                                                                         A3   SCL     SRP   C1
+                                                                                         A2                 C2                            C3       C1
+                                                                                              SDA     SRN                               0.47 µF    2.2 µF
+                                         Recommended to be connected                     A1
+                                             to a GPIO on the host.  GPOUT                    GPOUT
+                                                                                         B1   BIN     VSS   B2
+                                                                          BIN
+                                                                                                                                      PGND PGND
+
+                                    Cell+                                                                                                                   J6
+                                                                                                                                                  Load+          Pack+
+                                                                                                            PGND
+                Cell+            1 TP1                                                                                                             TP2
+                                 2                                                                                                                               Charger+
+                 BIN                         BIN
+                                 3
+                Cell–
+                        J5
+                                                                       C2
+                                               R8                      1 µF
+                                               10.0k
+                                                                                                                                                  Load-     J7
+                                                                                                                                                                 Charger-
+                                                                                                                         R1                       TP3
+                                                                                                                                                                 Pack+
+                                                                                                                         0.01
+
+
+                                             PGND
+
+
+                             Figure 10. Typical Application for Pack-Side Using Low-Side Sensing
+
+8.2.1 Design Requirements
+As shipped from the Texas Instruments factory, many bq27220 parameters in OTP NVM are left in the
+unprogrammed state (zero). This partially programmed configuration facilitates customization for each end
+application. Upon device reset, the contents of OTP are copied to associated volatile RAM-based data memory
+blocks. For proper operation, all parameters in RAM-based data memory require initialization — either by
+updating data memory parameters in a lab/evaluation situation or by programming the OTP for customer
+production. The bq27220 Technical Reference Manual (SLUUBD4) shows the default value and a typically
+expected value appropriate for most of applications.
+
+
+
+
+12     Submit Documentation Feedback                                                                                            Copyright © 2016, Texas Instruments Incorporated
+
+                                                                              Product Folder Links: bq27220
+                                                                                                                  bq27220
+www.ti.com                                                                         SLUSCB7A – MARCH 2016 – REVISED APRIL 2016
+
+
+Typical Applications (continued)
+8.2.2 Detailed Design Procedure
+
+8.2.2.1 BAT Voltage Sense Input
+A ceramic capacitor at the input to the BAT pin is used to bypass AC voltage ripple to ground, greatly reducing
+its influence on battery voltage measurements. It proves most effective in applications with load profiles that
+exhibit high-frequency current pulses (that is, cell phones) but is recommended for use in all applications to
+reduce noise on this sensitive high-impedance measurement node.
+
+8.2.2.2 Integrated LDO Capacitor
+The fuel gauge has an integrated LDO with an output on the VDD pin of approximately 1.8 V. A capacitor with a
+value of at least 2.2 μF should be connected between the VDD pin and VSS. The capacitor must be placed close
+to the gauge IC and have short traces to both the VDD pin and VSS. This regulator must not be used to provide
+power for other devices in the system.
+
+8.2.2.3 Sense Resistor Selection
+Any variation encountered in the resistance present between the SRP and SRN pins of the fuel gauge will affect
+the resulting differential voltage, and derived current, that it senses. As such, it is recommended to select a
+sense resistor with minimal tolerance and temperature coefficient of resistance (TCR) characteristics. The
+standard recommendation based on the best compromise between performance and price is a 1% tolerance, 50-
+ppm drift sense resistor with a 1-W power rating.
+
+8.2.3 External Thermistor Support
+The fuel gauge temperature sensing circuitry is designed to work with a negative temperature coefficient-type
+(NTC) thermistor with a characteristic 10-kΩ resistance at room temperature (25°C). The default curve-fitting
+coefficients configured in the fuel gauge specifically assume a Semitec 103AT type thermistor profile and so that
+is the default recommendation for thermistor selection purposes. Moving to a separate thermistor resistance
+profile (for example, JT-2 or others) requires an update to the default thermistor coefficients, which can be
+modified in RAM to ensure highest accuracy temperature measurement performance.
+
+
+
+
+Copyright © 2016, Texas Instruments Incorporated                                      Submit Documentation Feedback       13
+                                                   Product Folder Links: bq27220
+bq27220
+SLUSCB7A – MARCH 2016 – REVISED APRIL 2016                                                                                                                                                                        www.ti.com
+
+
+Typical Applications (continued)
+8.2.4 Application Curves
+
+                              0.6%                                                                                                                           0.45%
+
+                                                                                                                                                             0.4%
+                              0.5%
+                                                                                                                                                             0.35%
+
+
+
+
+     Current Accuracy Error                                                                                                         Voltage Accuracy Error
+                              0.4%
+                                                                                                                                                             0.3%
+                              0.3%                                                                                                                           0.25%
+
+                              0.2%                                                                                                                           0.2%
+
+                                                                                                                                                             0.15%
+                              0.1%
+                                                                                                                                                             0.1%
+                                  0
+                                                                                                                                                             0.05%
+
+                              -0.1%                                                                                                                              0
+                                   -50             0                                                       50          100                                       -60   -40   -20         0     20      40   60   80    100
+                                                       Temperature (qC)                                                 D001
+                                                                                                                                                                                         Temperature (qC)               D002
+                                   Figure 11. Current Accuracy Error vs. Temperature                                                                             Figure 12. Voltage Accuracy Error vs. Temperature
+
+                                                                                                       0
+
+
+
+
+                                                               Internal Temperature Accuracy Error
+                                                                                                     -1%
+
+
+                                                                                                     -2%
+
+
+                                                                                                     -3%
+
+
+                                                                                                     -4%
+
+
+                                                                                                     -5%
+
+
+                                                                                                     -6%
+                                                                                                        -50             0                                       50                 100
+                                                                                                                            Temperature (qC)                                        D003
+                                                               Figure 13. Internal Temperature Accuracy Error vs. Temperature
+
+
+
+
+14                              Submit Documentation Feedback                                                                                                                  Copyright © 2016, Texas Instruments Incorporated
+
+                                                                                                                Product Folder Links: bq27220
+                                                                                                                               bq27220
+www.ti.com                                                                                      SLUSCB7A – MARCH 2016 – REVISED APRIL 2016
+
+
+9 Power Supply Recommendation
+
+9.1 Power Supply Decoupling
+The battery connection on the BAT pin is used for two purposes:
+• To supply power to the fuel gauge, and
+• To provide an input for voltage measurement of the battery.
+A capacitor of value of at least 1 µF should be connected between BAT and VSS. The capacitor must be placed
+close to the gauge IC and have short traces to both the BAT pin and VSS.
+The fuel gauge has an integrated LDO with an output on the VDD pin of approximately 1.8 V. A capacitor of value
+of at least 2.2 µF should be connected between the VDD pin and VSS. The capacitor must be placed close to the
+gauge IC and have short traces to both the VDD pin and VSS. This regulator must not be used to provide power
+for other devices in the system.
+
+10 Layout
+
+10.1 Layout Guidelines
+•   A capacitor of value of at least 2.2 µF is connected between the VDD pin and VSS. The capacitor must be
+    placed close to the gauge IC and have short traces to both the VDD pin and VSS. This regulator must not be
+    used to provide power for other devices in the system.
+•   It is required to have a capacitor of at least 1.0 µF connect between the BAT pin and VSS if the connection
+    between the battery pack and the gauge BAT pin has the potential to pick up noise. The capacitor should be
+    placed close to the gauge IC and have short traces to both the BAT pin and VSS.
+•   If the external pullup resistors on the SCL and SDA lines will be disconnected from the host during low-power
+    operation, it is recommended to use external 1-MΩ pulldown resistors to VSS to avoid floating inputs to the I2C
+    engine.
+•   The value of the SCL and SDA pullup resistors should take into consideration the pullup voltage and the bus
+    capacitance. Some recommended values, assuming a bus capacitance of 10 pF, can be seen in Table 1.
+
+                              Table 1. Recommended Values for SCL and SDA Pullup Resistors
+        VPU                                        1.8 V                                                    3.3 V
+                                       Range                         Typical                      Range                      Typical
+        RPU
+                               400 Ω ≤ RPU ≤ 37.6 kΩ                  10 kΩ                900 Ω ≤ RPU ≤ 29.2 kΩ             5.1 kΩ
+•   If the host is not using the GPOUT functionality, then it is recommended that GPOUT be connected to a
+    GPIO of the host so that in the cases where the device is in SHUTDOWN, toggling GPOUT can wake the
+    gauge from the SHUTDOWN state.
+•   If the battery pack thermistor is not connected to the BIN pin, the BIN pin should be pulled down to VSS with a
+    10-kΩ resistor.
+•   The BIN pin should not be shorted directly to VDD or VSS.
+•   The actual device ground is pin B2 (VSS).
+•   The SRP and SRN pins should be Kelvin connected to the RSENSE terminals. SRP to the battery pack side of
+    RSENSE and SRN to the system side of the RSENSE.
+•   Kelvin connect the BAT pin to the battery PACKP terminal.
+
+
+
+
+Copyright © 2016, Texas Instruments Incorporated                                                    Submit Documentation Feedback      15
+                                                           Product Folder Links: bq27220
+bq27220
+SLUSCB7A – MARCH 2016 – REVISED APRIL 2016                                                                                                                                                    www.ti.com
+
+
+10.2 Layout Example
+                                                                         Kelvin connect SRP
+                                                                        and SRN connections
+                                                                          right at Rsense
+                                                                              terminals
+
+
+
+
+VSYSTEM
+                                                                               RSENSE
+
+
+
+                                                                                                                          If battery pack’s
+                                                                                                                       thermistor will not be
+                                                                                                      VDD             connected to BIN pin, a
+                                                                                                                      10-kΩ pulldown resistor
+                                                                                                                      should be connected to
+                                                             BAT         SRN            SRP
+                                                                                                                             the BIN pin.                                Battery Pack
+                                            CBAT                                                                                                      PACK+
+
+                                                                                                            R BIN    The BIN pin should not be
+                                                                                                                     shorted directly to VDD or
+                                                                                                                                                                                                   Li-Ion
+                                                                                                                                VSS.                  TS                                            Cell
+                                                                                                                                                                                                            +
+Vpullup( do not pull to gauge VDD)                  C VDD    VDD         VSS                  BIN
+                                                                                                                                                              R THERM          Protection
+                                                                                                                                                                                   IC
+                                   Place close to
+                                 gauge IC. Trace
+                                  to pin and VSS
+                                 should be short                         SDA                  GPOUT
+                                                             SCL
+                R SDA                                                                                                                              PACK-
+         RSCL           RGPOUT                                                                                                                                          NFET                NFET
+
+
+
+
+  SCL
+
+
+                                                                                                                    Via connects to Power Ground
+  SDA
+
+
+GPOUT
+
+
+
+                                                            Figure 14. EVM Board Layout
+
+
+
+
+16         Submit Documentation Feedback                                                                                              Copyright © 2016, Texas Instruments Incorporated
+
+                                                                   Product Folder Links: bq27220
+                                                                                                                             bq27220
+www.ti.com                                                                                  SLUSCB7A – MARCH 2016 – REVISED APRIL 2016
+
+
+11 Device and Documentation Support
+
+11.1 Documentation Support
+11.1.1 Related Documentation
+• bq27220 Technical Reference Manual (SLUUBD4)
+• Quickstart Guide for bq27220 (SLUUAP7)
+• Single Cell Gas Gauge Circuit Design (SLUA456)
+• Key Design Considerations for the bq27500 and bq27501 (SLUA439)
+• ESD and RF Mitigation in Handheld Battery Electronics (SLUA460)
+
+11.2 Community Resources
+The following links connect to TI community resources. Linked contents are provided "AS IS" by the respective
+contributors. They do not constitute TI specifications and do not necessarily reflect TI's views; see TI's Terms of
+Use.
+TI E2E™ Online Community TI's Engineer-to-Engineer (E2E) Community. Created to foster collaboration
+           among engineers. At e2e.ti.com, you can ask questions, share knowledge, explore ideas and help
+           solve problems with fellow engineers.
+Design Support TI's Design Support Quickly find helpful E2E forums along with design support tools and
+           contact information for technical support.
+
+11.3 Trademarks
+NanoFree, E2E are trademarks of Texas Instruments.
+I2C is a trademark of NXP Semiconductors, N.V.
+All other trademarks are the property of their respective owners.
+11.4 Electrostatic Discharge Caution
+          This integrated circuit can be damaged by ESD. Texas Instruments recommends that all integrated circuits be handled with
+          appropriate precautions. Failure to observe proper handling and installation procedures can cause damage.
+          ESD damage can range from subtle performance degradation to complete device failure. Precision integrated circuits may be more
+          susceptible to damage because very small parametric changes could cause the device not to meet its published specifications.
+
+11.5 Glossary
+SLYZ022 — TI Glossary.
+   This glossary lists and explains terms, acronyms, and definitions.
+
+12 Mechanical, Packaging, and Orderable Information
+The following pages include mechanical, packaging, and orderable information. This information is the most
+current data available for the designated devices. This data is subject to change without notice and revision of
+this document. For browser-based versions of this data sheet, refer to the left-hand navigation.
+
+
+
+
+Copyright © 2016, Texas Instruments Incorporated                                                Submit Documentation Feedback        17
+                                                     Product Folder Links: bq27220
+                                                                                                                                                                      PACKAGE OPTION ADDENDUM
+
+       www.ti.com                                                                                                                                                                                                   10-Nov-2025
+
+
+
+
+PACKAGING INFORMATION
+
+       Orderable part number          Status     Material type      Package | Pins      Package qty | Carrier        RoHS             Lead finish/              MSL rating/               Op temp (°C)          Part marking
+                                        (1)            (2)                                                             (3)            Ball material             Peak reflow                                           (6)
+                                                                                                                                            (4)                      (5)
+
+           BQ27220YZFR                Active      Production       DSBGA (YZF) | 9       3000 | LARGE T&R             Yes               SNAGCU             Level-1-260C-UNLIM               -40 to 85             BQ27220
+          BQ27220YZFR.A               Active      Production       DSBGA (YZF) | 9       3000 | LARGE T&R             Yes               SNAGCU             Level-1-260C-UNLIM               -40 to 85             BQ27220
+           BQ27220YZFT                Active      Production       DSBGA (YZF) | 9        250 | SMALL T&R             Yes               SNAGCU             Level-1-260C-UNLIM               -40 to 85             BQ27220
+          BQ27220YZFT.A               Active      Production       DSBGA (YZF) | 9        250 | SMALL T&R             Yes               SNAGCU             Level-1-260C-UNLIM               -40 to 85             BQ27220
+
+(1)
+      Status: For more details on status, see our product life cycle.
+
+(2)
+   Material type: When designated, preproduction parts are prototypes/experimental devices, and are not yet approved or released for full production. Testing and final process, including without limitation quality assurance,
+reliability performance testing, and/or process qualification, may not yet be complete, and this item is subject to further changes or possible discontinuation. If available for ordering, purchases will be subject to an additional
+waiver at checkout, and are intended for early internal evaluation purposes only. These items are sold without warranties of any kind.
+
+(3)
+      RoHS values: Yes, No, RoHS Exempt. See the TI RoHS Statement for additional information and value definition.
+
+(4)
+   Lead finish/Ball material: Parts may have multiple material finish options. Finish options are separated by a vertical ruled line. Lead finish/Ball material values may wrap to two lines if the finish value exceeds the maximum
+column width.
+
+(5)
+  MSL rating/Peak reflow: The moisture sensitivity level ratings and peak solder (reflow) temperatures. In the event that a part has multiple moisture sensitivity ratings, only the lowest level per JEDEC standards is shown.
+Refer to the shipping label for the actual reflow temperature that will be used to mount the part to the printed circuit board.
+
+(6)
+      Part marking: There may be an additional marking, which relates to the logo, the lot trace code information, or the environmental category of the part.
+
+Multiple part markings will be inside parentheses. Only one part marking contained in parentheses and separated by a "~" will appear on a part. If a line is indented then it is a continuation of the previous line and the two
+combined represent the entire part marking for that device.
+
+Important Information and Disclaimer:The information provided on this page represents TI's knowledge and belief as of the date that it is provided. TI bases its knowledge and belief on information provided by third parties, and
+makes no representation or warranty as to the accuracy of such information. Efforts are underway to better integrate information from third parties. TI has taken and continues to take reasonable steps to provide representative
+and accurate information but may not have conducted destructive testing or chemical analysis on incoming materials and chemicals. TI and TI suppliers consider certain information to be proprietary, and thus CAS numbers
+and other limited information may not be available for release.
+
+In no event shall TI's liability arising out of such information exceed the total purchase price of the TI part(s) at issue in this document sold by TI to Customer on an annual basis.
+
+
+
+
+                                                                                                          Addendum-Page 1
+                                                                              PACKAGE MATERIALS INFORMATION
+
+www.ti.com                                                                                                                                         31-Jul-2023
+
+
+
+TAPE AND REEL INFORMATION
+
+       REEL DIMENSIONS                                                                     TAPE DIMENSIONS
+                                                                                      K0         P1
+
+
+
+                                                                                                                        B0 W
+                                        Reel
+                                      Diameter
+                                                                                   Cavity             A0
+                                                               A0   Dimension designed to accommodate the component width
+                                                               B0   Dimension designed to accommodate the component length
+                                                               K0   Dimension designed to accommodate the component thickness
+                                                               W    Overall width of the carrier tape
+                                                               P1   Pitch between successive cavity centers
+
+
+                                       Reel Width (W1)
+                              QUADRANT ASSIGNMENTS FOR PIN 1 ORIENTATION IN TAPE
+
+                                                                                                       Sprocket Holes
+
+
+                                                 Q1       Q2          Q1    Q2
+
+                                                 Q3       Q4          Q3    Q4                    User Direction of Feed
+
+
+
+                                                           Pocket Quadrants
+
+
+*All dimensions are nominal
+             Device           Package Package Pins             SPQ        Reel   Reel   A0                    B0         K0     P1     W     Pin1
+                               Type Drawing                             Diameter Width (mm)                  (mm)       (mm)   (mm)   (mm) Quadrant
+                                                                          (mm) W1 (mm)
+      BQ27220YZFR             DSBGA      YZF          9        3000        180.0           8.4        1.78   1.78       0.69   4.0    8.0     Q1
+      BQ27220YZFT             DSBGA      YZF          9         250        180.0           8.4        1.78   1.78       0.69   4.0    8.0     Q1
+
+
+
+
+                                                                      Pack Materials-Page 1
+                                                                PACKAGE MATERIALS INFORMATION
+
+www.ti.com                                                                                                              31-Jul-2023
+
+
+
+ TAPE AND REEL BOX DIMENSIONS
+
+
+
+
+                                                               Width (mm)
+                                                                              H
+
+
+
+
+                      W                                   L
+
+
+
+
+*All dimensions are nominal
+             Device           Package Type   Package Drawing   Pins         SPQ    Length (mm)   Width (mm)   Height (mm)
+      BQ27220YZFR               DSBGA             YZF           9           3000      182.0        182.0         20.0
+      BQ27220YZFT               DSBGA             YZF           9           250       182.0        182.0         20.0
+
+
+
+
+                                                        Pack Materials-Page 2
+                                                                                                          PACKAGE OUTLINE
+YZF0009                                                          SCALE 8.000
+                                                                                                DSBGA - 0.625 mm max height
+                                                                                                                  DIE SIZE BALL GRID ARRAY
+
+
+
+
+                                     B                       E                              A
+
+
+
+
+                              BALL A1
+                             CORNER
+
+
+                                                                                            D
+
+
+
+
+                       0.625 MAX                                                                C
+
+
+                                                                                                     SEATING PLANE
+                              0.35                    BALL TYP
+                                                                                                     0.05 C
+                              0.15
+                                                       1 TYP
+                                                        SYMM
+
+
+
+                                         C
+
+
+
+
+                           1
+                          TYP                                                          SYMM
+                                         B
+                                                                                                    D: Max = 1.651 mm, Min = 1.59 mm
+                                0.5
+                                TYP                                                                 E: Max = 1.61 mm, Min = 1.55 mm
+                                         A
+
+
+                                              1          2                        3
+                               0.35
+                         9X
+                               0.25
+                     0.015     C A B              0.5 TYP
+
+
+
+                                                                                                                          4219558/A 10/2018
+
+NOTES:
+
+1. All linear dimensions are in millimeters. Any dimensions in parenthesis are for reference only. Dimensioning and tolerancing
+   per ASME Y14.5M.
+2. This drawing is subject to change without notice.
+
+
+
+
+                                                                               www.ti.com
+                                                                                    EXAMPLE BOARD LAYOUT
+YZF0009                                                                                  DSBGA - 0.625 mm max height
+                                                                                                            DIE SIZE BALL GRID ARRAY
+
+
+
+
+                                                          (0.5) TYP
+
+                                9X ( 0.245)
+                                                      1                  2               3
+
+
+                                               A
+
+                                  (0.5) TYP
+
+                                                                                                SYMM
+                                               B
+
+
+
+
+                                               C
+
+
+
+                                                                  SYMM
+
+
+                                                     LAND PATTERN EXAMPLE
+                                                          EXPOSED METAL SHOWN
+                                                               SCALE: 40X
+
+
+
+
+                                                   0.05 MAX                   0.05 MIN                     METAL UNDER
+                 ( 0.245)                                                                                  SOLDER MASK
+                  METAL
+
+
+                                               EXPOSED                                                     ( 0.245)
+            SOLDER MASK                                                      EXPOSED                       SOLDER MASK
+                OPENING                        METAL                           METAL                       OPENING
+
+                                                                                             SOLDER MASK
+                            NON-SOLDER MASK                                                    DEFINED
+                                DEFINED
+                              (PREFERRED)
+                                                    SOLDER MASK DETAILS
+                                                              NOT TO SCALE
+
+                                                                                                                    4219558/A 10/2018
+
+NOTES: (continued)
+
+3. Final dimensions may vary due to manufacturing tolerance considerations and also routing constraints.
+   See Texas Instruments Literature No. SNVA009 (www.ti.com/lit/snva009).
+
+
+
+
+                                                                      www.ti.com
+                                                                                  EXAMPLE STENCIL DESIGN
+YZF0009                                                                               DSBGA - 0.625 mm max height
+                                                                                                        DIE SIZE BALL GRID ARRAY
+
+
+
+
+                                                         (0.5) TYP
+
+                              9X ( 0.25)                                       (R0.05) TYP
+
+                                                     1                2           3
+                                              A
+
+
+
+                                 (0.5) TYP
+
+                                             B                                           SYMM
+
+
+                                  METAL
+                                    TYP
+
+
+                                             C
+
+
+                                                                 SYMM
+
+
+
+                                                  SOLDER PASTE EXAMPLE
+                                                  BASED ON 0.1 mm THICK STENCIL
+                                                           SCALE: 40X
+
+
+
+
+                                                                                                                4219558/A 10/2018
+
+NOTES: (continued)
+
+4. Laser cutting apertures with trapezoidal walls and rounded corners may offer better paste release.
+
+
+
+
+                                                                     www.ti.com
+                                         IMPORTANT NOTICE AND DISCLAIMER
+TI PROVIDES TECHNICAL AND RELIABILITY DATA (INCLUDING DATASHEETS), DESIGN RESOURCES (INCLUDING REFERENCE
+DESIGNS), APPLICATION OR OTHER DESIGN ADVICE, WEB TOOLS, SAFETY INFORMATION, AND OTHER RESOURCES “AS IS”
+AND WITH ALL FAULTS, AND DISCLAIMS ALL WARRANTIES, EXPRESS AND IMPLIED, INCLUDING WITHOUT LIMITATION ANY
+IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT OF THIRD
+PARTY INTELLECTUAL PROPERTY RIGHTS.
+These resources are intended for skilled developers designing with TI products. You are solely responsible for (1) selecting the appropriate
+TI products for your application, (2) designing, validating and testing your application, and (3) ensuring your application meets applicable
+standards, and any other safety, security, regulatory or other requirements.
+These resources are subject to change without notice. TI grants you permission to use these resources only for development of an
+application that uses the TI products described in the resource. Other reproduction and display of these resources is prohibited. No license
+is granted to any other TI intellectual property right or to any third party intellectual property right. TI disclaims responsibility for, and you fully
+indemnify TI and its representatives against any claims, damages, costs, losses, and liabilities arising out of your use of these resources.
+TI’s products are provided subject to TI’s Terms of Sale, TI’s General Quality Guidelines, or other applicable terms available either on
+ti.com or provided in conjunction with such TI products. TI’s provision of these resources does not expand or otherwise alter TI’s applicable
+warranties or warranty disclaimers for TI products. Unless TI explicitly designates a product as custom or customer-specified, TI products
+are standard, catalog, general purpose devices.
+TI objects to and rejects any additional or different terms you may propose.
+IMPORTANT NOTICE
+
+                                                Copyright © 2025, Texas Instruments Incorporated
+                                                                Last updated 10/2025
+

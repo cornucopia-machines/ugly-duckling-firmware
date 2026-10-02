@@ -1,0 +1,2 @@
+# Committed on purpose: the text cache is tracked in this repo. The engineering plugin only
+# writes its ignore-everything rule when this file is missing, so keeping it here stops that.

@@ -242,3 +242,12 @@ CONFIG_BT_NIMBLE_TRANSPORT_ACL_FROM_LL_COUNT=12
 # # Disable L2CAP connection-oriented channels (we only use ATT/GATT).
 # # CONFIG_BT_NIMBLE_L2CAP_COC_MAX_NUM=0
 # ------------------------------------------------------------------------------
+
+#
+# Cellular modem (esp_modem)
+#
+
+# The BC660K-GL has no PPP; we only use AT command mode, so leave lwIP's PPP support out
+CONFIG_ESP_MODEM_USE_PPP_MODE=n
+# Lets the driver see unsolicited result codes (+CEREG etc.) arriving between commands
+CONFIG_ESP_MODEM_URC_HANDLER=y

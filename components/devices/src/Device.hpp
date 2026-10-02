@@ -169,7 +169,7 @@ static void startDevice() {
         LOGD("No battery configured");
     }
 
-    auto connectivity = initConnectivity(states, networkConfig, ble);
+    auto connectivity = initConnectivity(states, networkConfig, ble, deviceDefinition->getCellularModemPins());
     auto& wifi = connectivity.wifi;
 
 #ifdef UD_DEBUG_CONSOLE
