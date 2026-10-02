@@ -69,7 +69,7 @@ Always verify the symbol actually changed in `build-<platform>/sdkconfig` afterw
 from scratch, so it only ever sees the defaults — a local build that silently kept the old value
 will disagree with CI.
 
-`tools/activate_idf.sh` reads the IDF version from `main/idf_component.yml`. When upgrading IDF, update the version there (and in `components/kernel/idf_component.yml` and `.github/workflows/build.yml`); the script picks it up automatically.
+`tools/activate_idf.sh` reads the IDF version from `components/kernel/idf_component.yml`. When upgrading IDF, update the version there (and in `.github/workflows/build.yml`); the script picks it up automatically.
 
 `tools/build.sh [carrot|spinach] [idf.py args...]` wraps the two steps above:
 it sources `activate_idf.sh` for the given platform and runs `idf.py` with
@@ -186,5 +186,13 @@ tools/efuse_burn.py show --port /dev/ttyUSB0
 
 - Never commit real MQTT credentials, TLS certificates, or device configs. Keep samples in `config-templates/`.
 - Prefer editing `sdkconfig.defaults` / `sdkconfig.*.defaults` and regenerating `sdkconfig` rather than hand-editing the tracked file.
-- Keep `dependencies.lock` and `managed_components/` in sync with ESP-IDF tooling; avoid manual edits unless intentionally vendoring.
+- Managed component versions are locked in committed, per-platform `dependencies.<platform>.lock`
+  files (the component manager stamps the target into the lock, so one file would flip between
+  platforms): the root ones (shared by `test/e2e-tests`) and
+  `test/embedded-tests/dependencies.<platform>.lock`.
+  After changing any `idf_component.yml`, or to pick up newer versions, run
+  `. tools/update-dependencies.sh` and commit every lock file it changes. CI fails if a build
+  modifies a lock file. Never hand-edit them.
+- Keep the manifests out of `main/` and `test/e2e-tests/main/`: the component manager hashes every
+  manifest in the project, and the shared locks only stay valid while both projects see the same set.
 - **Never modify files under `managed_components/`.** Changes there are not committed, not available on CI, and are silently overwritten by `idf.py update-dependencies`. Fix interoperability issues in our own components instead.

@@ -33,4 +33,13 @@ idf.py -B "build-${_ud_build_platform}" "$@"
 _ud_build_status=$?
 unset _ud_build_platform
 
+# The component manager rewrites dependencies.<platform>.lock whenever the manifests no longer match
+# it. That's expected after editing an idf_component.yml, but the change has to be committed -- and
+# the other platform and test/embedded-tests have locks of their own that only
+# tools/update-dependencies.sh refreshes along with this one.
+if [ -n "$(git status --porcelain -- 'dependencies.*.lock')" ]; then
+    echo "build.sh: dependencies.*.lock has uncommitted changes; run '. tools/update-dependencies.sh'" \
+        "to refresh every lock file, then commit them" >&2
+fi
+
 return "$_ud_build_status" 2>/dev/null || exit "$_ud_build_status"

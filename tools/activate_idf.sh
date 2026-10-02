@@ -1,5 +1,5 @@
 #!/bin/sh
-# Activates the ESP-IDF version declared in main/idf_component.yml.
+# Activates the ESP-IDF version declared in components/kernel/idf_component.yml.
 # Source this script from the project root:
 #
 #   . tools/activate_idf.sh [carrot|spinach]
@@ -8,10 +8,9 @@
 # When switching platforms, also run `idf.py set-target <target>` to regenerate
 # sdkconfig — the build will error if sdkconfig was generated for a different target.
 #
-# When upgrading IDF, update the version in main/idf_component.yml (and
-# components/kernel/idf_component.yml and .github/workflows/build.yml);
-# this script will pick it up automatically.
-VERSION=$(grep -m 1 'version:' main/idf_component.yml | tr -d ' "' | cut -d: -f2)
+# When upgrading IDF, update the version in components/kernel/idf_component.yml
+# (and .github/workflows/build.yml); this script will pick it up automatically.
+VERSION=$(grep -m 1 'version:' components/kernel/idf_component.yml | tr -d ' "' | cut -d: -f2)
 . "$HOME/.espressif/tools/activate_idf_v${VERSION}.sh"
 
 export IDF_CCACHE_ENABLE=1

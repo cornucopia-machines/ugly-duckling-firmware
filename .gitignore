@@ -13,7 +13,6 @@ build/
 build-*/
 
 managed_components/
-dependencies*.lock
 
 eim_config.toml
 
