@@ -9,6 +9,7 @@
 #include <chrono>
 #include <memory>
 #include <optional>
+#include <stdexcept>
 #include <string>
 
 using namespace cornucopia::ugly_duckling::kernel;
@@ -122,6 +123,11 @@ public:
             .cedv = &default_cedv,
         };
         gauge = bq27220_create(&bq27220_cfg);
+        if (gauge == nullptr) {
+            // Every reading would come back as 0, which the boot and shutdown thresholds would
+            // act on; better to have no battery driver at all (see initBattery())
+            throw std::runtime_error("BQ27220 did not initialize");
+        }
 
         LOGTI(BATTERY, "Battery voltage at boot: %d mV / %.2f%%; temp = %.2f°C", getVoltage(), getPercentage(), getTemperature());
     }
@@ -152,8 +158,12 @@ public:
      * yields absurd readings rather than an error -- unlike the internal sensor, which
      * is clamped by Int Max Temp (613.1 K).
      *
-     * [TEMPS] is a non-volatile data memory parameter, so it has to be written through
-     * the CFGUPDATE sequence of tech ref section 6 rather than as a plain register write.
+     * [TEMPS] is a data memory parameter, so it has to be written through the CFGUPDATE
+     * sequence of tech ref section 6 rather than as a plain register write. Data memory lives
+     * in RAM and is reset to the ROM defaults whenever the gauge loses power, so this runs
+     * again after every such power-up.
+     *
+     * Failing here is not fatal: the gauge keeps working, reporting its on-chip sensor.
      */
     void useExternalThermistor() {
         auto config = bq27220_get_parameter_u16(gauge, OPERATION_CONFIG_A_ADDRESS);
@@ -163,7 +173,10 @@ public:
         }
 
         LOGTD(BATTERY, "Switching BQ27220 to the external thermistor (Operation Config A = 0x%04X)", config);
-        ESP_ERROR_THROW(bq27220_unseal(gauge));
+        if (bq27220_unseal(gauge) != ESP_OK) {
+            LOGTE(BATTERY, "Could not unseal the BQ27220, leaving the temperature source alone");
+            return;
+        }
         // Unsealing alone does not grant data memory access; FULL ACCESS does.
         controlCommand(CONTROL_FULL_ACCESS_KEY);
         controlCommand(CONTROL_FULL_ACCESS_KEY);

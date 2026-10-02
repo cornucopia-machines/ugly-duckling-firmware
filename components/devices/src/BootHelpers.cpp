@@ -29,6 +29,7 @@
 #include <nvs_flash.h>
 
 #include <chrono>
+#include <exception>
 #include <memory>
 #include <string>
 
@@ -63,7 +64,14 @@ void performFactoryReset(const std::shared_ptr<LedDriver>& statusLed, bool compl
 }
 
 std::shared_ptr<BatteryDriver> initBattery(const std::shared_ptr<DeviceDefinition>& deviceDefinition, const std::shared_ptr<I2CManager>& i2c) {
-    auto battery = deviceDefinition->createBatteryDriver(i2c);
+    std::shared_ptr<BatteryDriver> battery;
+    try {
+        battery = deviceDefinition->createBatteryDriver(i2c);
+    } catch (const std::exception& e) {
+        // A gauge we cannot talk to must not keep the device from booting (#676)
+        LOGE("Failed to initialize the battery driver, continuing without one: %s", e.what());
+        return nullptr;
+    }
     if (battery != nullptr) {
         // If the battery voltage is below the device's threshold, we should not boot yet.
         // This is to prevent the device from booting and immediately shutting down
