@@ -3,6 +3,9 @@
 # Clangd cache
 .cache/
 
+# ccache directory CI keeps inside the checkout (CCACHE_DIR in .github/workflows/build.yml)
+.ccache/
+
 # File system image
 /config/
 /config-unused/
