@@ -53,6 +53,10 @@ private:
 
         if (battery != nullptr) {
             status += ", battery: \033[33m" + toStringWithPrecision(battery->getVoltage() / 1000.0, 2) + "\033[0m V";
+            auto current = battery->getCurrent();
+            if (current.has_value()) {
+                status += " / \033[33m" + std::to_string(static_cast<int>(*current)) + "\033[0m mA";
+            }
         }
 
         printf("\033[1G\033[0K%s", status.c_str());

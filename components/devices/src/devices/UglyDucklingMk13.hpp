@@ -1,7 +1,6 @@
 #pragma once
 #include <MacAddress.hpp>
 #include <Pin.hpp>
-#include <Task.hpp>
 #include <devices/DeviceDefinition.hpp>
 #include <drivers/Bq27220Driver.hpp>
 #include <drivers/BuzzerDriver.hpp>
@@ -50,30 +49,6 @@ public:
                 .shutdownThreshold = 3500,
             });
         driver->useExternalThermistor();
-
-#ifdef UD_DEBUG
-        // Enough to tell at a glance whether the pack is charging on the bench: the
-        // temperature, the current flowing in or out, and the gauge's own flag word.
-        // Current is positive while charging.
-        Task::loop("battery-monitor", 3072, [driver](Task& task) {
-            // Rendered separately so a failed read shows as '?' rather than a plausible 0x0000.
-            char statusText[8];
-            auto status = driver->getBatteryStatus();
-            if (status.has_value()) {
-                (void) snprintf(statusText, sizeof(statusText), "0x%04X", status->full);
-            } else {
-                (void) snprintf(statusText, sizeof(statusText), "?");
-            }
-
-            LOGTD(BATTERY, "Battery: %d mV, %.2f °C, %.0f mA, status %s",
-                driver->getVoltage(),
-                driver->getTemperature(),
-                driver->getCurrent().value_or(std::numeric_limits<double>::quiet_NaN()),
-                statusText);
-            Task::delay(10s);
-        });
-#endif
-
         return driver;
     }
 
