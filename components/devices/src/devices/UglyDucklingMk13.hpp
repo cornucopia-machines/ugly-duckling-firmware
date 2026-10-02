@@ -16,6 +16,7 @@
 #include <cstdio>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <string>
 
 using namespace cornucopia::ugly_duckling::kernel;
@@ -80,6 +81,12 @@ public:
         if (buzzer && duration >= 200ms) {
             buzzer->buzz(1s, 0.1);
         }
+    }
+
+    std::optional<cellular::CellularModemPins> getCellularModemPins() const override {
+        // JNBIOT1 has TX and RX swapped on MK13 (ugly-duckling-hardware#93): the modem's
+        // MAIN_RXD is wired to RXD0 and its MAIN_TXD to TXD0, so route UART TX out of GPIO17
+        return cellular::CellularModemPins { .tx = RXD0, .rx = TXD0 };
     }
 
     std::shared_ptr<BuzzerDriver> buzzer;

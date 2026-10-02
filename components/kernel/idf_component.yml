@@ -3,6 +3,7 @@ dependencies:
   idf:
     version: "6.1"
   espressif/mqtt: "^1.1.0"
+  espressif/esp_modem: "^2.1.0"
   espressif/network_provisioning: "^1.2.4"
   # Pinned: 0.1.2 seals the gauge in bq27220_create(), after which it refuses to unseal until it
   # loses power, boot-looping MK13 (#676)

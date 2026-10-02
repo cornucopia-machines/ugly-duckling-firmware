@@ -42,6 +42,9 @@ idf_component_register(
         # BQ27220 fuel gauge
         espressif__bq27220
 
+        # Cellular modem (AT commands over UART)
+        espressif__esp_modem
+
         # ArduinoJSON
         bblanchon__arduinojson
 )

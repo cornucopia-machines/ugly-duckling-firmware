@@ -4,10 +4,17 @@
 #include "drivers/RtcDriver.hpp"
 #include "drivers/WiFiDriver.hpp"
 #include "drivers/WifiApRecord.hpp"
+#include "drivers/cellular/CellularModemPins.hpp"
 #include <Connectivity.hpp>
+
+#ifdef UD_CONNECTIVITY_CELLULAR
+#include "drivers/cellular/CellularDriver.hpp"
+#include <Log.hpp>
+#endif
 
 #include <ctime>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -16,7 +23,8 @@ using namespace cornucopia::ugly_duckling::kernel;
 ConnectivityDrivers initConnectivity(
     const std::shared_ptr<ModuleStates>& states,
     const std::shared_ptr<NetworkConfig>& networkConfig,
-    const std::shared_ptr<BleDriver>& ble) {
+    const std::shared_ptr<BleDriver>& ble,
+    [[maybe_unused]] const std::optional<cellular::CellularModemPins>& modemPins) {
 
     auto wifi = std::make_shared<WiFiDriver>(
         states->networkConnecting,
@@ -46,5 +54,15 @@ ConnectivityDrivers initConnectivity(
         ble->setWifiStatus(status);
     });
 
+#ifdef UD_CONNECTIVITY_CELLULAR
+    std::shared_ptr<cellular::CellularDriver> cellular;
+    if (modemPins) {
+        cellular = std::make_shared<cellular::CellularDriver>(*modemPins);
+    } else {
+        LOGW("Built for cellular connectivity, but this board has no modem connector");
+    }
+    return { .wifi = wifi, .rtc = rtc, .cellular = cellular };
+#else
     return { .wifi = wifi, .rtc = rtc };
+#endif
 }

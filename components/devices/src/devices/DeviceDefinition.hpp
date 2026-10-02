@@ -7,6 +7,7 @@
 #include <devices/DeviceConfiguration.hpp>
 #include <drivers/BatteryDriver.hpp>
 #include <drivers/LedDriver.hpp>
+#include <drivers/cellular/CellularModemPins.hpp>
 #include <functions/chicken_door/ChickenDoor.hpp>
 #include <functions/plot_controller/PlotController.hpp>
 #include <peripherals/Peripheral.hpp>
@@ -32,6 +33,7 @@
 
 #include <chrono>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -111,6 +113,13 @@ public:
     }
 
     virtual void handleShortButtonPress(milliseconds duration) {
+    }
+
+    /**
+     * @brief How the NB-IoT modem connector is wired, on boards that have one.
+     */
+    virtual std::optional<cellular::CellularModemPins> getCellularModemPins() const {
+        return std::nullopt;
     }
 
     const std::string model;

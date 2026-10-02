@@ -138,16 +138,29 @@ can't work over the modem. In a `CELLULAR` build:
 
 Goal: on boot, the console shows replies to a few AT commands.
 
-- [ ] Add `espressif/esp_modem` to `components/kernel/idf_component.yml`; check flash cost and that it builds without C++ exceptions
-- [ ] `-DUD_CONNECTIVITY=WIFI|CELLULAR` CMake setting; in this stage `CELLULAR` only adds the modem driver next to WiFi
-- [ ] Describe the modem UART pins per device model. MK13: TX/RX are swapped (hardware#93), so `tx = GPIO17`, `rx = GPIO16`; no reset GPIO (pin 5 is `EN`). MK14: open-drain `RESET_N` on GPIO4, pulsed once after boot
-- [ ] Use UART1 through the GPIO matrix; refuse to start if the console is on UART0 (see above)
-- [ ] `CellularDriver` skeleton, `CellularModuleDriver` interface, `Bc660KDriver : GenericModule`
-- [ ] Wake: send `AT` repeatedly with backoff until `OK`; the first `AT` is consumed by the deep-sleep wake. Wrap every command in this sequence
-- [ ] Boot init, sent every boot because these settings are not persisted: `AT+QSCLK`, `AT+QIDNSCFG`. Check once (persisted): `AT+CMEE=2`, `AT+QBAND`, `AT+CFUN`, `AT+QNBIOTEVENT`
-- [ ] Log `ATI`, `AT+CGMR`, `AT+CIMI`, `AT+QCCID`, `AT+CSQ`, `AT+CEREG?`, `AT+QENG=0`
-- [ ] Bench aid: AT passthrough from `DebugConsole` (type an AT command, see the reply), debug builds only
-- [ ] Unit-test the response parsers in `test/unit-tests/`, using real captured responses as fixtures
+- [x] Add `espressif/esp_modem` (2.1, PPP off, URC handler on); builds with our C++ exceptions. Flash cost: +67 KB for the cellular build over a release WiFi build; WiFi builds don't link it
+- [x] `-DUD_CONNECTIVITY=WIFI|CELLULAR` CMake setting; in this stage `CELLULAR` only adds the modem driver next to WiFi
+- [x] Describe the modem UART pins per device model (`DeviceDefinition::getCellularModemPins()`). MK13: TX/RX are swapped (hardware#93), so `tx = GPIO17`, `rx = GPIO16`
+- [x] Use UART1 through the GPIO matrix; don't start if the console is on UART0 (see above)
+- [x] `CellularDriver`, `CellularModuleDriver` interface, `Bc660KDriver : GenericModule`
+- [x] Wake: send `AT` repeatedly with backoff until `OK` (10 attempts, 100 ms → 1 s); the first `AT` is consumed by the deep-sleep wake. Every command goes through this sequence
+- [x] Boot init, sent every boot: `ATE0`, `AT+CMEE=2`, `AT+QSCLK=0` (not persisted), `AT+CEREG=3`, `AT+QNBIOTEVENT=1,1`. DNS (`AT+QIDNSCFG`) moves to stage 3 with the sockets
+- [x] Log the IMEI (`AT+CGSN=1`) and SIM state (`AT+CPIN?`) at startup; while searching, also log `AT+QENG=3` (EMM / PLMN state) and `AT+COPS?`
+- [x] Read, and only write when they differ (both persist in NVRAM and are slow): `AT+CFUN=1` (at 0 the SIM isn't even powered) and `AT+QBAND=2,20,8` (EU bands; without a list the module scans every band). Both were steps in the bench bring-up sequence that the first driver lacked
+- [x] Poll registration (every 30 s while searching, 5 min once registered) and log it with decoded signal and serving cell; on registering, log `+COPS`, `+CGATT` and `+CGDCONT`. `+CEREG` URCs only report changes, so a modem that keeps searching was silent
+- [x] Shared quote-aware field tokenizer (`splitAtFields` / `AtField`) for `+XXX:` information lines, with decoders for `+CEREG`, `+CSQ` and `+QENG: 0`
+- [x] URCs that arrive in pieces are handled exactly once: esp_modem only empties its receive buffer after a command, so the driver tracks how much of it it has already handled
+- [x] Log `ATI` (includes the firmware revision, so no separate `AT+CGMR`), `AT+CIMI`, `AT+QCCID`, `AT+CSQ`, `AT+CEREG?`, `AT+QENG=0`; log `+CEREG` URCs decoded, other URCs raw
+- [x] Hold a no-light-sleep PM lock while the modem is up: the UART driver only keeps the chip awake while transmitting, so replies and URCs would be lost in light sleep (stage 4 replaces this)
+- [x] Unit-test the response parsers in `test/unit-tests/` (final result codes, echo, `+CME ERROR`, both `+CEREG` shapes, field tokenizing, `+CSQ`, `+QENG: 0` searching and camped)
+- [x] Verify on a Desert Lark board (MK13, modem firmware `BC660KGLAAR01A05`, 1NCE SIM): the modem answers on the first wake, the settings apply, and every status command returns the documented shape, so the test fixtures stand
+- [x] See the URC path work: `+CEREG` URCs logged for both a denial and the registration. On the bench MK13, registration took about 3 minutes from a cold start: cell `0014B307` (TAC 6216) repeatedly rejects with EMM cause 15, then the module registers on `0014B501` (Telekom `21630`, roaming, APN `SENSOR.NET`) at ECL 2 (RSRP −111 dBm, SINR −5 dB)
+
+Follow-ups, not needed for stage 3:
+
+- [ ] MK14: open-drain `RESET_N` on GPIO4, pulsed once after boot (once there is an MK14 device definition)
+- [ ] Make the band list configurable before devices go outside Europe
+- [ ] Bench aid: AT passthrough from the console (type an AT command, see the reply), debug builds only. Needs console input over USB Serial/JTAG, which nothing reads today
 
 ### Stage 3 — MQTT over NB-IoT (`UD_CONNECTIVITY=CELLULAR`)
 
