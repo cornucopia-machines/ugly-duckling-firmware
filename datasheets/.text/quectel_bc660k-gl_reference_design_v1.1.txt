@@ -1,0 +1,741 @@
+BC660K-GL
+Reference Design
+
+NB-IoT Module Series
+
+Version: 1.1
+
+Date: 2021-04-25
+
+Status: Released
+                                                                              NB-IoT Module Series
+                                                                        BC660K-GL Reference Design
+
+
+
+
+Our aim is to provide customers with timely and comprehensive service. For any assistance,
+please contact our company headquarters:
+
+Quectel Wireless Solutions Co., Ltd.
+Building 5, Shanghai Business Park Phase III (Area B), No.1016 Tianlin Road, Minhang District, Shanghai
+200233, China
+Tel: +86 21 5108 6236
+Email: info@quectel.com
+
+Or our local office. For more information, please visit:
+http://www.quectel.com/support/sales.htm.
+
+For technical support, or to report documentation errors, please visit:
+http://www.quectel.com/support/technical.htm
+Or email to support@quectel.com.
+
+
+General Notes
+Quectel offers the information as a service to its customers. The information provided is based upon
+customers’ requirements. Quectel makes every effort to ensure the quality of the information it makes
+available. Quectel does not make any warranty as to the information contained herein, and does not
+accept any liability for any injury, loss or damage of any kind incurred by use of or reliance upon the
+information. All information supplied herein is subject to change without prior notice.
+
+
+Disclaimer
+While Quectel has made efforts to ensure that the functions and features under development are free
+from errors, it is possible that these functions and features could contain errors, inaccuracies and
+omissions. Unless otherwise provided by valid agreement, Quectel makes no warranties of any kind,
+implied or express, with respect to the use of features and functions under development. To the maximum
+extent permitted by law, Quectel excludes all liability for any loss or damage suffered in connection with
+the use of the functions and features under development, regardless of whether such loss or damage
+may have been foreseeable.
+
+
+Duty of Confidentiality
+The Receiving Party shall keep confidential all documentation and information provided by Quectel,
+except when the specific permission has been granted by Quectel. The Receiving Party shall not access
+or use Quectel’s documentation and information for any purpose except as expressly provided herein.
+Furthermore, the Receiving Party shall not disclose any of the Quectel's documentation and information
+to any third party without the prior written consent by Quectel. For any noncompliance to the above
+requirements, unauthorized use, or other illegal or malicious use of the documentation and information,
+Quectel will reserve the right to take legal action.
+
+
+
+
+BC660K-GL_Reference_Design                                                                           1/5
+                                                                               NB-IoT Module Series
+                                                                         BC660K-GL Reference Design
+
+
+
+Copyright
+The information contained here is proprietary technical information of Quectel. Transmitting, reproducing,
+disseminating and editing this document as well as using the content without permission are forbidden.
+Offenders will be held liable for payment of damages. All rights are reserved in the event of a patent grant
+or registration of a utility model or design.
+
+Copyright © Quectel Wireless Solutions Co., Ltd. 2021. All rights reserved.
+
+
+
+
+BC660K-GL_Reference_Design                                                                             2/5
+                                                                    NB-IoT Module Series
+                                                              BC660K-GL Reference Design
+
+
+
+
+About the Document
+
+Revision History
+
+ Version   Date         Author       Description
+
+ -         2020-09-30   Clifton HE   Creation of the document
+
+ 1.0       2021-01-20   Clifton HE   First official release
+
+                                     Sheet 6: Modified the notes about the UART Interface;
+ 1.1       2021-04-25   Clifton HE   Added a note about the application of the level conversion
+                                     circuit.
+
+
+
+
+BC660K-GL_Reference_Design                                                                3/5
+                                                                                                                    NB-IoT Module Series
+                                                                                                              BC660K-GL Reference Design
+
+
+
+
+Contents
+
+About the Document ................................................................................................................................... 3
+Contents ....................................................................................................................................................... 4
+
+1     Reference Design ................................................................................................................................. 5
+      1.1.  Introduction ................................................................................................................................ 5
+      1.2.  Schematics ................................................................................................................................ 5
+
+
+
+
+BC660K-GL_Reference_Design                                                                                                                                4/5
+                                                                               NB-IoT Module Series
+                                                                         BC660K-GL Reference Design
+
+
+
+
+1 Reference Design
+1.1. Introduction
+
+This document provides the reference design for Quectel BC660K-GL module, including the design for
+power supply, module interfaces, etc.
+
+
+
+
+1.2. Schematics
+
+The schematics illustrated in the following pages are provided for reference only.
+
+
+
+
+BC660K-GL_Reference_Design                                                                      5/5
+        6        5                  4                                   3                                    2                                   1
+
+
+                                    Block Diagram
+
+D                                                                                                                                                                       D
+
+
+
+
+                                                  Reset Control
+                        RESET_N                                                 GPIO
+
+                                        Exit from Deep Sleep / Light Sleep
+                        PSM_EINT                                                GPIO
+
+
+                                                   Ring Indicator
+                                                                                                           MCU                                                          C
+                           RI                                                   GPIO
+C
+
+                        Main UART                                             MCU UART
+
+
+
+
+                                                                             Test points for the main UART
+
+
+            BC660K-GL   Debug UART                                             Test points for debugging
+
+
+
+                         BOOT                                                Makes the module enter download mode
+
+
+
+B                         USIM                                                         USIM                                                                             B
+
+
+                          ADC                                                 Voltage to be measured
+
+
+
+                         ANT_RF                                                  NB-IoT antenna
+
+
+
+                        NETLIGHT                                              Network status indication
+
+
+
+
+                                                                                                                                                                        A
+A                                                                                                                        Quectel Wireless Solutions
+                                                                                                                 DRAWN BY           PROJECT                TITLE
+                                                                                                                  Clifton HE       BC660K-GL         Reference Design
+                                                                                                                                       SIZE               VER
+                                                                                                                 CHECKED BY
+                                                                                                                                        A2                1.1
+                                                                                                                  Glenn GE
+                                                                                                                               SHEET   1   / 7   DATE    2021/4/25
+
+
+    6        5            4                                         3                                        2                                       1
+        6                  5                  4                      3                2                                     1
+
+
+                                  Power Supply Block Diagram
+
+D                                                                                                                                                  D
+
+
+
+
+                                                                            VBAT                        BC660K-GL
+
+             Battery
+
+                                                   Switch                                                                                          C
+C
+                                                   S201
+
+                                 U201
+             5 V DC
+                                DC-DC                                      NETLIGHT
+
+
+
+
+B                                                                                                                                                  B
+                               VDD_EXT             VIO_SEL
+
+
+
+            BC660K-GL
+
+
+
+
+                               USIM_VDD           USIM card power supply
+
+
+
+
+                                                                                                                                                   A
+A                                                                                                 Quectel Wireless Solutions
+                                                                                          DRAWN BY             PROJECT                TITLE
+                                                                                           Clifton HE         BC660K-GL         Reference Design
+                                                                                                                  SIZE               VER
+                                                                                          CHECKED BY
+                                                                                                                   A2                1.1
+                                                                                           Glenn GE
+                                                                                                          SHEET   2   / 7   DATE    2021/4/25
+
+
+    6                  5                  4                      3                    2                                         1
+                           6                                                                                                                                 5                                                                                    4                                              3                                               2                                                     1
+
+
+                                                                                                                                                                                                                                              Module Interfaces
+
+D
+                                                                                                                       Module Interfaces                                                                                                                                                                                                     VBAT Input                                                                       D
+
+                                                                                                           DBG_TXD [6]
+
+
+                                                                   VBAT                                    DBG_RXD [6]
+                                                                                                                                                                                                                                                                                                                                     VBAT [3,4,6,7]
+
+                                                                                                                                                                                                                                                                                                                                                             Note 4
+                                                                                                                                                                                                                                                           J101                                                        Note 5
+                                                                                                                                                                                                                                                                  ANT_RF
+
+                                                44          43         42          41          40          39          38         37          36                                    Note 1                                                                                                                                                    +      C101      C103   C104       C105
+                                                             VBAT       VBAT
+                                                                                                            DBG_TXD     DBG_RXD
+                                                                                    GND         GND                                GND         GND
+
+                                                 RESERVED
+                                                                                                                                                                                                                                                                                                                                                     100μF    100nF 100pF        22pF
+                                                                                                                                                                                                                                R103                                                                                                  D101
+                               1                                                                                                                                     35
+                                    GND                                                                                                                     ANT_RF
+                               2
+                                    RESERVED                                                                                                                  GND
+                                                                                                                                                                     34                                                         0R
+                               3                                                                                                                                     33
+                   TP101            GPIO1                                                                                                                 RESERVED                                                C106                  C107
+                               4                                                                                                                                     32
+                   TP102            GPIO2                                                                                                                 RESERVED
+                               5                                                                                                                                     31                                           NM                     NM
+                   TP103            GPIO3                                                                                                                 RESERVED
+                               6                                                                                                                                     30
+                   TP104            GPIO4                                                                                                                 RESERVED
+                                                                                    U101-A
+          [6,7] BOOT
+                                                                                                                                                                                                                                                                                               Notes:
+                               7                                                                                                                                     29
+
+                               8
+                                    BOOT
+                                                                                   BC660K-GL
+                                                                                                                                                          RESERVED
+                                                                                                                                                                     28
+                                                                                                                                                                                                                                                                                                                                                                                                                              C
+                                    RESERVED                                                                                                              RESERVED
+C             [3] ADC0         9
+                                    ADC0                                                                                                                      GND
+                                                                                                                                                                     27
+                                                                                                                                                                                                                                                                                               1. The input voltage of VBAT ranges from 2.2 V to 4.3 V.
+        [5] USIM_GND           10
+                                    USIM_GND                                                                                                              RESERVED
+                                                                                                                                                                     26
+
+
+       [5] USIM_DATA
+                               11
+                                    USIM_DATA                                                                                                             RESERVED
+                                                                                                                                                                     25                                                                                                                        2. The width of VBAT trace is recommended to be wider than 0.5 mm, and the longer the
+                                                                                                                                                                           C102
+                               12                                                                                                                                    24
+         [5] USIM_RST
+                                                                                                                                                                                                                                                                                                 trace is, the wider it should be.
+                                    USIM_RST                                                                                                               VDD_EXT
+
+
+
+                                                                                                                                   RESERVED    RESERVED
+                                                                                                                                                                                     1.0μF
+                                                 USIM_VDD    RESET_N    NETLIGHT    MAIN_TXD    MAIN_RXD    PSM_EINT
+                               13                                                                                                                                    23
+         [5] USIM_CLK               USIM_CLK                                                                                                              RESERVED
+
+                                                                                                                        RI                                                            VDD_EXT [6]                                                                                              3. The capacitors should be placed in ascending order of the capacitance value, and the
+                                                14          15         16          17          18          19          20         21          22
+
+                                                                                                                                                                                                      Note 2                                                                                     one with the minimum capacitance should be placed nearest the VBAT pins.
+                                                                                                                                                                                                                                               [3] GRFC1                   TP105 Tuner 1         Additionally, all these capacitors should be placed as close to the VBAT pins as possible.
+                                                [5] USIM_VDD
+                                                [6,7] RESET_N
+                                                                                                                                                                                                                                               [3] GRFC2                   TP106 Tuner 2       4. The capacitance of C101 should be chosen by debugging to ensure that the voltage of
+                                                  [7] NETLIGHT                                                                                                                            58          57          56
+                                                 [6] MAIN_TXD                                                                                                                                                                                                                                    VBAT will not fall below the lowest operation voltage of the module during bursting.
+                                                [6] MAIN_RXD                                                                                                                               GND         GND         GND
+
+                                                 [7] PSM_EINT
+                                                          [6] RI
+                                                                                                                                                                                                                                                                                               5. It is recommended to add a TVS close to the VBAT pin.
+                                                                                                                                                                                                                                                      GRFC2 [3]
+                                                                                                                                                                          45                                                             55
+                                                                                                                                                                               RESERVED                                         GRFC2
+                                                                                                                                                                          46               U101-B                                        54
+                                                                                                                                                                               RESERVED
+                                                                                                                                                                                          BC660K-GL
+                                                                                                                                                                                                                                GRFC1
+                                                                                                                                                                                                                                                      GRFC1 [3]
+                                                                                                                                                                          47                                                             53
+                                                                                                                                                                               RESERVED                                       RESERVED
+                                                                                                                                                                                                                                                R104
+                                                                                                                                                                          48                                                             52
+                                                                                                                                                                               RESERVED                                        VIO_SEL
+
+
+
+                                                                                                                                                                                           RESERVED    RESERVED    RESERVED
+                                                                                                                                                                                                                                                 0R
+B
+                                                                                                                                                                                          49          50          51                              Note 3                                                                                              ADC                                                                     B
+
+                                                                                                                                                                                                                                                                                                                                          R101
+                                                                                                                                                                                                                                                                                                               VOLTAGE_INPUT                                                                ADC0 [3]
+    Notes:
+                                                                                                                                                                                                                                                                                                                                                                        C108
+    1. A π-type matching circuit is recommended in RF layout.                                                                                                                                                                                                                                                                                               R102
+                                                                                                                                                                                                                                                                                                                                                                        100nF
+      For more details, see Quectel_RF_Layout_Application_Note.
+    2. VDD_EXT is a 1.8/3.3 V output power supply and has no voltage output in Deep Sleep/Light Sleep mode.
+      It is used to supply power for the module’s pull-up circuits, and thus is not recommended to be used as the                                                                                                                                                                              Notes:
+      power supply for external circuits.                                                                                                                                                                                                                                                       1. The maximum output voltage of the 12-bit ADC is 1.2 V.
+    3. The VIO_SEL is used to control VDD_EXT voltage selection.                                                                                                                                                                                                                                2. A 320 kΩ pull-down resistor is integrated inside the ADC pin.
+      When VIO_SEL is floating (R104 not mounted), the VDD_EXT voltage domain is 1.8 V;                                                                                                                                                                                                           This resistor needs to be considered when you calculate the voltage division relationship.
+      when VIO_SEL is grounded (R104 mounted), and VBAT ≥ 3.3 V, the VDD_EXT voltage domain is 3.3 V;
+      when VIO_SEL is grounded (R104 mounted), and VBAT < 3.3 V, the VDD_EXT voltage domain equals to
+                                                                                                                                                                                                                                                                                                                                                                                                                              A
+A     VBAT voltage.                                                                                                                                                                                                                                                                                                                                                Quectel Wireless Solutions
+                                                                                                                                                                                                                                                                                                                                                       DRAWN BY                     PROJECT                      TITLE
+                                                                                                                                                                                                                                                                                                                                                        Clifton HE                 BC660K-GL               Reference Design
+                                                                                                                                                                                                                                                                                                                                                                                        SIZE                    VER
+                                                                                                                                                                                                                                                                                                                                                      CHECKED BY
+                                                                                                                                                                                                                                                                                                                                                                                         A2                     1.1
+                                                                                                                                                                                                                                                                                                                                                       Glenn GE
+                                                                                                                                                                                                                                                                                                                                                                               SHEET    3    / 7       DATE    2021/4/25
+
+
+          6                                                                                                 5                                                                                                                          4                                                   3                                                     2                                                         1
+                 6                                     5                                                                                4                                                                         3                                                             2                                     1
+
+
+                                                                                                                                        Power Supply
+
+D                                                                                                                                                                                                                                                                                                                                            D
+
+
+                                                                                                                                                DC Power Supply
+
+
+                                                                                                                                VCC_5V
+                                                             DC input 5 V (Vmax = 5.5 V)                                                                                           Vout = 3.3 V
+                                                                                                                                                                                                                      L201
+                                                                           J201
+                                                                                                                                                                            1 IN                       5
+                                                                                                                                                                                      U201
+                                                                                                                                                                                                  SW                                                                     VBAT_DCDC
+                                                                                                                                                                                                                   2.2μH R202
+                                                                                                                                                                            3 EN                  FB
+                                                                                                                                                                                                       4
+
+                                                                                                                                                                                      2 GND                                                10μF          100nF
+                                                                                                                                                       100nF
+                                                                                                   +                                                                                                                         330K
+                                                                                                          100μF                         4.7μF
+                                                                                                                  R203   2.2K                                  R204   10K                                  R201   73.2K             C207          C208
+                                                                                                                                                                                                                             C202
+                                                                                                   C201                          C204           C203
+                                                                                         D201
+                                                                                                                                                                                                                             18pF                                                                                                            C
+C                                                                                                           D202
+
+
+
+                                                                                                                                                 Q201
+                                                                                                [7] POWER_EN
+
+
+
+
+                                             Note:
+                                             The output current of the power converter should be no less than 0.5 A.
+
+
+
+
+                                                 Battery Application                                                                                                                                                                                                    Power Supply Selection
+B                                       BAT201                                                     VBAT_BATTERY                                                                                                                                                                                                                              B
+
+                                                           D203
+                                                                            47μF      100nF                                                                                                                                                                                            S201
+                                                                    C205       C206
+                                                                                                                                                                                                                                                                 VBAT_BATTERY
+                                                 Note 3                                                                                                                                                                                                            VBAT_DCDC
+                                                                                                                                                                                                                                                                                                     VBAT
+
+        Notes:
+                                                                                                                                                                                                                                                                                      SS-12D02
+
+        1. The battery voltage shall range between 2.2 V and 4.3 V to meet the module’s power supply requirements,
+           and the battery's rated output current should be higher than the module's maximum current consumption.                                                                                                     Notes:
+           Additionally, it is recommended to do reverse battery protection to avoid damages to the module.                                                                                                           1. S201 is used to switch between an external 5 V power supply and a battery
+        2. For different batteries selected, the capacitance of C205 should be adjusted appropriately according to the                                                                                                    power supply.
+          debugging results.                                                                                                                                                                                          2. VBAT ranges from 2.2 V to 4.3 V, and the typical value is 3.3 V.
+        3. It is recommended to add a TVS close to the battery.
+
+                                                                                                                                                                                                                                                                                                                                             A
+A                                                                                                                                                                                                                                                                                             Quectel Wireless Solutions
+                                                                                                                                                                                                                                                                                    DRAWN BY            PROJECT                 TITLE
+                                                                                                                                                                                                                                                                                     Clifton HE        BC660K-GL          Reference Design
+                                                                                                                                                                                                                                                                                                            SIZE               VER
+                                                                                                                                                                                                                                                                                    CHECKED BY
+                                                                                                                                                                                                                                                                                                             A2                1.1
+                                                                                                                                                                                                                                                                                     Glenn GE
+                                                                                                                                                                                                                                                                                                   SHEET    4   / 7   DATE    2021/4/25
+
+
+    6                                    5                                                                               4                                                                             3                                                                        2                                         1
+        6       5                                                4                                                  3               2                                   1
+
+
+                                                                USIM Interface
+
+D                                                                                                                                                                                              D
+
+
+
+
+                                                                [3] USIM_GND
+
+                                                 Note 3                               C301
+                                                                                                        Note 1
+                                                                       R302
+
+                                                                       10K                   100nF
+                                                                                                     6 VCC
+                                                                                                             J301
+                                                                                                                         1
+                                                                                                                                                                                               C
+                    [3] USIM_VDD
+C                   [3] USIM_RST        R303   22R                                                   5 RST
+                                                                                                                    GND
+
+                                                                                                                    VPP
+                                                                                                                         2
+                                        R304   22R                                                   4 CLK               3
+                    [3] USIM_CLK                                                                                     I/O
+
+                                                                                                      USIM card connector
+
+
+
+
+                                       R301    22R
+                [3] USIM_DATA
+
+                                                                               U301
+
+                                                 C304    C303   C302
+
+
+                                                33pF 33pF 33pF
+
+
+
+                                                                                                     Note 2
+
+
+
+
+B                                                                                                                                                                                              B
+
+                                   Notes:
+                                   1. The value of C301 should be less than 1 μF.
+                                   2. U301 is used for protecting the USIM interface against ESD, and the junction capacitance should be less than 50 pF.
+                                     It should be placed nearby the USIM card connector.
+                                   3. It is necessary to add a 10 kΩ pull-up resistor between USIM_DATA and USIM_VDD to improve anti-interference ability.
+                                   4. For more design guidelines, see Quectel_BC660K-GL_Hardware_Design.
+
+
+
+
+                                                                                                                                                                                               A
+A                                                                                                                                               Quectel Wireless Solutions
+                                                                                                                                        DRAWN BY             PROJECT              TITLE
+                                                                                                                                         Clifton HE         BC660K-GL       Reference Design
+                                                                                                                                                              SIZE               VER
+                                                                                                                                        CHECKED BY
+                                                                                                                                                               A2                1.1
+                                                                                                                                         Glenn GE
+                                                                                                                                                      SHEET   5   / 7   DATE    2021/4/25
+
+
+    6       5                                        4                                                        3                    2                                        1
+                                  6                                                        5                                             4                                 3                                                  2                                              1
+
+
+                                                                                                                                         UART Interface
+                                  Reference Design for UART                                                                                               UART Level Translation - Level Conversion Circuit Solution
+D                                                                                                                                                                                                                                                                                                   D
+                                                                                                                                                                         When the voltage domain of your application system is neither 1.8 V nor 3.3 V, it is
+                                                                                                                                                                         recommended to use a level conversion circuit.
+              Module                                                                                          U402
+
+                                                                                                                                                                        [3,6] MAIN_TXD
+                              1                                                                    1                                                                                                                   D401                              U403
+                   VDD_EXT                    VDD_EXT [3,6]                     VDD_DTE                VDD
+                                                              R401                                                                                                                                             R407                R408
+                   MAIN_RXD
+                              2                                                                    2
+                                                                                                       TXD                                                                                                                                      1 VDD
+                                                                       1K
+                                                                                                                                                                         [3,6] VDD_EXT
+                   MAIN_TXD
+                              3                               R402
+                                                                       1K
+                                                                                                   3
+                                                                                                       RXD                                                 Note 1                                             4.7K                     10K
+                              4                               R403                                 4                                                                                                       C404                                 2 RXD
+                   DBG_RXD                                                                             DBG_TXD
+                                                                       1K
+                                                              R404                                                                                                                                               1.0nF R411
+                   DBG_TXD
+                              5
+                                                                       1K
+                                                                                                   5
+                                                                                                       DBG_RXD
+                                                                                                                                                                        [3,6] MAIN_RXD                                                          3 TXD
+                              6                               R405                                 6                                                                                                                              1K            4 GPIO
+                                                                                                                                                            Note 4                 [3] RI
+                         RI                                                                            GPIO
+                                                                       1K
+                    VIO_SEL
+                              7   R406                                                                                                                                                                                                          5 GND
+                                         0R                                                                                                                                              GND
+                       GND
+                              8
+                                                          Note 1                                   7
+                                                                                                       GND                                                                                     R409
+                                                                                                                                                                                    VIO_SEL
+                                                                                                                                                                                                      0R                                             MCU/DTE
+             BC660K-GL                                                                                        MCU/DTE
+                                                                                                                                                                               BC660K-GL
+
+
+                                                                                                                                              Notes:                                                                                                                                                C
+C
+                                                                                                                                              1. MAIN_RXD cannot be pulled up to VDD_EXT directly. Due to the anti-backflow design of the MAIN_RXD pin,
+    Notes:                                                                                                                                      it can be directly connected to MCU_TXD in 1.8–3.3 V voltage domain.
+    1. When VIO_SEL is grounded and VBAT < 3.3 V, VDD_EXT = VBAT;                                                                               If the Deep Sleep/Light Sleep mode wake-up function of the MAIN_RXD pin is enabled,
+      When VIO_SEL is grounded and VBAT ≥ 3.3 V, VDD_EXT = 3.3 V;                                                                               it is not recommended to use a level conversion circuit in MAIN_RXD to avoid abnormal wake-up.
+      When VIO_SEL is floating, VDD_EXT = 1.8 V.                                                                                              2. When a URC or message is received, the module will inform the DTE through RI pin.
+      If the voltage domain of your application system is 1.8 V, do not mount R406;
+                                                                                                                                              3. Pay attention to the level matching issue of UART ports during application.
+      If the voltage domain of your application system is 3.3 V, mount R406;                                                                  4. While using the level conversion circuit, do not mount R409.
+    2. When a URC or message is received, the module will inform the DTE through the RI pin.                                                  5. The level conversion circuit does not apply to applications with high baud rates exceeding 460 kbps.
+    3. MAIN_RXD cannot be pulled-up to VDD_EXT directly.                                                                                      6. For the design of the circuit shown in the dotted line (RI-GPIO circuit), see that of the MAIN_TXD-RXD circuit,
+    4. Pay attention to the level matching issue of UART ports during application.                                                              please note the connecting direction at the same time.
+
+
+B                                                                                                                                                                                                                                                                                                   B
+                                      Recommended Test Points for                                                                                                                              VDD_EXT [3,6]
+
+                                      Firmware Upgrade and Debugging                                                                                                                                           R410
+                                                                                                                                                                                                D402           10 K
+                                                                                                                                                                                                                                                U404
+                                                              CON401
+                                                                                                                                                                                                                                             1 TXD
+                                                          1                                                                 CON402                                          [3,6] MAIN_RXD
+                     [3,4,7] VBAT
+                 [3,6] MAIN_RXD                           2                                                             1
+                                                                                          [3] DBG_RXD                                                                                                                                        MCU/DTE
+                                                          3                                                             2
+                 [3,6] MAIN_TXD                                                           [3] DBG_TXD
+                       [3,7] BOOT
+                                                          4                                                             3                     Notes:
+                                                          5
+                  [3,7] RESET_N
+                                                          6                                                                                   1. When MCU_TXD is greater than 3.3 V, MAIN_RXD cannot be directly connected to MCU_TXD,
+                                                                                                                                                 it is required to use level conversion.
+    Note:                                                                                                                                     2. To pull up MAIN_RXD to VDD_EXT, you need to connect a Schottky diode in series first,
+    Pay attention to the level matching issue of the port during application.                                                                    and then pull up MAIN_RXD through a 4.7–20 kΩ resistor.
+
+                                                                                                                                                                                                                                                                                                    A
+A                                                                                                                                                                                                                                             Quectel Wireless Solutions
+                                                                                                                                                                                                                                  DRAWN BY                       PROJECT               TITLE
+                                                                                                                                                                                                                                   Clifton HE                   BC660K-GL        Reference Design
+                                                                                                                                                                                                                                                                   SIZE               VER
+                                                                                                                                                                                                                                  CHECKED BY
+                                                                                                                                                                                                                                                                    A2                1.1
+                                                                                                                                                                                                                                   Glenn GE
+                                                                                                                                                                                                                                                           SHEET   6   / 7   DATE    2021/4/25
+
+
+             6                                                              5                                                        4                              3                                                         2                                                  1
+                6                                               5                                 4                                     3                                      2                                                            1
+
+
+                                                                                   MCU Control and Drive
+
+D                                                                                                                                                                                                                                                                     D
+
+                Network Status Indication                                                                                     BOOT                                                                            MCU GPIOs
+     The NETLIGHT pin is used to indicate network status.
+
+                                         VBAT                                                                                               BOOT [3,6]
+
+
+                                                                                                                                                                                                    U501
+
+
+                                        R501      2.2K
+
+                                                                                                      WT-1203
+                                                                                                                                                                                                              GPIO                   RESET_C [7]
+                                                                                           S501
+                                                                                                                  D502
+                                                                                                                                                                                                              GPIO                   PSM_EINT_C [7]
+                                                                                                                                                                                                              GPIO                   POWER_EN [4]
+
+                                       D501
+                                                                                                                                                                                                    MCU
+
+                                     Q501
+                                                                                                                                                                                                                                                                      C
+C              [3] NETLIGHT
+                                                                                   Note:
+                                                                                   If the BOOT pin is connected to a filter capacitor in parallel, the capacitance
+                                                                                   of the capacitor cannot be higher than 33 pF.
+
+
+
+
+                              PSM_EINT                                                                               RESET_N                                                                    RESET_N
+    PSM_EINT can be used to wake up the module from                                                                MCU Application                                                         Keystroke Application
+    Deep Sleep/Light Sleep.
+
+
+B                                                                   PSM_EINT [3]                                                                             RESET_N [3,6,7]
+                                                                                                                                                                                                                                                                      B
+                                                                                                                                                                                                                                           RESET_N [3,6,7]
+    Controlled by DTE (e.g.MCU)
+                                                                                   Controlled by DTE (e.g.MCU)
+
+                                                                                                                                                                                                    WT-1203
+                                                                                                                                                                                                               D503   C502 NM
+                                                                                                                                                                                           S502
+                                                         Q502                                                                    Q503
+                                                                                                                                                C501 NM
+                    [7] PSM_EINT_C                                                                              [7] RESET_C
+                                                                                                                                                                                                                             100nF
+                                                                                                                                                     100nF
+                                                                                                                                                                                                                                         Note
+
+
+                                                                                      Note:                                                                                        Note:
+                                                                                      It is recommended to reserve a 100 nF capacitor close to the RESET_N pin.                    It is recommended to reserve a 100 nF capacitor
+                                                                                                                                                                                   close to the RESET_N pin.
+
+
+
+
+                                                                                                                                                                                                                                                                      A
+A                                                                                                                                                                                                 Quectel Wireless Solutions
+                                                                                                                                                                                    DRAWN BY                           PROJECT                           TITLE
+                                                                                                                                                                                     Clifton HE                       BC660K-GL                    Reference Design
+                                                                                                                                                                                                                         SIZE                           VER
+                                                                                                                                                                                    CHECKED BY
+                                                                                                                                                                                                                          A2                            1.1
+                                                                                                                                                                                     Glenn GE
+                                                                                                                                                                                                                 SHEET   7    / 7            DATE      2021/4/25
+
+
+      6                                       5                                       4                                           3                                            2                                                                   1
+
