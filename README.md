@@ -310,6 +310,31 @@ for the record layout and design rationale.
 idf.py monitor
 ```
 
+On Carrot the console is on USB Serial/JTAG, not UART0: the UART0 pins (GPIO16/17) belong to
+the NB-IoT modem on the Desert Lark daughter board.
+
+#### Console on UART0 (early-boot debugging)
+
+USB Serial/JTAG only starts carrying console output some time after boot, so it misses
+crashes before that point and bootloader problems. For those, build with `-DUD_UART0_CONSOLE=1`
+to move the console back to UART0 (USB Serial/JTAG stays on as a secondary console), and
+connect to it via the pogo-pin header.
+
+**Unplug the Desert Lark daughter board first.** Console output and the modem share the same
+lines, so they collide, and the NB-IoT connection is unavailable in this build. (The ROM
+bootloader banner goes out on GPIO16 at every reset regardless of this setting; that is
+harmless, the modem does not parse it as AT.)
+
+Use a separate build directory: an existing `build-*/sdkconfig` takes precedence over the
+defaults files, so toggling the flag in an existing tree does not change the console:
+
+```bash
+. tools/activate_idf.sh carrot
+idf.py -B build-carrot-uart0 -DUD_UART0_CONSOLE=1 build flash monitor
+```
+
+`WOKWI` builds enable it by default, since Wokwi's serial monitor is wired to the UART0 pins.
+
 ### Simulation
 
 Can use [Wokwi](https://wokwi.com/) to run the firmware in a simulated environment.

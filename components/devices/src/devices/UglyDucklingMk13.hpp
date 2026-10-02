@@ -134,7 +134,8 @@ protected:
     DEFINE_PIN(GPIO_NUM_13, DPLUS, "D+")
 
     // UART0: shared between the pogo-pin factory header (JPOGO1)
-    // and the NB-IoT modem connector (JNBIOT1)
+    // and the NB-IoT modem connector (JNBIOT1). The console is on USB Serial/JTAG so the
+    // modem can have them; UD_UART0_CONSOLE builds move the console back here instead.
     DEFINE_PIN(GPIO_NUM_16, TXD0)
     DEFINE_PIN(GPIO_NUM_17, RXD0)
 

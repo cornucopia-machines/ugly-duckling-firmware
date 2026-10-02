@@ -10,6 +10,15 @@ CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
 CONFIG_RTC_CLK_SRC_EXT_CRYS=y
 
 #
+# Console
+#
+
+# USB Serial/JTAG is the primary console, leaving UART0 (GPIO16/17) to the NB-IoT modem on the
+# Desert Lark daughter board (issue #640). Build with -DUD_UART0_CONSOLE=1 to move it back to UART0
+# for early-boot debugging (see sdkconfig.uart0_console.defaults).
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+
+#
 # Wi-Fi
 #
 

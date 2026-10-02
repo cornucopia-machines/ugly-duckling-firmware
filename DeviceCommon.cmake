@@ -157,6 +157,26 @@ if(NOT DEFINED WOKWI_MQTT_HOST)
     set(WOKWI_MQTT_HOST "$ENV{WOKWI_MQTT_HOST}")
 endif()
 
+# UD_UART0_CONSOLE — put the console back on UART0 (GPIO16/17 on Carrot) instead of USB Serial/JTAG.
+#
+# Carrot defaults to USB Serial/JTAG so UART0 is free for the NB-IoT modem (issue #640). USB only
+# starts carrying console output some time after boot, so bench debugging of early-boot problems
+# needs UART0 back, at the cost of the modem: the console and the modem would collide on the same
+# lines. The modem driver detects this via CONFIG_ESP_CONSOLE_UART / CONFIG_ESP_CONSOLE_UART_NUM.
+#
+# Wokwi wires its serial monitor to the UART0 pins, so WOKWI builds enable this by default.
+
+if(NOT DEFINED UD_UART0_CONSOLE)
+    set(UD_UART0_CONSOLE "$ENV{UD_UART0_CONSOLE}")
+endif()
+if(UD_UART0_CONSOLE STREQUAL "")
+    if(WOKWI)
+        set(UD_UART0_CONSOLE 1)
+    else()
+        set(UD_UART0_CONSOLE 0)
+    endif()
+endif()
+
 # Make sure we reconfigure if parameters change
 set_property(DIRECTORY PROPERTY WOKWI_TRACKER "${WOKWI} ${WOKWI_MQTT_HOST}")
 
@@ -168,7 +188,7 @@ if(WOKWI)
 endif()
 
 # Make sure we reconfigure if any of the debug parameters change
-set_property(DIRECTORY PROPERTY UD_DEBUG_TRACKER "${UD_DEBUG} ${UD_DEBUG_CONSOLE} ${UD_NOSLEEP} ${UD_PM_DIAGNOSTICS}")
+set_property(DIRECTORY PROPERTY UD_DEBUG_TRACKER "${UD_DEBUG} ${UD_DEBUG_CONSOLE} ${UD_NOSLEEP} ${UD_PM_DIAGNOSTICS} ${UD_UART0_CONSOLE}")
 
 set(SDKCONFIG_FILES)
 list(APPEND SDKCONFIG_FILES "${CMAKE_CURRENT_LIST_DIR}/sdkconfig.defaults")
@@ -177,6 +197,11 @@ list(APPEND SDKCONFIG_FILES "${CMAKE_CURRENT_LIST_DIR}/sdkconfig.${_ud_platform}
 if (UD_PM_DIAGNOSTICS)
     message("Building with PM diagnostics")
     list(APPEND SDKCONFIG_FILES "${CMAKE_CURRENT_LIST_DIR}/sdkconfig.pm_diagnostics.defaults")
+endif()
+
+if (UD_UART0_CONSOLE)
+    message("Building with the console on UART0")
+    list(APPEND SDKCONFIG_FILES "${CMAKE_CURRENT_LIST_DIR}/sdkconfig.uart0_console.defaults")
 endif()
 
 # Check if UD_DEBUG is defined

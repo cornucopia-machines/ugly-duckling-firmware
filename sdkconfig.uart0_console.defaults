@@ -1,0 +1,7 @@
+# Console on UART0 (GPIO16/17 on Carrot), USB Serial/JTAG as secondary — enabled with
+# -DUD_UART0_CONSOLE=1 (and by default for WOKWI builds), see DeviceCommon.cmake.
+#
+# Shares the lines with the NB-IoT modem on the Desert Lark daughter board: unplug it first.
+CONFIG_ESP_CONSOLE_UART_DEFAULT=y
+# CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG is not set
+CONFIG_ESP_CONSOLE_SECONDARY_USB_SERIAL_JTAG=y

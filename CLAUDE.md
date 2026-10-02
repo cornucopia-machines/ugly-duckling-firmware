@@ -118,6 +118,12 @@ Quick reference — build a custom chip after editing its `.c` file:
 wokwi-cli chip compile chips/<name>.chip.c -o chips/<name>.chip.wasm
 ```
 
+## Console (Carrot)
+
+The Carrot console is on USB Serial/JTAG; UART0 (GPIO16/17) belongs to the NB-IoT modem. For
+early-boot output, build with `-DUD_UART0_CONSOLE=1` in a separate build directory — see
+[README.md § Console on UART0](README.md#console-on-uart0-early-boot-debugging).
+
 ## Resolving Crash Backtraces
 
 Use `lookup-backtrace.py` to symbolize a `Guru Meditation Error` backtrace. Paste the `PC:`
