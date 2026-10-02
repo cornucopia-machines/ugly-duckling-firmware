@@ -84,6 +84,9 @@ jobs:
             pyspdxtools --novalidation --infile build/ugly-duckling.spdx --outfile build/ugly-duckling.spdx.json && \
             ccache -s
 
+      - name: Check the build left the source tree clean
+        run: tools/check-clean-tree.sh
+
       - name: Show binary sizes
         run: |
           {
@@ -205,6 +208,9 @@ jobs:
             if [ $rc -ne 0 ]; then exit $rc; fi
             ccache -s
 
+      - name: Check the build left the source tree clean
+        run: tools/check-clean-tree.sh
+
       - name: Run tools tests
         uses: espressif/esp-idf-ci-action@v1
         with:
@@ -286,6 +292,9 @@ jobs:
             echo "::endgroup::"
             if [ $rc -ne 0 ]; then exit $rc; fi
             ccache -s
+
+      - name: Check the build left the source tree clean
+        run: tools/check-clean-tree.sh
 
       - name: Install wokwi-cli
         run: curl -fsSL https://wokwi.com/ci/install.sh | sh

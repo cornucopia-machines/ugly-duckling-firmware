@@ -70,6 +70,17 @@ if(IDF_TARGET STREQUAL "esp32s3")
     add_compile_options(-mtext-section-literals) # To fix 'literal target out of range' errors
 endif()
 
+# Managed component versions are locked in a committed dependencies.<platform>.lock. One file per
+# platform, because the component manager stamps the current target into the lock file on every
+# run, so a shared file would flip back and forth between carrot and spinach builds. Projects that
+# build the same components as another one (test/e2e-tests) point UD_DEPENDENCIES_LOCK_DIR at its
+# locks.
+
+if(NOT DEFINED UD_DEPENDENCIES_LOCK_DIR)
+    set(UD_DEPENDENCIES_LOCK_DIR "${CMAKE_SOURCE_DIR}")
+endif()
+idf_build_set_property(DEPENDENCIES_LOCK "${UD_DEPENDENCIES_LOCK_DIR}/dependencies.${_ud_platform}.lock")
+
 # UD_CONNECTIVITY — how the device reaches the server: WIFI (default) or CELLULAR, the NB-IoT
 # modem on the Desert Lark daughter board (Carrot only). A build-time choice for now; it is meant
 # to become a network-config setting (docs/specs/NB-IoT.md, "Choosing WiFi or NB-IoT").
