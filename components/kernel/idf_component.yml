@@ -4,7 +4,9 @@ dependencies:
     version: "6.1"
   espressif/mqtt: "^1.1.0"
   espressif/network_provisioning: "^1.2.4"
-  espressif/bq27220: "^0.1.1"
+  # Pinned: 0.1.2 seals the gauge in bq27220_create(), after which it refuses to unseal until it
+  # loses power, boot-looping MK13 (#676)
+  espressif/bq27220: "0.1.1"
   bblanchon/arduinojson: "7.4.3"
   esp-idf-lib/bh1750: "^1.1.7"
   esp-idf-lib/ds18x20: "^1.2.8"
