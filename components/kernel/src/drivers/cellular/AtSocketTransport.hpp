@@ -16,6 +16,7 @@
 #include <cstring>
 #include <memory>
 #include <stdexcept>
+#include <utility>
 
 using namespace std::chrono;
 using namespace std::chrono_literals;
@@ -65,6 +66,16 @@ public:
 
     esp_transport_handle_t getHandle() const {
         return handle;
+    }
+
+    /**
+     * @brief Bytes sent and received over all connections since the last call, for telemetry.
+     *
+     * TCP and IP headers, ACKs and retransmissions aren't included, so the data the operator
+     * counts is somewhat more.
+     */
+    std::pair<size_t, size_t> takeTrafficCounts() {
+        return { trafficSent.exchange(0), trafficReceived.exchange(0) };
     }
 
 private:
@@ -197,6 +208,7 @@ private:
         bufferEnd = result->length;
         moreWaiting = result->more;
         bytesReceived += result->length;
+        trafficReceived += result->length;
         return true;
     }
 
@@ -213,6 +225,7 @@ private:
             }
             written += chunk;
             bytesSent += chunk;
+            trafficSent += chunk;
         }
         return static_cast<int>(written);
     }
@@ -267,6 +280,10 @@ private:
     steady_clock::time_point connectedAt;
     size_t bytesSent = 0;
     size_t bytesReceived = 0;
+
+    // Across connections, read from the telemetry task
+    std::atomic<size_t> trafficSent { 0 };
+    std::atomic<size_t> trafficReceived { 0 };
 };
 
 }    // namespace cornucopia::ugly_duckling::kernel::drivers::cellular

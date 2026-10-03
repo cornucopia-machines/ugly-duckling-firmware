@@ -14,6 +14,7 @@
 #include <drivers/cellular/NetworkTime.hpp>
 #include <drivers/cellular/RadioStatus.hpp>
 
+#include <ArduinoJson.h>
 #include <sdkconfig.h>
 #include <soc/uart_pins.h>
 
@@ -44,8 +45,8 @@ struct CellularStatus {
     std::optional<RegistrationStatus> registration;
     // Set once the network is ready
     std::optional<std::string> ipAddress;
-    std::optional<int> rsrp;
-    std::optional<int> ecl;
+    // Only while camped on a cell
+    std::optional<ServingCell> servingCell;
 };
 
 /**
@@ -103,6 +104,31 @@ public:
     CellularStatus getStatus() const {
         std::scoped_lock lock(statusMutex);
         return status;
+    }
+
+    /**
+     * @brief The link quality as of the last registration check, and the bytes sent and
+     * received over the modem since the last call (docs/specs/NB-IoT.md, "Link quality in
+     * telemetry").
+     */
+    void populateTelemetry(JsonObject& json) {
+        auto cell = getStatus().servingCell;
+        if (cell) {
+            json["cell"] = cell->cellId;
+            json["band"] = cell->band;
+            auto set = [&](const char* name, std::optional<int> value) {
+                if (value) {
+                    json[name] = *value;
+                }
+            };
+            set("rsrp", cell->rsrp);
+            set("rsrq", cell->rsrq);
+            set("sinr", cell->sinr);
+            set("ecl", cell->ecl);
+        }
+        auto [sent, received] = transport.takeTrafficCounts();
+        json["bytes-sent"] = sent;
+        json["bytes-received"] = received;
     }
 
 private:
@@ -174,9 +200,7 @@ private:
             auto cell = !registered || !wasRegistered ? module->logRadioStatus() : module->queryServingCell();
             updateStatus([&](CellularStatus& status) {
                 status.registration = registration ? std::optional(registration->status) : std::nullopt;
-                bool camped = cell && cell->isCamped();
-                status.rsrp = camped ? cell->rsrp : std::nullopt;
-                status.ecl = camped ? cell->ecl : std::nullopt;
+                status.servingCell = cell && cell->isCamped() ? cell : std::nullopt;
             });
             if (!registered) {
                 // Automatic or manual operator selection, and the operator if there is one
