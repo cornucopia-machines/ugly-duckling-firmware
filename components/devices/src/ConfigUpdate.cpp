@@ -166,6 +166,19 @@ void registerUpdateHandler(
         // when a config request is still in flight; the server retries once the config settles.
         ConfigState preUpdateState = configStateStore->load();
         auto firmwareDecision = decideFirmwareUpdate(request["firmware"], firmwareVersion, preUpdateState.requested.has_value());
+#ifdef UD_CONNECTIVITY_WIFI
+        bool firmwareUnsupported = false;
+#else
+        // Firmware only downloads over WiFi, not over the modem yet (docs/specs/NB-IoT.md, stage
+        // 5): rejecting the entry stops the server from retrying, where accepting it would reboot
+        // into a download bound to fail
+        bool firmwareUnsupported = firmwareDecision.url.has_value();
+        if (firmwareUnsupported) {
+            LOGW("Firmware update to %s not supported without WiFi, rejecting", firmwareDecision.url->c_str());
+            *pendingFirmwareRejection = RejectionCode::Unimplemented;
+            firmwareDecision.url.reset();
+        }
+#endif
         if (firmwareDecision.url) {
             LOGI("Firmware update available, will download from %s", firmwareDecision.url->c_str());
         } else if (firmwareDecision.skippedDueToPendingConfig) {
@@ -194,9 +207,9 @@ void registerUpdateHandler(
                 syncTriggerQueue->overwrite(true);
                 break;
             case ConfigUpdateResult::NoChanges:
-                // If firmware was skipped due to pending config but there are no config changes,
-                // trigger a SYNC anyway so the FailedPrecondition rejection reaches the server.
-                if (firmwareDecision.skippedDueToPendingConfig) {
+                // If firmware was skipped due to pending config (or rejected) but there are no
+                // config changes, trigger a SYNC anyway so the rejection reaches the server.
+                if (firmwareDecision.skippedDueToPendingConfig || firmwareUnsupported) {
                     syncTriggerQueue->overwrite(true);
                 }
                 break;

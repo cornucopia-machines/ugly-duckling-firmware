@@ -84,6 +84,10 @@ idf_build_set_property(DEPENDENCIES_LOCK "${UD_DEPENDENCIES_LOCK_DIR}/dependenci
 # UD_CONNECTIVITY — how the device reaches the server: WIFI (default) or CELLULAR, the NB-IoT
 # modem on the Desert Lark daughter board (Carrot only). A build-time choice for now; it is meant
 # to become a network-config setting (docs/specs/NB-IoT.md, "Choosing WiFi or NB-IoT").
+#
+# Each link gets its own compile definition, UD_CONNECTIVITY_WIFI or UD_CONNECTIVITY_CELLULAR, and
+# code is gated on the link it needs rather than on the absence of the other, so a build with
+# both only has to define both.
 
 if(NOT DEFINED UD_CONNECTIVITY)
     set(UD_CONNECTIVITY "$ENV{UD_CONNECTIVITY}")
@@ -99,7 +103,9 @@ if(UD_CONNECTIVITY STREQUAL "CELLULAR")
     endif()
     message("Building with cellular connectivity")
     add_compile_definitions(UD_CONNECTIVITY_CELLULAR)
-elseif(NOT UD_CONNECTIVITY STREQUAL "WIFI")
+elseif(UD_CONNECTIVITY STREQUAL "WIFI")
+    add_compile_definitions(UD_CONNECTIVITY_WIFI)
+else()
     message(FATAL_ERROR "Error: Unrecognized UD_CONNECTIVITY '${UD_CONNECTIVITY}', expected WIFI or CELLULAR")
 endif()
 

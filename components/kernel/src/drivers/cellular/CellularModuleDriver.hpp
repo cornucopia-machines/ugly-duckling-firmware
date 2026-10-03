@@ -2,9 +2,15 @@
 
 #include <Log.hpp>
 #include <drivers/cellular/AtResponse.hpp>
+#include <drivers/cellular/AtSocket.hpp>
+#include <drivers/cellular/RadioStatus.hpp>
 
 #include <chrono>
+#include <cstddef>
+#include <cstdint>
+#include <ctime>
 #include <functional>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -15,6 +21,16 @@ namespace cornucopia::ugly_duckling::kernel::drivers::cellular {
 LOGGING_TAG(CELLULAR, "cellular")
 
 using UrcHandler = std::function<void(std::string_view line)>;
+using SocketEventHandler = std::function<void(SocketEventType type)>;
+
+/**
+ * @brief What one read from the module's receive buffer returned.
+ */
+struct SocketReceive {
+    size_t length;
+    // Whether the module still holds more data after this read
+    bool more;
+};
 
 /**
  * @brief The chipset-specific half of the cellular stack: everything that differs between modems.
@@ -63,8 +79,69 @@ public:
 
     /**
      * @brief Logs signal strength and serving cell, decoded.
+     *
+     * @return the serving cell it read, if any
      */
-    virtual void logRadioStatus() = 0;
+    virtual std::optional<ServingCell> logRadioStatus() = 0;
+
+    /**
+     * @brief The serving cell's radio state, without logging it.
+     */
+    virtual std::optional<ServingCell> queryServingCell() = 0;
+
+    /**
+     * @brief The IP address of the default PDP context, if the network has assigned one.
+     */
+    virtual std::optional<std::string> queryIpAddress() = 0;
+
+    /**
+     * @brief Gets the module ready to open connections once it has an IP address, e.g. makes sure
+     * there is a DNS server to resolve hostnames with.
+     */
+    virtual bool prepareNetwork() = 0;
+
+    /**
+     * @brief Asks an NTP server for the time, through the module's own NTP client.
+     *
+     * @return the current time in UTC, or nullopt if the query failed
+     */
+    virtual std::optional<time_t> queryNtpTime(const std::string& server) = 0;
+
+    /**
+     * @brief Opens the TCP connection, waiting until it is either established or has failed.
+     *
+     * The module supports one connection at a time: the one MQTT runs over. Received data stays
+     * in the module until read with receive(); a SocketEventType::DataAvailable event says when
+     * there is some.
+     *
+     * @param host an IP address or a hostname, which the module resolves itself
+     */
+    virtual bool openSocket(const std::string& host, int port) = 0;
+
+    virtual void closeSocket() = 0;
+
+    /**
+     * @brief Sends at most getMaxSendSize() bytes.
+     */
+    virtual bool send(const uint8_t* data, size_t length) = 0;
+
+    virtual size_t getMaxSendSize() const = 0;
+
+    /**
+     * @brief Reads at most getMaxReceiveSize() bytes of what the module has received.
+     *
+     * @return how much was read, 0 if nothing was waiting; nullopt if the module failed to answer
+     */
+    virtual std::optional<SocketReceive> receive(uint8_t* buffer, size_t length) = 0;
+
+    virtual size_t getMaxReceiveSize() const = 0;
+
+    /**
+     * @brief Registers the handler for socket events (data waiting, connection closed).
+     *
+     * Called from the UART's receive task: the handler must not send commands to the module.
+     */
+    virtual void onSocketEvent(SocketEventHandler handler) = 0;
 };
 
 }    // namespace cornucopia::ugly_duckling::kernel::drivers::cellular

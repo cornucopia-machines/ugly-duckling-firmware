@@ -6,8 +6,11 @@
 #include <Telemetry.hpp>
 #include <Watchdog.hpp>
 #include <drivers/BleDriver.hpp>
-#include <drivers/WiFiDriver.hpp>
 #include <mqtt/MqttRoot.hpp>
+
+#ifdef UD_CONNECTIVITY_WIFI
+#include <drivers/WiFiDriver.hpp>
+#endif
 
 #include <chrono>
 #include <memory>
@@ -25,7 +28,9 @@ void initTelemetryPublishTask(
     const std::shared_ptr<MqttRoot>& mqttRoot,
     const std::shared_ptr<BatteryManager>& batteryManager,
     const std::shared_ptr<PowerManager>& powerManager,
+#ifdef UD_CONNECTIVITY_WIFI
     const std::shared_ptr<WiFiDriver>& wifi,
+#endif
     const std::shared_ptr<BleDriver>& ble,
     const std::shared_ptr<TelemetryCollector>& telemetryCollector,
     const std::shared_ptr<CopyQueue<bool>>& telemetryPublishQueue);

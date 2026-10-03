@@ -18,7 +18,6 @@
 #include <atomic>
 #include <chrono>
 #include <functional>
-#include <mutex>
 #include <string>
 #include <variant>
 #include <vector>
@@ -70,20 +69,6 @@ public:
         ESP_ERROR_CHECK(esp_wifi_set_ps(enable
                 ? WIFI_PS_MAX_MODEM
                 : WIFI_PS_MIN_MODEM));
-    }
-
-    std::optional<std::string> getSsid() {
-        std::scoped_lock lock(metadataMutex);
-        return ssid;
-    }
-
-    std::optional<std::string> getIp() {
-        std::scoped_lock lock(metadataMutex);
-        return ip.transform([](const esp_ip4_addr_t& ip) {
-            char ipString[16];
-            esp_ip4addr_ntoa(&ip, ipString, sizeof(ipString));
-            return std::string(ipString);
-        });
     }
 
     void setOnStatusChanged(std::function<void(const std::string&)> callback) {
@@ -234,22 +219,14 @@ private:
             }
             case WIFI_EVENT_STA_CONNECTED: {
                 auto* event = static_cast<wifi_event_sta_connected_t*>(eventData);
-                std::string newSsid(reinterpret_cast<const char*>(event->ssid), event->ssid_len);
-                {
-                    std::scoped_lock lock(metadataMutex);
-                    ssid = newSsid;
-                }
+                auto ssid = std::string(reinterpret_cast<const char*>(event->ssid), event->ssid_len);
                 LOGTD(WIFI, "Connected to the AP %s",
-                    newSsid.c_str());
+                    ssid.c_str());
                 break;
             }
             case WIFI_EVENT_STA_DISCONNECTED: {
                 auto* event = static_cast<wifi_event_sta_disconnected_t*>(eventData);
                 networkReady.clear();
-                {
-                    std::scoped_lock lock(metadataMutex);
-                    ssid.reset();
-                }
                 eventQueue.offer(EvDisconnected { event->reason });
                 LOGTD(WIFI, "Disconnected from the AP %.*s, reason: %d",
                     event->ssid_len, reinterpret_cast<const char*>(event->ssid), event->reason);
@@ -273,21 +250,14 @@ private:
             case IP_EVENT_STA_GOT_IP: {
                 auto* event = static_cast<ip_event_got_ip_t*>(eventData);
                 networkReady.set();
-                {
-                    std::scoped_lock lock(metadataMutex);
-                    ip = event->ip_info.ip;
-                }
                 eventQueue.offer(EvGotIp {});
                 // NOLINTNEXTLINE(cppcoreguidelines-pro-type-cstyle-cast)
-                LOGTD(WIFI, "Got IP - " IPSTR, IP2STR(&event->ip_info.ip));
+                LOGTI(WIFI, "Network ready, IP address " IPSTR,
+                    IP2STR(&event->ip_info.ip));
                 break;
             }
             case IP_EVENT_STA_LOST_IP: {
                 networkReady.clear();
-                {
-                    std::scoped_lock lock(metadataMutex);
-                    ip.reset();
-                }
                 eventQueue.offer(EvLostIp {});
                 LOGTD(WIFI, "Lost IP");
                 break;
@@ -625,10 +595,6 @@ private:
     static constexpr milliseconds WIFI_QUEUE_TIMEOUT = 1s;
     static constexpr milliseconds WIFI_CONNECTION_TIMEOUT = 1min;
     static constexpr milliseconds WIFI_CHECK_INTERVAL = 1min;
-
-    std::mutex metadataMutex;
-    std::optional<std::string> ssid;
-    std::optional<esp_ip4_addr_t> ip;
 
     std::atomic<int> disconnectCount { 0 };
     // True by default (assumed provisioning-owned); cleared to false when we

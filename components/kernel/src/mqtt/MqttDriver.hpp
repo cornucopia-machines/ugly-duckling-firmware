@@ -5,8 +5,11 @@
 #include <State.hpp>
 #include <Task.hpp>
 #include <config/Configuration.hpp>
+#include <mqtt/TlsTransport.hpp>
 
 #include <esp_event.h>
+#include <esp_transport.h>
+#include <esp_transport_ws.h>
 #include <mqtt_client.h>
 
 #include <atomic>
@@ -67,12 +70,18 @@ public:
         ArrayProperty<std::string> clientKey { this, "clientKey" };
     };
 
+    /**
+     * @param modemTransport the cellular modem's socket transport in cellular builds, to connect
+     * over instead of lwIP; nullptr for WiFi
+     */
     MqttDriver(
         State& networkReady,
         const std::shared_ptr<Config>& config,
         const std::string& clientId,
-        StateSource& ready)
+        StateSource& ready,
+        esp_transport_handle_t modemTransport = nullptr)
         : networkReady(networkReady)
+        , modemTransport(modemTransport)
         , url(config->url.get())
         , configHostname(config->host.get())
         , configPort(config->port.get())
@@ -165,14 +174,14 @@ public:
             .session {
                 .last_will {},
                 .disable_clean_session = false,
-                .keepalive = duration_cast<seconds>(MQTT_SESSION_KEEP_ALIVE).count(),
+                .keepalive = static_cast<int>(duration_cast<seconds>(modemTransport == nullptr ? MQTT_SESSION_KEEP_ALIVE : MODEM_SESSION_KEEP_ALIVE).count()),
                 .disable_keepalive = false,
                 .protocol_ver = MQTT_PROTOCOL_UNDEFINED,    // Default MQTT version
                 .message_retransmit_timeout = duration_cast<milliseconds>(MQTT_MESSAGE_RETRANSMIT_TIMEOUT).count(),
             },
             .network {
                 .reconnect_timeout_ms = duration_cast<milliseconds>(MQTT_CONNECTION_TIMEOUT).count(),
-                .timeout_ms = duration_cast<milliseconds>(MQTT_NETWORK_TIMEOUT).count(),
+                .timeout_ms = static_cast<int>((modemTransport == nullptr ? MQTT_NETWORK_TIMEOUT : MODEM_NETWORK_TIMEOUT).count()),
                 .refresh_connection_after_ms = 0,    // No need to refresh connection
                 .disable_auto_reconnect = false,
                 .tcp_keep_alive_cfg = {},
@@ -190,6 +199,19 @@ public:
         LOGTI(MQTT, "Server: %s, client ID is '%s'",
             serverAddress.c_str(),
             config.credentials.client_id);
+
+        if (modemTransport != nullptr) {
+            // esp-mqtt ignores the URI's scheme when given a transport, and takes its TLS settings
+            // only for transports it creates itself, so the stack is built here to match
+            config.network.transport = getModemTransport();
+            if (!url.empty()) {
+                // Leave it to the URI, as it is anyway, instead of a warning about the conflict
+                config.broker.address.transport = MQTT_TRANSPORT_UNKNOWN;
+            }
+            // TLS runs on esp-mqtt's task here, with the AT command layer underneath
+            config.task.stack_size = MODEM_TASK_STACK_SIZE;
+            return;
+        }
 
         if (!configServerCert.empty()) {
             if (url.empty()) {
@@ -210,14 +232,68 @@ public:
     }
 
 private:
+    /**
+     * @brief The modem's transport with whatever the URI's scheme asks for on top: TLS for
+     * mqtts and wss (or a server certificate in legacy host mode), WebSocket for ws and wss.
+     * Built on first use, so a bad certificate shows up where connecting does, not at startup.
+     */
+    esp_transport_handle_t getModemTransport() {
+        if (modemTransportStack != nullptr) {
+            return modemTransportStack;
+        }
+        auto schemeEnd = url.find("://");
+        std::string scheme = schemeEnd == std::string::npos ? "" : url.substr(0, schemeEnd);
+        bool secure = url.empty() ? !configServerCert.empty() : (scheme == "mqtts" || scheme == "wss");
+        bool webSocket = scheme == "ws" || scheme == "wss";
+
+        esp_transport_handle_t transport = modemTransport;
+        if (secure) {
+            if (configServerCert.empty()) {
+                throw std::runtime_error("TLS over the modem needs a server certificate in the configuration");
+            }
+            modemTlsTransport = std::make_unique<TlsTransport>(modemTransport, TlsTransport::Credentials {
+                                                                                   .serverCert = configServerCert,
+                                                                                   .clientCert = configClientCert,
+                                                                                   .clientKey = configClientKey,
+                                                                               });
+            transport = modemTlsTransport->getHandle();
+        }
+        if (webSocket) {
+            // The same setup esp-mqtt gives the WebSocket transports it creates itself
+            esp_transport_handle_t ws = esp_transport_ws_init(transport);
+            if (ws == nullptr) {
+                throw std::runtime_error("could not create WebSocket transport");
+            }
+            auto pathStart = url.find('/', schemeEnd + 3);
+            if (pathStart != std::string::npos) {
+                // Copied by the transport
+                esp_transport_ws_set_path(ws, url.substr(pathStart).c_str());
+            }
+            esp_transport_ws_set_subprotocol(ws, "mqtt");
+            esp_transport_set_default_port(ws, secure ? 443 : 80);
+            transport = ws;
+        }
+        modemTransportStack = transport;
+        return modemTransportStack;
+    }
+
     // Bounds how long we wait for the *network* to respond: esp-mqtt's transport read/write
     // timeout, the connection attempt, and a subscription ack. Publishing never waits on the
     // network at all, see publish().
     static constexpr milliseconds MQTT_NETWORK_TIMEOUT = 15s;
+    // NB-IoT round trips take seconds, more in poor coverage
+    static constexpr milliseconds MODEM_NETWORK_TIMEOUT = 30s;
 
     static constexpr milliseconds MQTT_MESSAGE_RETRANSMIT_TIMEOUT = 5s;
     static constexpr milliseconds MQTT_CONNECTION_TIMEOUT = MQTT_NETWORK_TIMEOUT;
     static constexpr milliseconds MQTT_SESSION_KEEP_ALIVE = 120s;
+    // esp-mqtt pings at half the keepalive, and every ping costs about 200 bytes over the air
+    // with TLS, TCP and their ACKs: at 120 s that would be twice the SIM's daily data budget. It
+    // also has to stay under the carrier's NAT idle timeout, which isn't measured yet
+    // (docs/specs/NB-IoT.md, "Keepalive and session expiry"); 10 minutes, so pings every 5
+    // minutes (about 58 KB a day), until it is.
+    static constexpr milliseconds MODEM_SESSION_KEEP_ALIVE = 10min;
+    static constexpr uint32_t MODEM_TASK_STACK_SIZE = 8192;
     static constexpr milliseconds MQTT_LOOP_INTERVAL = 1s;
     static constexpr milliseconds MQTT_QUEUE_TIMEOUT = 1s;
 
@@ -700,6 +776,10 @@ private:
     }
 
     State& networkReady;
+    esp_transport_handle_t modemTransport;
+    std::unique_ptr<TlsTransport> modemTlsTransport;
+    // The top of the stack built on modemTransport; esp-mqtt keeps it for good
+    esp_transport_handle_t modemTransportStack = nullptr;
 
     const std::string url;
     const std::string configHostname;

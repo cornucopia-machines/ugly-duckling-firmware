@@ -3,7 +3,14 @@
 #include <Strings.hpp>
 #include <drivers/BleDriver.hpp>
 #include <drivers/RtcDriver.hpp>
+
+#ifdef UD_CONNECTIVITY_WIFI
 #include <drivers/WiFiDriver.hpp>
+#endif
+#ifdef UD_CONNECTIVITY_CELLULAR
+#include <drivers/cellular/CellularDriver.hpp>
+#include <drivers/cellular/Cereg.hpp>
+#endif
 
 #include <esp_private/esp_clk.h>
 
@@ -22,10 +29,14 @@ class DebugConsole {
 public:
     DebugConsole(
         const std::shared_ptr<BatteryManager>& battery,
-        const std::shared_ptr<WiFiDriver>& wifi,
+#ifdef UD_CONNECTIVITY_CELLULAR
+        const std::shared_ptr<drivers::cellular::CellularDriver>& cellular,
+#endif
         const std::shared_ptr<BleDriver>& ble)
         : battery(battery)
-        , wifi(wifi)
+#ifdef UD_CONNECTIVITY_CELLULAR
+        , cellular(cellular)
+#endif
         , ble(ble) {
         status.reserve(256);
         Task::loop("console", 3072, 1, [this](Task& task) {
@@ -45,14 +56,23 @@ private:
         status += "[" + std::string(1, spinner[counter]) + "] ";
         status += "\033[33m" + std::string(firmwareVersion) + "\033[0m";
         status += ", uptime: \033[33m" + toStringWithPrecision(static_cast<double>(uptime.count()) / 1000.0, 1) + "\033[0m s";
-        status += ", BT: " + bleStatus();
+        status += ", BLE: " + bleStatus();
+#ifdef UD_CONNECTIVITY_WIFI
         status += ", WIFI: " + std::string(wifiStatus());
+#endif
+#ifdef UD_CONNECTIVITY_CELLULAR
+        status += ", NB-IoT: " + cellularStatus();
+#endif
         status += ", RTC \033[33m" + std::string(RtcDriver::isTimeSet() ? "OK" : "UNSYNCED") + "\033[0m";
         status += ", heap \033[33m" + toStringWithPrecision(heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024.0, 2) + "\033[0m kB";
         status += ", CPU: \033[33m" + std::to_string(esp_clk_cpu_freq() / 1000000) + "\033[0m MHz";
 
         if (battery != nullptr) {
             status += ", battery: \033[33m" + toStringWithPrecision(battery->getVoltage() / 1000.0, 2) + "\033[0m V";
+            auto current = battery->getCurrent();
+            if (current.has_value()) {
+                status += " / \033[33m" + std::to_string(static_cast<int>(*current)) + "\033[0m mA";
+            }
         }
 
         printf("\033[1G\033[0K%s", status.c_str());
@@ -60,6 +80,47 @@ private:
         fsync(fileno(stdout));
     }
 
+#ifdef UD_CONNECTIVITY_CELLULAR
+    std::string cellularStatus() const {
+        auto link = cellular->getStatus();
+        if (!link.modemUp) {
+            return "\033[0;31mNO MODEM\033[0m";
+        }
+        std::string result;
+        if (link.ipAddress) {
+            result = "\033[0;32m" + *link.ipAddress + "\033[0m";
+        } else if (link.registration) {
+            using drivers::cellular::RegistrationStatus;
+            switch (*link.registration) {
+                case RegistrationStatus::RegisteredHome:
+                case RegistrationStatus::RegisteredRoaming:
+                    result = "\033[0;33mIP?\033[0m";
+                    break;
+                case RegistrationStatus::Searching:
+                    result = "\033[0;33mSEARCHING\033[0m";
+                    break;
+                case RegistrationStatus::Denied:
+                    result = "\033[0;31mDENIED\033[0m";
+                    break;
+                case RegistrationStatus::NotSearching:
+                case RegistrationStatus::Unknown:
+                    result = "\033[0;31mNO SERVICE\033[0m";
+                    break;
+            }
+        } else {
+            result = "\033[0;33mSTARTING\033[0m";
+        }
+        if (link.rsrp) {
+            result += " RSRP \033[33m" + std::to_string(*link.rsrp) + "\033[0m dBm";
+        }
+        if (link.ecl) {
+            result += " ECL \033[33m" + std::to_string(*link.ecl) + "\033[0m";
+        }
+        return result;
+    }
+#endif
+
+#ifdef UD_CONNECTIVITY_WIFI
     static const char* wifiStatus() {
         auto* netif = esp_netif_get_default_netif();
         if (netif == nullptr) {
@@ -106,6 +167,7 @@ private:
         }
         return "\033[0;33mIP?\033[0m";
     }
+#endif
 
     std::string bleStatus() {
         switch (ble->getStatus()) {
@@ -127,7 +189,9 @@ private:
     }
 
     const std::shared_ptr<BatteryManager> battery;
-    const std::shared_ptr<WiFiDriver> wifi;
+#ifdef UD_CONNECTIVITY_CELLULAR
+    const std::shared_ptr<drivers::cellular::CellularDriver> cellular;
+#endif
     const std::shared_ptr<BleDriver> ble;
 
     size_t counter {};

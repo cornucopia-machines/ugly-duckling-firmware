@@ -170,16 +170,19 @@ static void startDevice() {
     }
 
     auto connectivity = initConnectivity(states, networkConfig, ble, deviceDefinition->getCellularModemPins());
-    auto& wifi = connectivity.wifi;
 
 #ifdef UD_DEBUG_CONSOLE
-    new DebugConsole(batteryManager, wifi, ble);
+    new DebugConsole(batteryManager,
+#ifdef UD_CONNECTIVITY_CELLULAR
+        connectivity.cellular,
+#endif
+        ble);
 #endif
 
     // Init MQTT connection
     // TODO(legacy-v1-topics): remove fallback and the macAddress parameter
     auto clientId = "ugly-duckling-" + (networkConfig->id.get().empty() ? macAddress : networkConfig->id.get());
-    auto mqttRoot = initMqtt(states, clientId, networkConfig, states->mqttReady);
+    auto mqttRoot = initMqtt(states, clientId, networkConfig, states->mqttReady, connectivity.mqttTransport);
     MqttLog::init(boot.deviceConfig->publishLogs.get(), bootCount, logRecords, mqttRoot);
     registerBasicCommands(mqttRoot);
     registerNvsCommands(mqttRoot);
@@ -205,9 +208,15 @@ static void startDevice() {
     // by the first SYNC this boot publishes.
     auto pendingFirmwareRejection = std::make_shared<std::optional<RejectionCode>>();
 
+#ifdef UD_CONNECTIVITY_WIFI
     // Handle any pending HTTP update (reboots after the attempt, whether it succeeds or not)
     registerHttpUpdateCommand(mqttRoot, legacyConfigNvs);
-    auto firmwareDownloadRejection = HttpUpdater::performPendingHttpUpdateIfNecessary(legacyConfigNvs, wifi, states->mqttReady, watchdog, firmwareVersion);
+    auto firmwareDownloadRejection = HttpUpdater::performPendingHttpUpdateIfNecessary(legacyConfigNvs, connectivity.wifi, states->mqttReady, watchdog, firmwareVersion);
+#else
+    // No OTA over the modem yet (docs/specs/NB-IoT.md, stage 5): the downloader needs lwIP. The
+    // update handler rejects firmware entries instead of scheduling one
+    std::optional<RejectionCode> firmwareDownloadRejection;
+#endif
 
     // Detect whether the bootloader rolled back from a failed OTA partition. This and a failed
     // download cannot co-occur: a failed download never writes a new partition, so there's nothing
@@ -277,10 +286,16 @@ static void startDevice() {
     auto peripheralsInitJson = runtime.peripheralsInitDoc.template as<JsonArray>();
     auto functionsInitJson = runtime.functionsInitDoc.template as<JsonArray>();
 
-    initTelemetryPublishTask(boot.deviceConfig->publishInterval.get(), watchdog, mqttRoot, batteryManager, powerManager, wifi, ble, runtime.telemetryCollector, telemetryPublishQueue);
+    initTelemetryPublishTask(boot.deviceConfig->publishInterval.get(), watchdog, mqttRoot, batteryManager, powerManager,
+#ifdef UD_CONNECTIVITY_WIFI
+        connectivity.wifi,
+#endif
+        ble, runtime.telemetryCollector, telemetryPublishQueue);
 
+#ifdef UD_CONNECTIVITY_WIFI
     // Enable power saving once we are done initializing
     WiFiDriver::setPowerSaveMode(boot.deviceConfig->sleepWhenIdle.get());
+#endif
 
     publishBootMessage(mqttRoot, resetReason, bootCount, consecutiveCrashes, firmwareVersion, macAddress, networkConfig, runtime.initState, peripheralsInitJson, functionsInitJson,
         powerManager, deviceDefinition, hardwareVersion, rejectionToReport, firmwareDownloadRejection, rollback);
@@ -292,13 +307,12 @@ static void startDevice() {
     // PENDING_VERIFY and will automatically revert if the device resets.
     confirmFirmwareValid();
 
-    LOGI("Device ready in %.2f s (kernel version %s on %s with hostname '%s' and IP '%s', SSID '%s', current time is %lld)",
+    // The network can come up later than this, especially NB-IoT; its driver logs the details then
+    LOGI("Device ready in %.2f s (kernel version %s on %s with hostname '%s', current time is %lld)",
         duration<double, seconds::period>(steady_clock::now().time_since_epoch()).count(),
         firmwareVersion.c_str(),
         modelWithRevision.c_str(),
         networkConfig->getHostname(macAddress).c_str(),
-        wifi->getIp().value_or("<no-ip>").c_str(),
-        wifi->getSsid().value_or("<no-ssid>").c_str(),
         duration_cast<seconds>(system_clock::now().time_since_epoch()).count());
 
 #ifdef CONFIG_HEAP_TASK_TRACKING

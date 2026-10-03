@@ -33,6 +33,9 @@ LOGGING_TAG(RTC, "rtc")
  *
  * The in-sync state is only ever signalled once the system clock itself holds a plausible
  * wall-clock time -- never merely because an SNTP call reported success.
+ *
+ * Without lwIP (cellular builds, where the modem has its own IP stack) there is no SNTP: the
+ * time only arrives through setTime().
  */
 class RtcDriver {
 public:
@@ -92,6 +95,16 @@ public:
         });
     }
 
+    /**
+     * @brief Without SNTP: the time only comes from setTime(), e.g. from the cellular modem.
+     */
+    explicit RtcDriver(StateSource& rtcInSync)
+        : rtcInSync(rtcInSync) {
+        if (isTimeSet()) {
+            markInSync("retained across reboot");
+        }
+    }
+
     static bool isTimeSet() {
         // The MCU boots with a timestamp of 0 seconds, so if the value is
         // much higher, then it means the RTC is set.
@@ -102,24 +115,27 @@ public:
         return rtcInSync;
     }
 
-    void setTime(time_t utcTime) {
+    /**
+     * @param source where the time came from, for the log
+     */
+    void setTime(time_t utcTime, const char* source = "BLE CTS") {
         // Never let a bogus value from the outside move a clock we already trust, and never
         // arm the in-sync state on a value that isn't a plausible wall-clock time.
         if (utcTime <= EARLIEST_PLAUSIBLE_TIME) {
-            LOGTW(RTC, "Ignoring implausible time %lld received via BLE CTS",
-                static_cast<long long>(utcTime));
+            LOGTW(RTC, "Ignoring implausible time %lld received via %s",
+                static_cast<long long>(utcTime), source);
             return;
         }
         struct timeval tv = { .tv_sec = utcTime, .tv_usec = 0 };
         settimeofday(&tv, nullptr);
-        markInSync("BLE CTS");
+        markInSync(source);
     }
+
+    static constexpr const char* DEFAULT_NTP_SERVER = "pool.ntp.org";
 
 private:
     // 2022-01-01 00:00:00 UTC: no time at or below this can be a real wall-clock time.
     static constexpr time_t EARLIEST_PLAUSIBLE_TIME = 1640995200;
-
-    static constexpr const char* DEFAULT_NTP_SERVER = "pool.ntp.org";
 
     // How often we surface diagnostics while we have no valid time; once we do have it,
     // we only wake up to observe the periodic re-syncs lwIP performs on its own.

@@ -11,6 +11,8 @@
 #include <drivers/LedDriver.hpp>
 #include <mqtt/MqttRoot.hpp>
 
+#include <esp_transport.h>
+
 #include <chrono>
 #include <memory>
 #include <string>
@@ -27,7 +29,10 @@ void initNvsFlash();
 
 std::shared_ptr<Watchdog> initWatchdog(seconds timeout);
 
-std::shared_ptr<MqttRoot> initMqtt(const std::shared_ptr<ModuleStates>& states, const std::string& clientId, const std::shared_ptr<NetworkConfig>& networkConfig, StateSource& mqttReady);
+/**
+ * @param transport what to connect over instead of lwIP (the cellular modem), or nullptr
+ */
+std::shared_ptr<MqttRoot> initMqtt(const std::shared_ptr<ModuleStates>& states, const std::string& clientId, const std::shared_ptr<NetworkConfig>& networkConfig, StateSource& mqttReady, esp_transport_handle_t transport);
 
 std::shared_ptr<BleDriver> initBle(
     const std::shared_ptr<DeviceConfiguration>& deviceConfig,
