@@ -76,6 +76,12 @@ void publishBootMessage(
 #else
             json["debug"] = false;
 #endif
+        // The link MQTT goes over. A build with both links will have to report the one in use
+#ifdef UD_CONNECTIVITY_WIFI
+            json["connectivity"] = "wifi";
+#elifdef UD_CONNECTIVITY_CELLULAR
+            json["connectivity"] = "cellular";
+#endif
             json["reset"] = resetReason;
             json["consecutiveCrashes"] = consecutiveCrashes;
             json["wakeup"] = esp_sleep_get_wakeup_causes();
