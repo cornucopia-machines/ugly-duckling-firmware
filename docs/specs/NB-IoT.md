@@ -127,8 +127,10 @@ That way one build can still be debugged over the pogo header, at the cost of NB
 
 ### Link quality in telemetry
 
-The cellular build adds link-quality fields to device telemetry (RSRP, RSRQ, SINR, ECL, cell ID,
-band, from `AT+QENG=0`), next to where the WiFi fields go. The server ignores fields it doesn't
+The cellular build adds a `cellular` section to device telemetry, next to where the WiFi fields
+go: `cell`, `band`, `rsrp`, `rsrq`, `sinr` and `ecl` from `AT+QENG=0` (as of the last
+registration check, while camped), plus `bytes-sent` / `bytes-received` over the modem since the
+last telemetry message. The server ignores fields it doesn't
 know, so this needs no server change up front; server-side handling follows once the shape has
 settled.
 
@@ -197,13 +199,12 @@ Goal: BOOT, SYNC (config/update request) and TELEMETRY reach the existing broker
 - [x] The transport stack follows the URI's scheme, since esp-mqtt ignores it once given a transport: TLS for `mqtts`/`wss`, IDF's WebSocket transport on top for `ws`/`wss`. WebSocket costs a few hundred bytes of HTTP upgrade per connection and 2–6 bytes per packet, so plain `mqtts` is the better choice for NB-IoT once the broker is reachable that way
 - [x] OTA off: reject `firmware` entries with `Unimplemented`, don't register `http-update`
 - [x] Time: `RtcDriver` takes time from the modem instead of SNTP. NITZ first, as `+CTZEU` (`AT+CTZR=3`), which carries UTC, so there's no offset to get wrong. `AT+QNTP` 30 s after the network is up if no NITZ came, then daily. (`AT+CTZU` is a BG96 command the BC660K doesn't have, and `+CCLK` would mean guessing whether the module reports local time)
-- [ ] Telemetry: link-quality fields from `AT+QENG=0`
+- [x] Telemetry: link-quality fields from `AT+QENG=0`, and bytes sent and received over the modem (see "Link quality in telemetry")
 - [x] `DebugConsole`: in cellular builds, show the cellular link in place of `WIFI: off` (registration state, IP address, RSRP/ECL). It refreshes every 250 ms, so it reads what `CellularDriver` last saw (`getStatus()`, updated on every registration check) rather than sending AT commands itself
-- [ ] Health check: MQTT keepalive / DNS lookup, **not** ping (ICMP is blocked on `SENSOR.NET`)
-- [ ] Recovery: `AT+QRST` on a modem that stops responding; on MK14+ pulse `RESET_N` instead
 - [x] Keep the modem awake (no PSM/eDRX) and the TCP+TLS session up for this stage, to separate "does it work" from "does it sleep"
 - [x] Demo: BOOT, SYNC and TELEMETRY visible on the server from a Desert Lark board (MK13, 1NCE). With the modem kept awake, a valve override from the web app also arrives within seconds; stage 4 has to keep that working with eDRX
-- [ ] Measure: bytes per hour and per message type, connect time, TLS handshake bytes (see open questions for how)
+- [x] Measure, on the device: bytes per telemetry interval (`cellular` telemetry), connect time (`Connected to MQTT server in … ms`), TLS handshake time and bytes (`Handshake with … done in …`)
+- [ ] Measure on the bench: bytes per hour and per message type, connect time, TLS handshake bytes (see open questions for how)
 
 To check on the first bench run:
 
@@ -219,6 +220,9 @@ To check on the first bench run:
 
 Goal: commands and UPDATE messages sent from the server arrive with predictable latency, and
 the modem sleeps between paging windows.
+
+- [ ] Health check: MQTT keepalive / DNS lookup, **not** ping (ICMP is blocked on `SENSOR.NET`). Moved from stage 3: once the modem sleeps, "not answering" looks different
+- [ ] Recovery: `AT+QRST` on a modem that stops responding; on MK14+ pulse `RESET_N` instead. On MK13 `AT+QRST` only helps while the modem still answers, and rebooting the ESP32 doesn't power-cycle the modem
 
 - [ ] Subscriptions over the AT transport (commands, UPDATE); check QoS 1 redelivery after a reconnect
 - [ ] Enable eDRX (`AT+CEDRXS` / `AT+QEDRXCFG`), with a configurable cycle; log what the network grants (`+CEDRXP`)
@@ -314,6 +318,7 @@ the UART, which isn't worth chasing before the stage 4 current measurements.
 
 - `AT+QENG=2` reports Tx/Rx time (radio-on) since the counters were last reset.
 - `AT+QIPERF` gives a baseline throughput figure for the cell we're on.
-- On the device, `AtSocketTransport` counts bytes per direction and logs them when a connection
-  closes; publishing them in telemetry, next to the link-quality fields, is still to do.
+- On the device, `AtSocketTransport` counts bytes per direction: per connection in the log when
+  it closes, and per telemetry interval in the `cellular` telemetry section. These are TLS
+  records and everything inside them, but not TCP/IP headers, ACKs or retransmissions.
 - 1NCE's portal shows per-SIM data usage. Use it to cross-check the device-side counters.

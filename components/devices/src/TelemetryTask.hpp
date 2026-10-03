@@ -11,6 +11,9 @@
 #ifdef UD_CONNECTIVITY_WIFI
 #include <drivers/WiFiDriver.hpp>
 #endif
+#ifdef UD_CONNECTIVITY_CELLULAR
+#include <drivers/cellular/CellularDriver.hpp>
+#endif
 
 #include <chrono>
 #include <memory>
@@ -30,6 +33,9 @@ void initTelemetryPublishTask(
     const std::shared_ptr<PowerManager>& powerManager,
 #ifdef UD_CONNECTIVITY_WIFI
     const std::shared_ptr<WiFiDriver>& wifi,
+#endif
+#ifdef UD_CONNECTIVITY_CELLULAR
+    const std::shared_ptr<cellular::CellularDriver>& cellular,
 #endif
     const std::shared_ptr<BleDriver>& ble,
     const std::shared_ptr<TelemetryCollector>& telemetryCollector,

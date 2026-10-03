@@ -559,10 +559,13 @@ private:
         switch (eventId) {
             case MQTT_EVENT_BEFORE_CONNECT: {
                 LOGTD(MQTT, "Connecting to MQTT server %s", serverAddress.c_str());
+                connectStartedAt = steady_clock::now();
                 break;
             }
             case MQTT_EVENT_CONNECTED: {
-                LOGTD(MQTT, "Connected to MQTT server");
+                // Socket, TLS and the MQTT CONNECT round trip: what a reconnect costs
+                LOGTI(MQTT, "Connected to MQTT server in %lld ms",
+                    static_cast<long long>(duration_cast<milliseconds>(steady_clock::now() - connectStartedAt).count()));
                 ready.set();
                 eventQueue.offerIn(MQTT_QUEUE_TIMEOUT, Connected { static_cast<bool>(event->session_present) });
                 break;
@@ -804,6 +807,9 @@ private:
     std::vector<std::function<void()>> connectedListeners;
 
     std::atomic<int> disconnectCount { 0 };
+
+    // Only touched by the event handler, which esp-mqtt calls one event at a time
+    steady_clock::time_point connectStartedAt;
 
     friend class MqttRoot;
 };

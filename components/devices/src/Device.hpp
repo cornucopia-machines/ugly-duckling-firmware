@@ -290,6 +290,9 @@ static void startDevice() {
 #ifdef UD_CONNECTIVITY_WIFI
         connectivity.wifi,
 #endif
+#ifdef UD_CONNECTIVITY_CELLULAR
+        connectivity.cellular,
+#endif
         ble, runtime.telemetryCollector, telemetryPublishQueue);
 
 #ifdef UD_CONNECTIVITY_WIFI

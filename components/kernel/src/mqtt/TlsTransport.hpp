@@ -147,6 +147,8 @@ private:
         // The handshake takes several round trips, each of which can take seconds over NB-IoT
         auto deadline = steady_clock::now() + HANDSHAKE_TIMEOUT;
         auto startedAt = steady_clock::now();
+        bytesSent = 0;
+        bytesReceived = 0;
         receiveTimeoutMs = static_cast<int>(duration_cast<milliseconds>(HANDSHAKE_ROUND_TRIP_TIMEOUT).count());
         while ((ret = mbedtls_ssl_handshake(&ssl)) != 0) {
             if ((ret != MBEDTLS_ERR_SSL_WANT_READ && ret != MBEDTLS_ERR_SSL_WANT_WRITE) || steady_clock::now() > deadline) {
@@ -156,9 +158,9 @@ private:
             }
         }
         // Worth knowing: the handshake is a large part of what connecting costs over NB-IoT
-        LOGTI(TLS, "Handshake with %s done in %lld ms, %s", host,
+        LOGTI(TLS, "Handshake with %s done in %lld ms, %zu bytes sent, %zu received, %s", host,
             static_cast<long long>(duration_cast<milliseconds>(steady_clock::now() - startedAt).count()),
-            mbedtls_ssl_get_ciphersuite(&ssl));
+            bytesSent, bytesReceived, mbedtls_ssl_get_ciphersuite(&ssl));
         return 0;
     }
 
@@ -206,7 +208,11 @@ private:
     static int sendToParent(void* context, const unsigned char* buffer, size_t length) {
         auto* tls = static_cast<TlsTransport*>(context);
         int ret = esp_transport_write(tls->parent, reinterpret_cast<const char*>(buffer), static_cast<int>(length), 0);
-        return ret < 0 ? MBEDTLS_ERR_NET_SEND_FAILED : ret;
+        if (ret < 0) {
+            return MBEDTLS_ERR_NET_SEND_FAILED;
+        }
+        tls->bytesSent += static_cast<size_t>(ret);
+        return ret;
     }
 
     static int receiveFromParent(void* context, unsigned char* buffer, size_t length) {
@@ -215,7 +221,11 @@ private:
         if (ret == ERR_TCP_TRANSPORT_CONNECTION_TIMEOUT) {
             return MBEDTLS_ERR_SSL_WANT_READ;
         }
-        return ret < 0 ? MBEDTLS_ERR_NET_RECV_FAILED : ret;
+        if (ret < 0) {
+            return MBEDTLS_ERR_NET_RECV_FAILED;
+        }
+        tls->bytesReceived += static_cast<size_t>(ret);
+        return ret;
     }
 
     void logHandshakeFailure(const char* host, int ret) {
@@ -266,6 +276,11 @@ private:
 
     // How long a read from the parent may wait, set before each call into mbedTLS
     int receiveTimeoutMs = 0;
+
+    // Bytes through the parent since the handshake started, records and all: what TLS costs
+    // to set up over a metered link
+    size_t bytesSent = 0;
+    size_t bytesReceived = 0;
 };
 
 }    // namespace cornucopia::ugly_duckling::kernel::mqtt

@@ -13,6 +13,9 @@
 #ifdef UD_CONNECTIVITY_WIFI
 #include "drivers/WiFiDriver.hpp"
 #endif
+#ifdef UD_CONNECTIVITY_CELLULAR
+#include "drivers/cellular/CellularDriver.hpp"
+#endif
 
 #include <bits/chrono.h>
 #include <esp_heap_caps.h>
@@ -51,6 +54,9 @@ void initTelemetryPublishTask(
 #ifdef UD_CONNECTIVITY_WIFI
     const std::shared_ptr<WiFiDriver>& wifi,
 #endif
+#ifdef UD_CONNECTIVITY_CELLULAR
+    const std::shared_ptr<cellular::CellularDriver>& cellular,
+#endif
     const std::shared_ptr<BleDriver>& ble,
     const std::shared_ptr<TelemetryCollector>& telemetryCollector,
     const std::shared_ptr<CopyQueue<bool>>& telemetryPublishQueue) {
@@ -82,6 +88,10 @@ void initTelemetryPublishTask(
 #ifdef UD_CONNECTIVITY_WIFI
             auto wifiData = telemetry["wifi"].to<JsonObject>();
             wifi->populateTelemetry(wifiData);
+#endif
+#ifdef UD_CONNECTIVITY_CELLULAR
+            auto cellularData = telemetry["cellular"].to<JsonObject>();
+            cellular->populateTelemetry(cellularData);
 #endif
 
             auto mqttData = telemetry["mqtt"].to<JsonObject>();

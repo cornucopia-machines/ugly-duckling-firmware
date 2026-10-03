@@ -110,11 +110,11 @@ private:
         } else {
             result = "\033[0;33mSTARTING\033[0m";
         }
-        if (link.rsrp) {
-            result += " RSRP \033[33m" + std::to_string(*link.rsrp) + "\033[0m dBm";
+        if (link.servingCell && link.servingCell->rsrp) {
+            result += " RSRP \033[33m" + std::to_string(*link.servingCell->rsrp) + "\033[0m dBm";
         }
-        if (link.ecl) {
-            result += " ECL \033[33m" + std::to_string(*link.ecl) + "\033[0m";
+        if (link.servingCell && link.servingCell->ecl) {
+            result += " ECL \033[33m" + std::to_string(*link.servingCell->ecl) + "\033[0m";
         }
         return result;
     }
