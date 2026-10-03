@@ -25,6 +25,7 @@
 #include <Restart.hpp>
 #include <mqtt/MqttDriver.hpp>
 
+#include <esp_transport.h>
 #include <esp_wifi.h>
 #include <nvs_flash.h>
 
@@ -106,10 +107,10 @@ std::shared_ptr<Watchdog> initWatchdog(seconds timeout) {
     });
 }
 
-std::shared_ptr<MqttRoot> initMqtt(const std::shared_ptr<ModuleStates>& states, const std::string& clientId, const std::shared_ptr<NetworkConfig>& networkConfig, StateSource& mqttReady) {
+std::shared_ptr<MqttRoot> initMqtt(const std::shared_ptr<ModuleStates>& states, const std::string& clientId, const std::shared_ptr<NetworkConfig>& networkConfig, StateSource& mqttReady, esp_transport_handle_t transport) {
     // NetworkConfig inherits from MqttDriver::Config, so we can upcast
     auto mqttConfig = std::static_pointer_cast<MqttDriver::Config>(networkConfig);
-    auto mqtt = std::make_shared<MqttDriver>(states->networkReady, mqttConfig, clientId, mqttReady);
+    auto mqtt = std::make_shared<MqttDriver>(states->networkReady, mqttConfig, clientId, mqttReady, transport);
     return std::make_shared<MqttRoot>(mqtt, networkConfig->getTopicRoot());
 }
 

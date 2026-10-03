@@ -187,9 +187,13 @@ inline const char* toString(AtResult result) {
  *
  * @param command the command as sent, without the trailing CR; its echo is dropped, in case the
  * module still has echo on (ATE1 is the power-on default)
+ * @param awaitAfterOk for commands whose actual outcome follows the OK on a line of its own, such
+ * as "SEND OK" after AT+QISEND or "+QIOPEN: 0,0" after AT+QIOPEN: the prefix of that line. The
+ * response is then only complete once such a line has arrived; it ends up among the lines.
  */
-inline std::optional<AtResponse> parseAtResponse(std::string_view buffer, std::string_view command) {
+inline std::optional<AtResponse> parseAtResponse(std::string_view buffer, std::string_view command, std::string_view awaitAfterOk = {}) {
     AtResponse response { .result = AtResult::Timeout, .lines = {}, .error = {} };
+    bool gotOk = false;
     while (true) {
         auto newline = buffer.find('\n');
         if (newline == std::string_view::npos) {
@@ -209,9 +213,20 @@ inline std::optional<AtResponse> parseAtResponse(std::string_view buffer, std::s
         if (line.empty() || line == command) {
             continue;
         }
+        if (gotOk) {
+            response.lines.emplace_back(line);
+            if (line.starts_with(awaitAfterOk)) {
+                return response;
+            }
+            continue;
+        }
         if (line == "OK") {
             response.result = AtResult::Ok;
-            return response;
+            if (awaitAfterOk.empty()) {
+                return response;
+            }
+            gotOk = true;
+            continue;
         }
         if (line == "ERROR") {
             response.result = AtResult::Error;

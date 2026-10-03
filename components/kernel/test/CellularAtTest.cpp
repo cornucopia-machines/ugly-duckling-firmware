@@ -1,7 +1,12 @@
 #include <catch2/catch_test_macros.hpp>
 #include <drivers/cellular/AtResponse.hpp>
+#include <drivers/cellular/AtSocket.hpp>
 #include <drivers/cellular/Cereg.hpp>
+#include <drivers/cellular/NetworkTime.hpp>
 #include <drivers/cellular/RadioStatus.hpp>
+
+#include <array>
+#include <cstdint>
 
 using namespace cornucopia::ugly_duckling::kernel::drivers::cellular;
 
@@ -48,6 +53,30 @@ TEST_CASE("parseAtResponse reports +CME ERROR with its text") {
     REQUIRE(response.has_value());
     REQUIRE(response->result == AtResult::CmeError);
     REQUIRE(response->error == "SIM not inserted");
+}
+
+TEST_CASE("parseAtResponse with awaitAfterOk waits for the line after OK") {
+    REQUIRE_FALSE(parseAtResponse("\r\nOK\r\n", "AT+QISEND=0,2,\"0102\"", "SEND ").has_value());
+
+    auto response = parseAtResponse("\r\nOK\r\n\r\nSEND OK\r\n", "AT+QISEND=0,2,\"0102\"", "SEND ");
+
+    REQUIRE(response.has_value());
+    REQUIRE(response->result == AtResult::Ok);
+    REQUIRE(response->lines == std::vector<std::string> { "SEND OK" });
+}
+
+TEST_CASE("parseAtResponse with awaitAfterOk keeps URCs that arrive in between") {
+    auto response = parseAtResponse("\r\nOK\r\n\r\n+CEREG: 5\r\n\r\n+QIOPEN: 0,0\r\n", "AT+QIOPEN=0,0,\"TCP\",\"example.com\",8883,0,0", "+QIOPEN:");
+
+    REQUIRE(response.has_value());
+    REQUIRE(response->lines == std::vector<std::string> { "+CEREG: 5", "+QIOPEN: 0,0" });
+}
+
+TEST_CASE("parseAtResponse with awaitAfterOk ends on ERROR before OK") {
+    auto response = parseAtResponse("\r\nERROR\r\n", "AT+QICLOSE=0", "CLOSE OK");
+
+    REQUIRE(response.has_value());
+    REQUIRE(response->result == AtResult::Error);
 }
 
 TEST_CASE("AtResponse::find returns the value after a prefix") {
@@ -224,4 +253,113 @@ TEST_CASE("parseQengServingCell reads a serving cell") {
 TEST_CASE("parseQengServingCell ignores neighbor cell lines and short lines") {
     REQUIRE_FALSE(parseQengServingCell("+QENG: 1,6449,185,-110,-15").has_value());
     REQUIRE_FALSE(parseQengServingCell("+QENG: 0,6449,0,184").has_value());
+}
+
+TEST_CASE("toHex and fromHex round-trip arbitrary bytes") {
+    const std::array<uint8_t, 6> bytes { 0x00, 0x0D, 0x0A, 0x7F, 0xAB, 0xFF };
+
+    auto hex = toHex(bytes.data(), bytes.size());
+    REQUIRE(hex == "000D0A7FABFF");
+
+    std::array<uint8_t, 6> decoded {};
+    REQUIRE(fromHex(hex, decoded.data()));
+    REQUIRE(decoded == bytes);
+    // Lowercase works too
+    REQUIRE(fromHex("abff", decoded.data()));
+    REQUIRE(decoded[0] == 0xAB);
+}
+
+TEST_CASE("fromHex rejects odd lengths and non-hex digits") {
+    std::array<uint8_t, 2> out {};
+    REQUIRE_FALSE(fromHex("ABC", out.data()));
+    REQUIRE_FALSE(fromHex("AG", out.data()));
+}
+
+TEST_CASE("parseQird reads data with the remaining length") {
+    auto read = parseQird("+QIRD: 3,17,\"16030A\"");
+
+    REQUIRE(read.has_value());
+    REQUIRE(read->length == 3);
+    REQUIRE(read->remaining == 17);
+    REQUIRE(read->hex == "16030A");
+}
+
+TEST_CASE("parseQird reads data without the remaining length") {
+    auto read = parseQird("+QIRD: 2,\"3132\"");
+
+    REQUIRE(read.has_value());
+    REQUIRE(read->length == 2);
+    REQUIRE_FALSE(read->remaining.has_value());
+    REQUIRE(read->hex == "3132");
+}
+
+TEST_CASE("parseQird reads an empty buffer") {
+    auto read = parseQird("+QIRD: 0");
+
+    REQUIRE(read.has_value());
+    REQUIRE(read->length == 0);
+}
+
+TEST_CASE("parseQird rejects data that doesn't match its length") {
+    REQUIRE_FALSE(parseQird("+QIRD: 3,0,\"3132\"").has_value());
+    REQUIRE_FALSE(parseQird("+QIURC: \"recv\",0").has_value());
+}
+
+TEST_CASE("parseQiopen reads the result for the connection") {
+    REQUIRE(parseQiopen("+QIOPEN: 0,0", 0) == 0);
+    REQUIRE(parseQiopen("+QIOPEN: 0,566", 0) == 566);
+    REQUIRE_FALSE(parseQiopen("+QIOPEN: 1,0", 0).has_value());
+}
+
+TEST_CASE("parseQiurc recognizes the socket URCs") {
+    auto recv = parseQiurc("+QIURC: \"recv\",0,123");
+    REQUIRE(recv.has_value());
+    REQUIRE(recv->type == SocketEventType::DataAvailable);
+    REQUIRE(recv->connectId == 0);
+
+    auto full = parseQiurc("+QIURC: \"recv\",0,\"buff full\"");
+    REQUIRE(full.has_value());
+    REQUIRE(full->type == SocketEventType::BufferFull);
+
+    auto closed = parseQiurc("+QIURC: \"closed\",1");
+    REQUIRE(closed.has_value());
+    REQUIRE(closed->type == SocketEventType::Closed);
+    REQUIRE(closed->connectId == 1);
+
+    REQUIRE_FALSE(parseQiurc("+QIURC: \"incoming\",1,0").has_value());
+    REQUIRE_FALSE(parseQiurc("+CEREG: 1").has_value());
+}
+
+TEST_CASE("parseModemTimestamp reads UTC timestamps") {
+    // 2026-10-03T12:34:56Z
+    REQUIRE(parseModemTimestamp("2026/10/03,12:34:56") == 1791030896);
+    REQUIRE(parseModemTimestamp("26/10/03,12:34:56") == 1791030896);
+    REQUIRE(parseModemTimestamp("1970/01/01,00:00:00") == 0);
+    // Leap day
+    REQUIRE(parseModemTimestamp("2024/02/29,00:00:00") == 1709164800);
+}
+
+TEST_CASE("parseModemTimestamp converts local time with a zone to UTC") {
+    // The AT manual's example: 22:10:00 at GMT+2 is 20:10:00 UTC
+    REQUIRE(parseModemTimestamp("14/05/06,22:10:00+08") == parseModemTimestamp("14/05/06,20:10:00"));
+    REQUIRE(parseModemTimestamp("14/05/06,18:10:00-08") == parseModemTimestamp("14/05/06,20:10:00"));
+}
+
+TEST_CASE("parseModemTimestamp rejects malformed input") {
+    REQUIRE_FALSE(parseModemTimestamp("").has_value());
+    REQUIRE_FALSE(parseModemTimestamp("2026/10/03").has_value());
+    REQUIRE_FALSE(parseModemTimestamp("2026/13/03,12:34:56").has_value());
+    REQUIRE_FALSE(parseModemTimestamp("2026/10/03,12-34-56").has_value());
+    REQUIRE_FALSE(parseModemTimestamp("2026/10/03,12:34:56*08").has_value());
+}
+
+TEST_CASE("parseCtzeu reads the universal time") {
+    REQUIRE(parseCtzeu("+CTZEU: \"+08\",1,\"2026/10/03,12:34:56\"") == 1791030896);
+    // Time zone only: the network doesn't have to send the time
+    REQUIRE_FALSE(parseCtzeu("+CTZEU: \"+08\",1").has_value());
+}
+
+TEST_CASE("parseQntp reads the time of a successful sync") {
+    REQUIRE(parseQntp("+QNTP: 0,\"2026/10/03,12:34:56\"") == 1791030896);
+    REQUIRE_FALSE(parseQntp("+QNTP: 565").has_value());
 }

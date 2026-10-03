@@ -6,10 +6,13 @@
 #include "Telemetry.hpp"
 #include "Watchdog.hpp"
 #include "drivers/BleDriver.hpp"
-#include "drivers/WiFiDriver.hpp"
 #include "mqtt/MqttDriver.hpp"
 #include "mqtt/MqttRoot.hpp"
 #include <TelemetryTask.hpp>
+
+#ifdef UD_CONNECTIVITY_WIFI
+#include "drivers/WiFiDriver.hpp"
+#endif
 
 #include <bits/chrono.h>
 #include <esp_heap_caps.h>
@@ -45,18 +48,20 @@ void initTelemetryPublishTask(
     const std::shared_ptr<MqttRoot>& mqttRoot,
     const std::shared_ptr<BatteryManager>& batteryManager,
     const std::shared_ptr<PowerManager>& powerManager,
+#ifdef UD_CONNECTIVITY_WIFI
     const std::shared_ptr<WiFiDriver>& wifi,
+#endif
     const std::shared_ptr<BleDriver>& ble,
     const std::shared_ptr<TelemetryCollector>& telemetryCollector,
     const std::shared_ptr<CopyQueue<bool>>& telemetryPublishQueue) {
-    Task::loop("telemetry", 5120, [publishInterval, watchdog, mqttRoot, batteryManager, powerManager, wifi, ble, telemetryCollector, telemetryPublishQueue](Task& task) {
+    Task::loop("telemetry", 5120, [=](Task& task) {
         task.markWakeTime();
 
         if (batteryManager != nullptr) {
             ble->setBatteryLevel(static_cast<uint8_t>(batteryManager->getPercentage()));
         }
 
-        mqttRoot->publish("telemetry", [batteryManager, powerManager, wifi, mqttRoot, telemetryCollector](JsonObject& telemetry) {
+        mqttRoot->publish("telemetry", [=](JsonObject& telemetry) {
             telemetry["uptime"] = duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count();
             telemetry["timestamp"] = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
 
@@ -74,8 +79,10 @@ void initTelemetryPublishTask(
                 }
             }
 
+#ifdef UD_CONNECTIVITY_WIFI
             auto wifiData = telemetry["wifi"].to<JsonObject>();
             wifi->populateTelemetry(wifiData);
+#endif
 
             auto mqttData = telemetry["mqtt"].to<JsonObject>();
             mqttRoot->mqtt->populateTelemetry(mqttData);

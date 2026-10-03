@@ -4,12 +4,16 @@
 #include <NetworkConfig.hpp>
 #include <drivers/BleDriver.hpp>
 #include <drivers/RtcDriver.hpp>
-#include <drivers/WiFiDriver.hpp>
 #include <drivers/cellular/CellularModemPins.hpp>
 
+#ifdef UD_CONNECTIVITY_WIFI
+#include <drivers/WiFiDriver.hpp>
+#endif
 #ifdef UD_CONNECTIVITY_CELLULAR
 #include <drivers/cellular/CellularDriver.hpp>
 #endif
+
+#include <esp_transport.h>
 
 #include <memory>
 #include <optional>
@@ -17,21 +21,25 @@
 using namespace cornucopia::ugly_duckling::kernel;
 
 /**
- * @brief Creates WiFi + RTC drivers and wires up BLE ↔ WiFi callbacks (time sync, scan
- * requests, credential provisioning, connection control, and status notifications).
+ * @brief Creates the network and RTC drivers for the links the build has (UD_CONNECTIVITY).
  *
- * Returns WiFi and RTC drivers; RTC is also captured by BLE closures so it stays alive as
- * long as BLE does.
+ * WiFi wires up BLE <-> WiFi callbacks: scan requests, credential provisioning, connection
+ * control, and status notifications. The RTC syncs over SNTP when there is WiFi, since that needs
+ * lwIP; without it the time comes from the modem. Either way, BLE can set the time too, and
+ * captures the RTC so it stays alive as long as BLE does.
  *
- * With UD_CONNECTIVITY=CELLULAR, also starts the NB-IoT modem on boards that have one. For now
- * it runs next to WiFi, which still carries all traffic (docs/specs/NB-IoT.md, stage 2).
+ * The NB-IoT modem (docs/specs/NB-IoT.md) throws on a board without a modem connector.
  */
 struct ConnectivityDrivers {
+#ifdef UD_CONNECTIVITY_WIFI
     std::shared_ptr<WiFiDriver> wifi;
-    std::shared_ptr<RtcDriver> rtc;
+#endif
 #ifdef UD_CONNECTIVITY_CELLULAR
     std::shared_ptr<cellular::CellularDriver> cellular;
 #endif
+    std::shared_ptr<RtcDriver> rtc;
+    // The transport MQTT connects over; nullptr for lwIP's own
+    esp_transport_handle_t mqttTransport = nullptr;
 };
 
 ConnectivityDrivers initConnectivity(

@@ -40,8 +40,8 @@ The BC660K-GL has no PPP, so lwIP can't run over it. That leaves two ways to do 
    second MQTT stack next to esp-mqtt, with its own QoS, reconnect and TLS behavior, plus its own
    payload size limits. `MqttDriver` would need a parallel implementation.
 2. **esp-mqtt over a custom `esp_transport`** built on the modem's TCP socket commands
-   (`AT+QIOPEN` / `QISEND` / `QIRD`). `esp_mqtt_client_config_t.network.transport` already
-   accepts a custom transport (today it's `nullptr` in `MqttDriver::configMqttClient()`), so
+   (`AT+QIOPEN` / `QISEND` / `QIRD`). `esp_mqtt_client_config_t.network.transport` accepts a
+   custom transport (`nullptr` for WiFi builds in `MqttDriver::configMqttClient()`), so
    `MqttDriver` itself stays almost untouched, and the bytes on the wire are the same as over WiFi.
 
 **We go with option 2.** None of the protocols is ours to implement:
@@ -51,15 +51,16 @@ The BC660K-GL has no PPP, so lwIP can't run over it. That leaves two ways to do 
 | MQTT | esp-mqtt (already used) |
 | TLS | mbedTLS (already used) |
 | AT framing, command/response matching, URC dispatch, generic 3GPP commands | [`espressif/esp_modem`](https://components.espressif.com/components/espressif/esp_modem), command mode |
-| AT socket → `esp_transport` glue | Adapted from esp_modem's [`modem_tcp_client`](https://github.com/espressif/esp-protocols/tree/master/components/esp_modem/examples/modem_tcp_client) example |
+| AT socket → `esp_transport` glue | Ours (`AtSocketTransport`), modelled on `tcp_transport_at.cpp` from esp_modem's [`modem_tcp_client`](https://github.com/espressif/esp-protocols/tree/master/components/esp_modem/examples/modem_tcp_client) example |
+| TLS over that transport | Ours (`TlsTransport`), mbedTLS directly |
 | BC660K-specific commands | Ours (`Bc660KDriver`) |
 
 The `modem_tcp_client` example is exactly this setup: `tcp_transport_at.cpp` plugged into
 esp-mqtt, a `sock_dce` layer, and per-chip `sock_commands_bg96.cpp` / `sock_commands_sim7600.cpp`.
-The BG96 is a Quectel module using the same `QI*` socket commands as the BC660K. It is an
-example rather than a component, so we vendor what we need; it is `Unlicense OR CC0-1.0`, so
-there's no licensing constraint. What's left for us is the BC660K command file and the
-lifecycle around it.
+The BG96 is a Quectel module using the same `QI*` socket commands as the BC660K. We kept the
+shape (an `esp_transport` over the module's socket commands) but not the `sock_dce` layer: it
+moves raw bytes, with a `>` prompt to wait for on send and binary data in the middle of the
+`QIRD` response, which our line-based command path can't take. See "Socket data as hex" below.
 
 Alternatives looked at:
 [TeschRenan/BC660K-GL](https://github.com/TeschRenan/BC660K-GL) (MIT, ESP-IDF, BC660K-specific)
@@ -67,20 +68,31 @@ brings its own UART and AT layers, duplicating esp_modem, and has no esp-mqtt tr
 dependency, but a useful second reference for BC660K response formats. The other BC660K libraries
 are Arduino or Mbed.
 
-TLS runs on the ESP32 with mbedTLS, layered over the AT socket (the example shows how). That
-keeps certificate handling identical to the WiFi path (`configServerCert`), keeps the TLS
-endpoint ours rather than the modem firmware's, and is the same mbedTLS we will need for DTLS
-later. RAM shouldn't be a problem: the WiFi path already runs MQTT over TLS, and a cellular build
-doesn't start the WiFi driver, lwIP's WiFi netif or their buffers, so it should need less
-internal RAM, not more.
+TLS runs on the ESP32 with mbedTLS, layered over the AT socket. esp-tls can't do this (it opens
+its own lwIP socket), and the example's `tls_transport.cpp` skips certificate verification, so
+`TlsTransport` drives mbedTLS directly. That keeps certificate handling identical to the WiFi path
+(`configServerCert`, verification required, hostname checked), keeps the TLS endpoint ours rather
+than the modem firmware's, and is the same mbedTLS we will need for DTLS later. RAM shouldn't be
+a problem: the WiFi path already runs MQTT over TLS, and a cellular build doesn't start the WiFi
+driver, lwIP's WiFi netif or their buffers, so it should need less internal RAM, not more.
+
+### Socket data as hex
+
+The BC660K can take socket data as hex instead of raw bytes (`AT+QICFG="dataformat",1,1`). Then
+`AT+QISEND=0,<len>,"<hex>"` and `+QIRD: <len>,<remaining>,"<hex>"` are ordinary text lines, so
+sends and reads go through the same command path, response parser and URC handling as every
+other command, and binary data never reaches the line parser. The cost is twice the bytes on the
+UART and 1024 bytes per `QISEND` instead of 2048. Neither matters: 115200 baud is about 8× what
+NB-IoT delivers, and the bytes over the air are the same.
 
 ### Leave room for other chipsets
 
 ```text
-CellularDriver              ← owns the UART, power/wake, registration, networkReady, telemetry
-  └─ CellularModuleDriver   ← chipset-specific AT: init sequence, sockets, URC parsing, time
+CellularDriver              ← owns the UART, power/wake, registration, networkReady, time, telemetry
+  └─ CellularModuleDriver   ← chipset-specific AT: init sequence, sockets, URC parsing, NTP
        └─ Bc660KDriver      ← esp_modem GenericModule subclass; Quectel QI*/QENG/QSCLK commands
 AtSocketTransport           ← esp_transport for esp-mqtt, talks only to CellularModuleDriver's socket API
+TlsTransport                ← mbedTLS over any esp_transport; MqttDriver wraps AtSocketTransport in it
 ```
 
 Supporting another modem then means adding another `CellularModuleDriver`, the same way the
@@ -95,9 +107,16 @@ setting with named values, rather than a `UD_CELLULAR` boolean, makes the two op
 exclusive by construction, and leaves room for `BOTH` until this becomes a runtime choice. CMake
 rejects anything else, and rejects `CELLULAR` on Spinach.
 
-Both drivers set the same `networkReady` state, so `MqttDriver`, `TelemetryTask` and the rest
-don't need to know which link is in use. Later this becomes a `network-config` setting, and
-later still, use whichever link is available.
+CMake turns the setting into one compile definition per link, `UD_CONNECTIVITY_WIFI` or
+`UD_CONNECTIVITY_CELLULAR`. Code is gated on the link it needs (the WiFi driver, OTA and the
+`wifi` telemetry section on `UD_CONNECTIVITY_WIFI`; the modem on `UD_CONNECTIVITY_CELLULAR`),
+never on the other one being absent, so a `BOTH` build only has to define both.
+
+Both drivers set the same `networkReady` state, so `MqttDriver` and the rest don't need to know
+which link is in use. Each logs the details of its link (SSID or cell, and the IP address) when
+the network comes up; the "Device ready" line no longer does, since with NB-IoT the device is
+often ready before the network is. Later this becomes a `network-config` setting, and later
+still, use whichever link is available.
 
 ### UART0 console fallback
 
@@ -116,7 +135,7 @@ settled.
 ### OTA is off in cellular builds until stage 5
 
 `HttpUpdater` downloads with `esp_http_client` over lwIP and waits on `WiFiDriver` directly, so it
-can't work over the modem. In a `CELLULAR` build:
+can't work over the modem. In a build without WiFi:
 
 - the `update` handler answers a `firmware` entry with `RejectionCode::Unimplemented`, so the
   server stops retrying instead of the device rebooting into an update attempt that is bound to
@@ -166,21 +185,35 @@ Follow-ups, not needed for stage 3:
 
 Goal: BOOT, SYNC (config/update request) and TELEMETRY reach the existing broker over NB-IoT.
 
-- [ ] `initConnectivity()` builds `CellularDriver` instead of `WiFiDriver`; BLE WiFi provisioning hooks skipped
-- [ ] Registration state machine driven by `AT+CEREG=3` URCs. Parse the two `+CEREG` shapes separately (the URC leads with `<stat>`, the read response with `<n>`), and surface the EMM reject cause (no coverage vs subscription refused)
-- [ ] `networkConnecting` / `networkReady` set from registration + PDP context (cid 0)
-- [ ] `AtSocketTransport` adapted from `tcp_transport_at.cpp`: `QIOPEN` (hostname directly or via `QIDNSGIP`, context 0 only), `QISEND`, `QIRD` in **buffer access mode**, `+QIURC: "recv"` / `"closed"` URCs
-- [ ] Chunk writes at 2048 B (`QISEND`) and reads at 512 B (`QIRD`), and confirm on the bench (see open questions)
-- [ ] mbedTLS over the AT transport; same server cert as WiFi
-- [ ] `MqttDriver`: pass the custom transport in cellular builds; raise the keepalive (see open questions)
-- [ ] OTA off: reject `firmware` entries with `Unimplemented`, don't register `http-update`
-- [ ] Time: `RtcDriver` takes time from the modem instead of SNTP. NITZ (`AT+CTZU=1`, `AT+CCLK?`) first, `AT+QNTP` as fallback (parse the offset, it's not UTC). Note whether 1NCE delivers NITZ (for cornucopia-app#507)
+- [x] `initConnectivity()` builds `CellularDriver` instead of `WiFiDriver`; BLE WiFi provisioning hooks skipped (BLE can still set the time). Telemetry leaves out the `wifi` section. A cellular build on a board without a modem connector throws at startup instead of running offline for good
+- [x] Registration state machine: a `+CEREG` URC triggers a fresh `AT+CEREG?` straight away, on top of the polling from stage 2. The two `+CEREG` shapes are parsed separately (the URC leads with `<stat>`, the read response with `<n>`), and the EMM reject cause is logged (no coverage vs subscription refused)
+- [x] `networkConnecting` / `networkReady` set from registration + an address on PDP context 0 (`AT+CGPADDR=0`; the `+IP:` URC also triggers a look)
+- [x] DNS: `AT+QIDNSCFG=0` after attach; fall back to public servers only when the network hands out none
+- [x] `AtSocketTransport`, modelled on `tcp_transport_at.cpp`: `QIOPEN` with the hostname directly (context 0), `QISEND`, `QIRD` in **buffer access mode**, `+QIURC: "recv"` / `"closed"` URCs, and a `QIRD` every 10 s even without a URC, in case one was lost. Socket data as hex (see "Socket data as hex"). Logs bytes sent and received per connection
+- [x] Commands whose outcome follows the `OK` (`SEND OK`, `+QIOPEN:`, `CLOSE OK`, `+QNTP:`) wait for that line as part of the command, since esp_modem drops whatever follows a completed command in the same read. URCs that arrive in the middle of a command's response go to the URC handler instead of being lost among its lines
+- [x] Chunk writes at 1024 B (`QISEND` in hex mode) and reads at 512 B (`QIRD`)
+- [x] mbedTLS over the AT transport (`TlsTransport`); same server cert, optional client cert, verification required. Logs how long the handshake took
+- [x] `MqttDriver`: pass the custom transport in cellular builds; keepalive 10 min (pings every 5 min, about 58 KB/day) until the NAT timeout is measured, network timeout 30 s, 8 KB task stack for TLS on top of the AT layer
+- [x] The transport stack follows the URI's scheme, since esp-mqtt ignores it once given a transport: TLS for `mqtts`/`wss`, IDF's WebSocket transport on top for `ws`/`wss`. WebSocket costs a few hundred bytes of HTTP upgrade per connection and 2–6 bytes per packet, so plain `mqtts` is the better choice for NB-IoT once the broker is reachable that way
+- [x] OTA off: reject `firmware` entries with `Unimplemented`, don't register `http-update`
+- [x] Time: `RtcDriver` takes time from the modem instead of SNTP. NITZ first, as `+CTZEU` (`AT+CTZR=3`), which carries UTC, so there's no offset to get wrong. `AT+QNTP` 30 s after the network is up if no NITZ came, then daily. (`AT+CTZU` is a BG96 command the BC660K doesn't have, and `+CCLK` would mean guessing whether the module reports local time)
 - [ ] Telemetry: link-quality fields from `AT+QENG=0`
+- [x] `DebugConsole`: in cellular builds, show the cellular link in place of `WIFI: off` (registration state, IP address, RSRP/ECL). It refreshes every 250 ms, so it reads what `CellularDriver` last saw (`getStatus()`, updated on every registration check) rather than sending AT commands itself
 - [ ] Health check: MQTT keepalive / DNS lookup, **not** ping (ICMP is blocked on `SENSOR.NET`)
 - [ ] Recovery: `AT+QRST` on a modem that stops responding; on MK14+ pulse `RESET_N` instead
-- [ ] Keep the modem awake (no PSM/eDRX) and the TCP+TLS session up for this stage, to separate "does it work" from "does it sleep"
-- [ ] Demo: BOOT, SYNC and TELEMETRY visible on the server from a Desert Lark board
+- [x] Keep the modem awake (no PSM/eDRX) and the TCP+TLS session up for this stage, to separate "does it work" from "does it sleep"
+- [x] Demo: BOOT, SYNC and TELEMETRY visible on the server from a Desert Lark board (MK13, 1NCE). With the modem kept awake, a valve override from the web app also arrives within seconds; stage 4 has to keep that working with eDRX
 - [ ] Measure: bytes per hour and per message type, connect time, TLS handshake bytes (see open questions for how)
+
+To check on the first bench run:
+
+- [x] Hex mode applies to `QIRD` output in buffer access mode too: TLS and MQTT run over it
+- [ ] `SEND OK` arrives after the `OK` as documented; what makes `SEND FAIL` happen, if anything does (the driver retries three times, 1 s apart)
+- [x] 1NCE (Telekom `21630`, roaming) sends NITZ with the time on attach: `+CTZEU: "+8",1,"2026/10/02,23:50:20"` (for cornucopia-app#507). Note the time zone came as `+8`, not the zero-padded `+08` the manual describes
+- [ ] Whether `+QNTP` reports UTC as the TCP/IP application note says (the raw line is logged at debug level); not exercised yet, since NITZ arrived
+- [x] 1NCE hands out DNS servers with the PDP context (`8.8.8.8`, `8.8.4.4`)
+- [x] TLS handshake over NB-IoT at ECL 0: about 3.8 s; from network ready to MQTT connected (with `wss`) about 6.8 s, well within the 30 s network timeout
+- [x] Registration after the first bring-up is fast: about 5 s from boot on cell `0014B307`, which rejected the SIM with EMM cause 15 for minutes during stage 2. Likely the module's stored network state and band list; to tell apart with a full power cycle
 
 ### Stage 4 — Commands and updates, eDRX
 
@@ -229,7 +262,7 @@ Only if MQTT turns out too expensive. Needs a server-side endpoint.
 From the *BC660K-GL TCP/IP Application Note* v1.2 (`datasheets/.text/`):
 
 - `AT+QISEND=<id>,<send_length>`: at most **2048 bytes** per command in text (raw) mode, 1024 in
-  hex mode. In length-given mode the payload is raw bytes, which TLS records need.
+  hex mode. We use hex mode (see "Socket data as hex"), so 1024.
 - `AT+QIRD=<id>,<read_length>`: **1–512 bytes** per read.
 - The modem buffers at most **2 KB** of received data per socket in buffer access mode. A large
   UPDATE has to be drained with several `QIRD`s as it arrives. We expect TCP flow control to hold
@@ -239,9 +272,8 @@ From the *BC660K-GL TCP/IP Application Note* v1.2 (`datasheets/.text/`):
 
 Steps:
 
-1. Set the transport's write chunk to 2048 and its read chunk to 512 (the example's transport
-   splits at its own buffer size). esp-mqtt writes whole packets, up to `buffer.out_size` (4 KB
-   today), so writes will be split.
+1. Set the transport's write chunk to 1024 and its read chunk to 512 (done). esp-mqtt writes
+   whole packets, up to `buffer.out_size` (4 KB today), so writes will be split.
 2. Confirm on the bench: send increasing sizes to an echo server (256 B → 4 KB), checking for
    `ERROR` and comparing with `AT+QISEND=<id>,0`, which reports bytes sent / acked / unacked.
    Then have the server send a SYNC/UPDATE larger than 2 KB.
@@ -253,11 +285,12 @@ Steps:
   value isn't known yet; carrier NAT timeouts vary from minutes to hours.
 - **Keepalive is the biggest fixed data cost.** esp-mqtt sends a PINGREQ every *keepalive/2*
   whether or not other traffic went out (it only resets the timer on CONNACK and PINGRESP, see
-  `process_keepalive()` in `mqtt_client.c`). Today's 120 s keepalive means a ping a minute. Each
+  `process_keepalive()` in `mqtt_client.c`). The WiFi build's 120 s keepalive means a ping a
+  minute. Each
   ping + response over TLS/TCP is roughly 200 B with ACKs (estimate: 2 B MQTT + 29 B TLS record
   + 40 B TCP/IP, each way, plus ACKs), so about **290 KB/day**. That alone is twice the 1NCE
-  budget (500 MB / 10 years ≈ 137 KB/day). At a 30 min keepalive (a ping every 15 min), it's
-  about 19 KB/day.
+  budget (500 MB / 10 years ≈ 137 KB/day). Cellular builds use 10 min for now (a ping every 5
+  min, about 58 KB/day); at 30 min (a ping every 15 min), it's about 19 KB/day.
 - **So: keepalive ≈ 2 × (NAT timeout − margin)** (pings go out at half the keepalive), capped by
   how quickly we want to notice a dead link. Measure the NAT timeout: open an MQTT session with a
   very long keepalive, stay idle for increasing periods (5, 10, 20, 40, 80 min), then publish a
@@ -281,6 +314,6 @@ the UART, which isn't worth chasing before the stage 4 current measurements.
 
 - `AT+QENG=2` reports Tx/Rx time (radio-on) since the counters were last reset.
 - `AT+QIPERF` gives a baseline throughput figure for the cell we're on.
-- On the device, count bytes in `AtSocketTransport` per direction, and publish them in telemetry
-  next to the link-quality fields.
+- On the device, `AtSocketTransport` counts bytes per direction and logs them when a connection
+  closes; publishing them in telemetry, next to the link-quality fields, is still to do.
 - 1NCE's portal shows per-SIM data usage. Use it to cross-check the device-side counters.
