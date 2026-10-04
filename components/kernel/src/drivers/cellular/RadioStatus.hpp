@@ -38,6 +38,38 @@ inline std::optional<SignalQuality> parseCsq(std::string_view line) {
     return SignalQuality { .rssiDbm = -113 + (2 * *level) };
 }
 
+namespace detail {
+
+// The RRC state is the last field: "+CSCON: <mode>" as a URC, "+CSCON: <n>,<mode>" when read
+inline std::optional<bool> parseCscon(std::string_view line, size_t fieldCount) {
+    auto fields = parseAtFields(line, "+CSCON:");
+    if (!fields || fields->size() != fieldCount) {
+        return std::nullopt;
+    }
+    auto mode = fields->back().asInt();
+    return mode == 0 || mode == 1 ? std::optional<bool>(mode == 1) : std::nullopt;
+}
+
+}    // namespace detail
+
+/**
+ * @brief Parses the +CSCON: <mode> URC the module sends when the RRC connection goes up or down.
+ *
+ * @return true when connected, false when idle
+ */
+inline std::optional<bool> parseCsconUrc(std::string_view line) {
+    return detail::parseCscon(line, 1);
+}
+
+/**
+ * @brief Parses the response to AT+CSCON?: +CSCON: <n>,<mode>.
+ *
+ * @return true when connected, false when idle
+ */
+inline std::optional<bool> parseCsconRead(std::string_view line) {
+    return detail::parseCscon(line, 2);
+}
+
 /**
  * @brief Serving cell radio state, from the BC660K-GL's "+QENG: 0,..." (AT+QENG=0).
  */

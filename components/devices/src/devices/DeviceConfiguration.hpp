@@ -4,6 +4,10 @@
 #include <Pin.hpp>
 #include <config/Configuration.hpp>
 
+#ifdef UD_CONNECTIVITY_CELLULAR
+#include <drivers/cellular/CellularConfig.hpp>
+#endif
+
 using namespace cornucopia::ugly_duckling::kernel;
 
 namespace cornucopia::ugly_duckling::devices {
@@ -34,9 +38,11 @@ struct DeviceConfiguration : ConfigurationSection {
      * @brief How often to publish telemetry.
      */
     Property<seconds> publishInterval { this, "publishInterval", 5min };
+    // Not Verbose even in debug builds: every published record is an uplink, and over NB-IoT a
+    // steady stream of them keeps the radio connected (docs/specs/NB-IoT.md, stage 4)
     Property<Level> publishLogs { this, "publishLogs",
 #ifdef UD_DEBUG
-        Level::Verbose
+        Level::Debug
 #else
         Level::Info
 #endif
@@ -46,6 +52,13 @@ struct DeviceConfiguration : ConfigurationSection {
      * @brief How long without successfully published telemetry before the watchdog times out and reboots the device.
      */
     Property<seconds> watchdogTimeout { this, "watchdogTimeout", 15min };
+
+#ifdef UD_CONNECTIVITY_CELLULAR
+    /**
+     * @brief NB-IoT modem settings, see CellularConfig.
+     */
+    NamedConfigurationEntry<drivers::cellular::CellularConfig> cellular { this, "cellular" };
+#endif
 
     /**
      * @brief Om the MK6 the built-in motor driver's nSLEEP pin can be manually set by a jumper,

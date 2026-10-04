@@ -2,6 +2,7 @@
 
 #include <KernelStatus.hpp>
 #include <NetworkConfig.hpp>
+#include <devices/DeviceConfiguration.hpp>
 #include <drivers/BleDriver.hpp>
 #include <drivers/RtcDriver.hpp>
 #include <drivers/cellular/CellularModemPins.hpp>
@@ -18,6 +19,7 @@
 #include <memory>
 #include <optional>
 
+using namespace cornucopia::ugly_duckling;
 using namespace cornucopia::ugly_duckling::kernel;
 
 /**
@@ -45,5 +47,6 @@ struct ConnectivityDrivers {
 ConnectivityDrivers initConnectivity(
     const std::shared_ptr<ModuleStates>& states,
     const std::shared_ptr<NetworkConfig>& networkConfig,
+    const std::shared_ptr<devices::DeviceConfiguration>& deviceConfig,
     const std::shared_ptr<BleDriver>& ble,
     const std::optional<cellular::CellularModemPins>& modemPins);

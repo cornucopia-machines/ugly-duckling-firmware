@@ -2,13 +2,16 @@
 #include <drivers/cellular/AtResponse.hpp>
 #include <drivers/cellular/AtSocket.hpp>
 #include <drivers/cellular/Cereg.hpp>
+#include <drivers/cellular/Edrx.hpp>
 #include <drivers/cellular/NetworkTime.hpp>
 #include <drivers/cellular/RadioStatus.hpp>
 
 #include <array>
+#include <chrono>
 #include <cstdint>
 
 using namespace cornucopia::ugly_duckling::kernel::drivers::cellular;
+using namespace std::chrono_literals;
 
 // Response samples follow the BC660K-GL AT Commands Manual v1.3 and the bring-up notes in
 // https://github.com/cornucopia-machines/ugly-duckling-firmware/issues/641
@@ -362,4 +365,82 @@ TEST_CASE("parseCtzeu reads the universal time") {
 TEST_CASE("parseQntp reads the time of a successful sync") {
     REQUIRE(parseQntp("+QNTP: 0,\"2026/10/03,12:34:56\"") == 1791030896);
     REQUIRE_FALSE(parseQntp("+QNTP: 565").has_value());
+}
+
+TEST_CASE("parseCsconUrc reads the RRC state") {
+    REQUIRE(parseCsconUrc("+CSCON: 1") == true);
+    REQUIRE(parseCsconUrc("+CSCON: 0") == false);
+}
+
+TEST_CASE("parseCsconUrc rejects the read response and other values") {
+    REQUIRE_FALSE(parseCsconUrc("+CSCON: 1,0").has_value());
+    REQUIRE_FALSE(parseCsconUrc("+CSCON: 2").has_value());
+    REQUIRE_FALSE(parseCsconUrc("+CEREG: 1").has_value());
+}
+
+TEST_CASE("parseCsconRead reads the mode after <n>") {
+    REQUIRE(parseCsconRead("+CSCON: 1,0") == false);
+    REQUIRE(parseCsconRead("+CSCON: 0,1") == true);
+    REQUIRE_FALSE(parseCsconRead("+CSCON: 1").has_value());
+}
+
+TEST_CASE("encodeEdrxCycle gives the 4-bit code of NB-IoT cycles") {
+    REQUIRE(encodeEdrxCycle(20480ms) == "0010");
+    REQUIRE(encodeEdrxCycle(40960ms) == "0011");
+    REQUIRE(encodeEdrxCycle(163840ms) == "1001");
+    REQUIRE(encodeEdrxCycle(10485760ms) == "1111");
+}
+
+TEST_CASE("encodeEdrxCycle rejects other lengths") {
+    REQUIRE_FALSE(encodeEdrxCycle(41000ms).has_value());
+    // LTE-M only
+    REQUIRE_FALSE(encodeEdrxCycle(61440ms).has_value());
+    REQUIRE_FALSE(encodeEdrxCycle(0ms).has_value());
+}
+
+TEST_CASE("parseCedrxrdp reads what the network granted") {
+    auto edrx = parseCedrxrdp(R"(+CEDRXRDP: 5,"0011","0101","0011")");
+
+    REQUIRE(edrx.has_value());
+    REQUIRE(edrx->active);
+    REQUIRE(edrx->requested == 40960ms);
+    REQUIRE(edrx->granted == 81920ms);
+    REQUIRE(edrx->pagingTimeWindow == 10240ms);
+    REQUIRE(describe(*edrx) == "81920 ms (requested 40960 ms), paging window 10240 ms");
+}
+
+TEST_CASE("parseCedrxrdp reports a cell without eDRX") {
+    auto edrx = parseCedrxrdp("+CEDRXRDP: 0");
+
+    REQUIRE(edrx.has_value());
+    REQUIRE_FALSE(edrx->active);
+    REQUIRE(describe(*edrx) == "not used on this cell");
+}
+
+TEST_CASE("parseCedrxrdp leaves out codes it doesn't know") {
+    auto edrx = parseCedrxrdp(R"(+CEDRXRDP: 5,"0011","0100")");
+
+    REQUIRE(edrx.has_value());
+    REQUIRE(edrx->requested == 40960ms);
+    REQUIRE_FALSE(edrx->granted.has_value());
+    REQUIRE_FALSE(edrx->pagingTimeWindow.has_value());
+}
+
+TEST_CASE("parseCedrxp reads the URC") {
+    auto edrx = parseCedrxp(R"(+CEDRXP: 5,"0011","0011","1111")");
+
+    REQUIRE(edrx.has_value());
+    REQUIRE(edrx->granted == 40960ms);
+    REQUIRE(describe(*edrx) == "40960 ms, paging window 40960 ms");
+}
+
+TEST_CASE("parseQdrxIdleCycle reads the paging cycle while idle") {
+    REQUIRE(parseQdrxIdleCycle("+QDRX: 1,1280") == 1280ms);
+    REQUIRE(parseQdrxIdleCycle("+QDRX: 1,10240") == 10240ms);
+}
+
+TEST_CASE("parseQdrxIdleCycle ignores connected mode and missing cycles") {
+    REQUIRE_FALSE(parseQdrxIdleCycle("+QDRX: 2,8,4,10,4,2560,8").has_value());
+    REQUIRE_FALSE(parseQdrxIdleCycle("+QDRX: 1").has_value());
+    REQUIRE_FALSE(parseQdrxIdleCycle("+QDRX: 0").has_value());
 }

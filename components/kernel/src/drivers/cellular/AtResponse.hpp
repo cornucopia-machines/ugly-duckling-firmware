@@ -82,6 +82,13 @@ public:
     }
 
     /**
+     * @brief A binary number, quoted or not, e.g. the "0011" of an eDRX cycle.
+     */
+    std::optional<int> asBinary() const {
+        return parseNumber(text, 2);
+    }
+
+    /**
      * @brief The text of the field, without the quotes if it was quoted.
      */
     std::optional<std::string_view> asString() const {

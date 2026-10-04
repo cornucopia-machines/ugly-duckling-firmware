@@ -110,6 +110,10 @@ private:
         } else {
             result = "\033[0;33mSTARTING\033[0m";
         }
+        if (link.rrcConnected) {
+            // The radio draws milliamps while connected and microamps while idle
+            result += *link.rrcConnected ? " \033[0;33mCONN\033[0m" : " \033[0;32mIDLE\033[0m";
+        }
         if (link.servingCell && link.servingCell->rsrp) {
             result += " RSRP \033[33m" + std::to_string(*link.servingCell->rsrp) + "\033[0m dBm";
         }

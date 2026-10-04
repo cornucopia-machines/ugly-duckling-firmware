@@ -6,6 +6,7 @@
 #include <drivers/cellular/AtSocket.hpp>
 #include <drivers/cellular/CellularModuleDriver.hpp>
 #include <drivers/cellular/Cereg.hpp>
+#include <drivers/cellular/Edrx.hpp>
 #include <drivers/cellular/EspModem.hpp>
 #include <drivers/cellular/NetworkTime.hpp>
 #include <drivers/cellular/RadioStatus.hpp>
@@ -77,6 +78,9 @@ public:
             "AT+CEREG=3",
             // Report entering and leaving PSM
             "AT+QNBIOTEVENT=1,1",
+            // Report the RRC connection going up and down (+CSCON), for the debug console and
+            // for telemetry on how long the radio stays connected
+            "AT+CSCON=1",
         };
 
         bool success = true;
@@ -97,6 +101,13 @@ public:
             success = ensureSetting(setting) && success;
         }
         return success;
+    }
+
+    bool configurePowerSaving(std::optional<milliseconds> edrxCycle) override {
+        // In PSM the module is unreachable until its own next wake, and it doesn't report URCs;
+        // eDRX keeps it reachable with a bounded delay instead
+        bool success = ensureSetting({ .query = "AT+CPSMS?", .expected = "+CPSMS: 0", .set = "AT+CPSMS=0" });
+        return ensureEdrx(edrxCycle) && success;
     }
 
     AtResponse command(const std::string& command, milliseconds timeout) override {
@@ -137,6 +148,18 @@ public:
         // Numeric mode only: the "servingcell" form belongs to Quectel's LTE modules and returns
         // ERROR here
         return findDecoded(command("AT+QENG=0", QENG_TIMEOUT), parseQengServingCell);
+    }
+
+    std::optional<EdrxParameters> queryEdrx() override {
+        return findDecoded(command("AT+CEDRXRDP", DEFAULT_TIMEOUT), parseCedrxrdp);
+    }
+
+    std::optional<milliseconds> queryIdlePagingCycle() override {
+        return findDecoded(command("AT+QDRX?", DEFAULT_TIMEOUT), parseQdrxIdleCycle);
+    }
+
+    std::optional<bool> queryRrcConnected() override {
+        return findDecoded(command("AT+CSCON?", DEFAULT_TIMEOUT), parseCsconRead);
     }
 
     std::optional<std::string> queryIpAddress() override {
@@ -277,7 +300,7 @@ private:
      */
     struct PersistedSetting {
         const char* query;
-        // The first response line to the query when the setting is right
+        // The first response line to the query when the setting is right, or its leading fields
         std::string_view expected;
         const char* set;
     };
@@ -308,8 +331,11 @@ private:
 
     bool ensureSetting(const PersistedSetting& setting) {
         auto response = command(setting.query, DEFAULT_TIMEOUT);
-        if (response.ok() && !response.lines.empty() && response.lines.front() == setting.expected) {
-            return true;
+        if (response.ok() && !response.lines.empty()) {
+            std::string_view line = response.lines.front();
+            if (line == setting.expected || (line.starts_with(setting.expected) && line[setting.expected.size()] == ',')) {
+                return true;
+            }
         }
         LOGTI(CELLULAR, "Setting %s (was: %s)", setting.set,
             response.lines.empty() ? "?" : response.lines.front().c_str());
@@ -389,8 +415,8 @@ private:
     }
 
     static bool isUrc(std::string_view line, std::string_view command) {
-        static constexpr std::array<std::string_view, 6> URC_PREFIXES {
-            "+CEREG:", "+QIURC:", "+CTZEU:", "+CTZV:", "+IP:", "+QNBIOTEVENT:"
+        static constexpr std::array<std::string_view, 8> URC_PREFIXES {
+            "+CEREG:", "+QIURC:", "+CTZEU:", "+CTZV:", "+IP:", "+QNBIOTEVENT:", "+CSCON:", "+CEDRXP:"
         };
         for (auto prefix : URC_PREFIXES) {
             if (line.starts_with(prefix)) {
@@ -471,6 +497,32 @@ private:
             return false;
         }
         return true;
+    }
+
+    bool ensureEdrx(std::optional<milliseconds> cycle) {
+        // Written on every boot: AT+CEDRXS? shows the requested cycle whether or not eDRX is on,
+        // so it can't tell us whether it needs writing. The bench module answered with our cycle
+        // and still didn't use eDRX until it was written
+        std::string set;
+        if (cycle) {
+            auto code = encodeEdrxCycle(*cycle);
+            if (!code) {
+                LOGTW(CELLULAR, "NB-IoT has no %lld ms eDRX cycle, leaving the module's setting as it is",
+                    static_cast<long long>(cycle->count()));
+                return false;
+            }
+            // Mode 2 also reports what the network grants as +CEDRXP
+            set = R"(AT+CEDRXS=2,5,")" + *code + "\"";
+        } else {
+            // Mode 3 also discards the requested cycle
+            set = "AT+CEDRXS=3";
+        }
+        LOGTD(CELLULAR, "Requesting eDRX: %s", set.c_str());
+        auto response = command(set, DEFAULT_TIMEOUT);
+        if (!response.ok()) {
+            LOGTW(CELLULAR, "%s failed: %s %s", set.c_str(), toString(response.result), response.error.c_str());
+        }
+        return response.ok();
     }
 
     bool ensureBands() {

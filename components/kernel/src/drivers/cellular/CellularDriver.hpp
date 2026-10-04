@@ -7,9 +7,11 @@
 #include <Task.hpp>
 #include <drivers/cellular/AtSocketTransport.hpp>
 #include <drivers/cellular/Bc660KDriver.hpp>
+#include <drivers/cellular/CellularConfig.hpp>
 #include <drivers/cellular/CellularModemPins.hpp>
 #include <drivers/cellular/CellularModuleDriver.hpp>
 #include <drivers/cellular/Cereg.hpp>
+#include <drivers/cellular/Edrx.hpp>
 #include <drivers/cellular/EspModem.hpp>
 #include <drivers/cellular/NetworkTime.hpp>
 #include <drivers/cellular/RadioStatus.hpp>
@@ -47,6 +49,8 @@ struct CellularStatus {
     std::optional<std::string> ipAddress;
     // Only while camped on a cell
     std::optional<ServingCell> servingCell;
+    // Whether the radio has an RRC connection to the cell (true) or is idle (false)
+    std::optional<bool> rrcConnected;
 };
 
 /**
@@ -67,12 +71,14 @@ public:
 
     CellularDriver(
         const CellularModemPins& pins,
+        const std::shared_ptr<CellularConfig>& config,
         StateSource& networkConnecting,
         StateSource& networkReady,
         const State& rtcInSync,
         std::string ntpServer,
         TimeHandler onNetworkTime)
         : pins(pins)
+        , edrxCycle(toEdrxCycle(config->edrxCycle.get()))
         , networkConnecting(networkConnecting)
         , networkReady(networkReady)
         , rtcInSync(rtcInSync)
@@ -129,6 +135,7 @@ public:
         auto [sent, received] = transport.takeTrafficCounts();
         json["bytes-sent"] = sent;
         json["bytes-received"] = received;
+        json["rrc-connected-ms"] = takeRrcConnectedTime().count();
     }
 
 private:
@@ -166,6 +173,9 @@ private:
         if (!module->configure()) {
             LOGTW(CELLULAR, "Some %s settings could not be applied", module->getName());
         }
+        if (!module->configurePowerSaving(edrxCycle)) {
+            LOGTW(CELLULAR, "Could not configure %s power saving", module->getName());
+        }
         module->logStatus();
         updateStatus([](CellularStatus& status) { status.modemUp = true; });
         transport.attach(module);
@@ -198,6 +208,13 @@ private:
             }
             // Not logged once registered; read anyway to keep the status current
             auto cell = !registered || !wasRegistered ? module->logRadioStatus() : module->queryServingCell();
+            // The URC only reports changes, and could have been missed
+            if (auto rrcConnected = module->queryRrcConnected()) {
+                updateRrcState(*rrcConnected);
+            }
+            if (registered) {
+                logPagingIfChanged();
+            }
             updateStatus([&](CellularStatus& status) {
                 status.registration = registration ? std::optional(registration->status) : std::nullopt;
                 status.servingCell = cell && cell->isCamped() ? cell : std::nullopt;
@@ -299,6 +316,65 @@ private:
         }
     }
 
+    /**
+     * @brief Logs how often the modem listens for paging, which bounds how long a command takes
+     * to arrive, when that changes: what the network made of the eDRX cycle we asked for, and the
+     * cell's own paging cycle, which applies without eDRX.
+     *
+     * Read on every registration check rather than once: the network grants eDRX with an attach
+     * or a tracking area update, which can still be in progress right after registering. The
+     * paging cycle can only be read while RRC idle.
+     */
+    void logPagingIfChanged() {
+        auto edrx = module->queryEdrx();
+        if (edrx && edrx != lastEdrx) {
+            LOGTI(CELLULAR, "eDRX: %s", describe(*edrx).c_str());
+            lastEdrx = edrx;
+        }
+        auto cycle = module->queryIdlePagingCycle();
+        if (cycle && cycle != lastIdlePagingCycle) {
+            LOGTI(CELLULAR, "Paging cycle while idle: %lld ms", static_cast<long long>(cycle->count()));
+            lastIdlePagingCycle = cycle;
+        }
+    }
+
+    /**
+     * @brief Tracks the RRC state for the status and for the time spent connected, which is
+     * where most of the modem's energy goes. Called from the URC handler too.
+     */
+    void updateRrcState(bool connected) {
+        std::scoped_lock lock(statusMutex);
+        if (status.rrcConnected == connected) {
+            return;
+        }
+        auto now = steady_clock::now();
+        if (connected) {
+            rrcConnectedSince = now;
+        } else if (status.rrcConnected == true) {
+            rrcConnectedTime += duration_cast<milliseconds>(now - rrcConnectedSince);
+        }
+        status.rrcConnected = connected;
+    }
+
+    /**
+     * @brief Time spent in RRC connected state since the last call.
+     */
+    milliseconds takeRrcConnectedTime() {
+        std::scoped_lock lock(statusMutex);
+        auto total = rrcConnectedTime;
+        if (status.rrcConnected == true) {
+            auto now = steady_clock::now();
+            total += duration_cast<milliseconds>(now - rrcConnectedSince);
+            rrcConnectedSince = now;
+        }
+        rrcConnectedTime = 0ms;
+        return total;
+    }
+
+    static std::optional<milliseconds> toEdrxCycle(milliseconds configured) {
+        return configured > 0ms ? std::optional(configured) : std::nullopt;
+    }
+
     void logQuery(const char* query) {
         auto response = module->command(query, 5s);
         if (!response.ok()) {
@@ -346,6 +422,17 @@ private:
             }
             return;
         }
+        if (auto connected = parseCsconUrc(line)) {
+            // Verbose only: a published log record is an uplink, so if this got published,
+            // logging "idle" would bring the radio straight back to connected
+            LOGTV(CELLULAR, "RRC %s", *connected ? "connected" : "idle");
+            updateRrcState(*connected);
+            return;
+        }
+        if (auto edrx = parseCedrxp(line)) {
+            LOGTI(CELLULAR, "eDRX changed by the network: %s", describe(*edrx).c_str());
+            return;
+        }
         if (line.starts_with("+IP:")) {
             // The PDP context got its address
             LOGTD(CELLULAR, "URC: %.*s", static_cast<int>(line.size()), line.data());
@@ -378,6 +465,8 @@ private:
     static constexpr uart_port_t MODEM_UART = UART_NUM_1;
 
     const CellularModemPins pins;
+    // nullopt for eDRX off
+    const std::optional<milliseconds> edrxCycle;
     StateSource& networkConnecting;
     StateSource& networkReady;
     const State& rtcInSync;
@@ -391,11 +480,16 @@ private:
     CopyQueue<bool> networkChanged { "cellular-network", 1 };
     steady_clock::time_point networkReadySince;
     std::optional<steady_clock::time_point> lastNtpAttempt;
+    std::optional<EdrxParameters> lastEdrx;
+    std::optional<milliseconds> lastIdlePagingCycle;
     // Set from the URC handler too
     std::atomic<steady_clock::time_point> lastTimeSync;
 
     mutable std::mutex statusMutex;
     CellularStatus status;
+    // Guarded by statusMutex too
+    steady_clock::time_point rrcConnectedSince;
+    milliseconds rrcConnectedTime { 0 };
 
     PowerManagementLock noLightSleep { "cellular", ESP_PM_NO_LIGHT_SLEEP };
     std::unique_ptr<PowerManagementLockGuard> noLightSleepGuard;

@@ -29,6 +29,14 @@ Tracking issues:
   cycle (seconds to hours), so the network can still deliver downlink data with bounded latency.
 - **ECL** (Coverage Enhancement Level, 0–2) — how much repetition the link needs; higher means
   weaker coverage, more airtime and more energy per byte.
+- **DRX** (Discontinuous Reception) — plain paging: an idle modem listens every 1.28–2.56 s.
+- **PTW** (Paging Time Window) — how long the modem listens at the start of each eDRX cycle
+  (2.56–40.96 s), before it goes back to sleep for the rest of the cycle.
+- **RRC** (Radio Resource Control) — *connected* means the modem has a radio link to the cell
+  and draws milliamps; *idle* means it only listens for paging and draws microamps. After any
+  traffic it stays connected until an inactivity timer runs out (60 s by default on the BC660K).
+- **RAI** (Release Assistance Indication) — a flag on a send telling the network to release the
+  RRC connection right after it (or after the reply), instead of waiting for the inactivity timer.
 
 ## Key decisions
 
@@ -144,6 +152,106 @@ can't work over the modem. In a build without WiFi:
   fail;
 - the `http-update` command isn't registered.
 
+### Sleeping: eDRX, not PSM
+
+The device has to stay reachable for commands, so the modem uses eDRX and PSM stays off
+(`AT+CPSMS=0`, checked on every boot). In eDRX the BC660K only ever *light*-sleeps between
+paging windows (deep sleep is PSM-only, per the hardware design guide), which keeps the TCP
+socket and the TLS/MQTT session on top of it. Light sleep at eDRX 40.96 s is 38 µA
+(datasheet, ECL 0); PSM would be 0.8 µA, but the device would be unreachable between its own
+wakes. That 37 µA isn't where the power goes (see "Power budget" below), so PSM only pays off for
+devices that report a few times a day, and stays an option for stage 6.
+
+The modem settings live in the `cellular` section of **device-config**, not network-config, so
+changing them doesn't mean sending network-config's credentials to the device again:
+
+```json
+"cellular": {
+  "edrxCycle": 0
+}
+```
+
+- `edrxCycle` is in milliseconds, and has to be one of the cycles NB-IoT has (`AT+CEDRXS`):
+  20480, 40960, 81920, 163840, 327680, 655360, 1310720, 2621440, 5242880 or 10485760. Anything
+  else is logged and leaves the module's setting as it was. **The default is 0, eDRX off**,
+  because the network we use doesn't grant it (see the bench notes under stage 4). Where a
+  network does, 40.96 s would be the cycle to start with: commands arrive within about 45 s, it's
+  the one cycle the datasheet gives a current for, and at 38 µA the modem is already well below
+  the ESP32's light-sleep current, so longer cycles would make commands slower for little gain.
+- With eDRX off, the modem listens every DRX cycle, the paging cycle the cell broadcasts (1.28,
+  2.56, 5.12 or 10.24 s in NB-IoT; `AT+QDRX?` reads it), so commands arrive within seconds, at
+  110–220 µA at the two shorter cycles (datasheet, ECL 0), and it still sleeps in between. That
+  is also the most responsive setting; a short eDRX cycle wouldn't be, the shortest being
+  20.48 s. `sleepWhenIdle: false` keeps the ESP32 itself awake on top of that.
+- The paging time window is left to the network for now (`AT+QEDRXCFG` could request one).
+- The network has the final say: the driver logs the granted cycle and PTW after registering
+  (`AT+CEDRXRDP`) and whenever the network changes them (`+CEDRXP`).
+
+### Waking the ESP32 on UART edges
+
+Desert Lark doesn't wire the modem's RI or PSM_EINT pins (by design, to save GPIOs; see the
+hardware spec), so the only sign of the modem having something to say is activity on its TX
+line, our UART RX. The ESP32-C6 can wake from light sleep on UART RX in four ways:
+
+| Mode | Wakes on | Clock in sleep | Bytes lost |
+| ---- | -------- | -------------- | ---------- |
+| Edge count (`UART_WK_MODE_ACTIVE_THRESH`) | ≥ 3 RX edges | none | the first few (≈ 318 µs wake-up ≈ 4 bytes at 115200) |
+| FIFO threshold / start bit / character sequence | received data | 40 MHz XTAL | none |
+
+Keeping the 40 MHz crystal on in light sleep costs about 3.3 mA instead of about 34 µA
+(Espressif's BLE power-save example, ESP32-C6), a hundred times more than the modem itself, so
+**we use edge counting and accept losing the start of whatever woke us.** None of it matters,
+because every URC has a query for the same state:
+
+| URC | Re-read with |
+| --- | ------------ |
+| `+QIURC: "recv"` | `AT+QIRD`: the data waits in the module's buffer (buffer access mode) |
+| `+QIURC: "closed"` | `AT+QIRD` fails |
+| `+CEREG` | `AT+CEREG?` |
+| `+IP` | `AT+CGPADDR` |
+| `+CSCON` | `AT+CSCON?` |
+| `+CEDRXP` | `AT+CEDRXRDP` |
+| `+CTZEU` | NTP fallback after 30 s |
+
+So a line that doesn't parse as a known URC means "something happened": poll the socket and
+re-read the registration. RI would have avoided the lost bytes, but buys nothing on top of this.
+
+### Power budget
+
+Today's 30–40 mA is mostly the ESP32: `CellularDriver` holds a no-light-sleep lock for as long
+as the modem is up, in every cellular build.
+
+Measured on the bench (MK13, `UD_NOSLEEP` debug build, battery current from the BQ27220):
+**RRC connected costs about 10 mA more than RRC idle** (29 mA vs 19 mA, with the module's own
+sleep still off, `AT+QSCLK=0`). The datasheet has no figure for this state; the estimates below
+had assumed 3–5 mA.
+
+How long the radio stays connected after a transfer (the RRC tail) is still to be measured. After
+MQTT traffic it went idle about 50 s after what looked like the last transmission, but after a
+cell change, with only signalling, 20–25 s later. That suggests the network releases after about
+20 s, short of the module's own 60 s (`AT+QCFG="DataInactTimer"`), and that something kept sending
+after the MQTT traffic (in a debug build, published log records are the likely candidate). To
+measure with `publishLogs` at `Info`: the Verbose `RRC connected` / `RRC idle` log lines against
+the last `Queuing topic …`, and `rrc-connected-ms` per telemetry interval.
+
+Estimates for a release build with stage 4 done, eDRX off (see stage 4):
+
+| Part | Average |
+| ---- | ------- |
+| ESP32-C6 light sleep, peripherals powered (needed for UART wake) | ~0.2 mA, plus wakes for timers and tasks |
+| Modem sleeping between pages: 0.22 mA at a 1.28 s paging cycle, 0.11 mA at 2.56 s (datasheet, ECL 0); less at 5.12 or 10.24 s | 0.03–0.22 mA |
+| Rest of the board | to measure (sleep floor of a WiFi release build) |
+| Telemetry every 5 min: ~1.5 s Tx at ~100 mA, then a 20–50 s RRC tail at ~10 mA | 1.2–2.2 mA |
+| Keepalive ping every 5 min (esp-mqtt pings even after a publish), the same | 1.2–2.2 mA |
+
+That is **about 2.5–5 mA** with the defaults, depending on the tail, and the tail after each
+transfer is most of it. Releasing RRC right after a transfer (RAI on `QISEND`; a shorter
+`AT+QCFG="DataInactTimer"` only helps if it's shorter than the network's own timer) and a
+keepalive as long as the NAT allows would bring it to **about 1–1.5 mA**. The floor, set by sleep, is **about 0.25–0.45 mA plus the board**; eDRX at
+40.96 s would only have saved up to 0.2 mA of that. The order of wins: ESP32 light sleep, then
+the RRC tail, then fewer transmissions. The `rrc-connected-ms` telemetry field (time spent RRC
+connected since the last telemetry message) tracks the tail.
+
 ## Plan
 
 ### Stage 1 — Free UART0 (#640)
@@ -221,15 +329,50 @@ To check on the first bench run:
 Goal: commands and UPDATE messages sent from the server arrive with predictable latency, and
 the modem sleeps between paging windows.
 
-- [ ] Health check: MQTT keepalive / DNS lookup, **not** ping (ICMP is blocked on `SENSOR.NET`). Moved from stage 3: once the modem sleeps, "not answering" looks different
-- [ ] Recovery: `AT+QRST` on a modem that stops responding; on MK14+ pulse `RESET_N` instead. On MK13 `AT+QRST` only helps while the modem still answers, and rebooting the ESP32 doesn't power-cycle the modem
-
-- [ ] Subscriptions over the AT transport (commands, UPDATE); check QoS 1 redelivery after a reconnect
-- [ ] Enable eDRX (`AT+CEDRXS` / `AT+QEDRXCFG`), with a configurable cycle; log what the network grants (`+CEDRXP`)
-- [ ] Measure 1NCE's NAT idle timeout and set the keepalive from it (see open questions)
-- [ ] ESP32 light sleep with the modem attached. Waking on UART activity loses the first bytes of whatever woke us, so treat the wake itself as the signal: the socket is in buffer access mode, so after any UART wake, **poll `QIRD`** and re-query state, and never depend on that URC arriving intact. To confirm on the bench: the wake threshold, and that nothing besides socket data and `+CEREG` needs catching
-- [ ] Measure command latency against the eDRX cycle, and average current
+- [x] `cellular` section in device-config (see "Sleeping: eDRX, not PSM")
+- [x] PSM off (`AT+CPSMS=0`), only written when it differs
+- [x] eDRX with the configured cycle (`AT+CEDRXS=2,5,…`), or off (`AT+CEDRXS=3`), written on every boot: `AT+CEDRXS?` shows the requested cycle whether or not eDRX is on, so it can't tell whether a write is needed. Log what the network grants (`AT+CEDRXRDP` on every registration check, logged when it changes; `+CEDRXP`)
+- [x] Idle paging cycle (`AT+QDRX?`, only answers with it while RRC idle), logged when it changes: without eDRX, that is what bounds command latency and the modem's sleep current
+- [x] RRC state (`AT+CSCON=1`, `+CSCON` URC, re-read on every registration check): `CONN` / `IDLE` in the debug console, time spent connected in telemetry (`rrc-connected-ms`). Changes are only logged at Verbose: debug builds published every log line over MQTT, so logging "idle" brought the radio straight back to connected, and the bench device never left `CONN`. Any steady stream of published logs keeps RRC connected the same way, so measure power with `publishLogs` at `Info` (the release default). Debug builds now default to `Debug` instead of `Verbose`
+- [ ] Modem sleep: `AT+QSCLK=2` (light sleep only; `1` would also allow deep sleep, which only happens in PSM). Check `AT+QCFG="wakeupRXD"` is on
+- [ ] ESP32 light sleep: wake on UART RX edges (see "Waking the ESP32 on UART edges"); hold the no-light-sleep lock only while a command is in flight; any line that doesn't parse as a URC means "poll `QIRD` and re-read registration and RRC state"
+- [ ] The transport's safety `QIRD` poll goes from 10 s to the eDRX cycle: the module stays awake for 10 s after any UART activity (`AT+QCFG="slplocktimes"`), so a 10 s poll would keep it awake for good
+- [ ] Keepalive in device-config (`cellular.keepalive`); measure 1NCE's NAT idle timeout and set the default from it (see "Keepalive and session expiry")
+- [ ] Subscriptions over the AT transport: commands (QoS 2) and `update` (QoS 1) arrive while the modem sleeps
+- [ ] Measure command latency against the eDRX cycle, average current (`current` in telemetry) and `rrc-connected-ms`
 - [ ] Demo: valve override from the app reaches the device over NB-IoT
+
+To check on the bench:
+
+- [x] PSM was on: the bench module answered `+CPSMS: 1,,,"01000001","00000101"` (PSM requested,
+  periodic TAU 10 h, active time 10 s), presumably since before stage 2. The driver now turns it
+  off; the change starts a tracking area update (`AT+QENG=3` shows `"TAU INIT"`)
+- [ ] What Telekom (`21630`) grants for eDRX, and the PTW. Right after registering on cell
+  `0014B307`, during that TAU, `AT+CEDRXRDP` said the cell doesn't use eDRX; since the grant comes
+  with an attach or TAU, the driver now re-reads it on every registration check and logs changes.
+  It stayed that way, but the driver never wrote `AT+CEDRXS`: the read already answered
+  `+CEDRXS: 5,"0011"` (the manual's own example, so probably the factory default) without eDRX
+  being on. Now written on every boot. With `AT+CEDRXS=2,5,"0011"` sent before the attach, so
+  that the attach itself carries the request, `AT+CEDRXRDP` still answers `+CEDRXRDP: 0` ("access
+  technology not supporting eDRX") on that cell, and no `+CEDRXP` follows: so far it looks like
+  Telekom doesn't grant eDRX to 1NCE's roaming SIMs there
+- [ ] What the lines that woke the ESP32 look like after losing their first bytes
+- [x] The radio never goes RRC idle with the MQTT connection open to `mosquitto-home` (Tailscale
+  Funnel), even with no MQTT traffic for minutes. Suspected cause: Funnel's TCP keepalives (see
+  "Keepalive and session expiry"). To confirm: the Verbose `RRC connected` / `RRC idle` lines
+  (alternating about every 15 s plus the RRC tail means keepalive probes), and a run against a
+  broker that isn't behind Funnel
+- [x] Confirmed: against the staging broker (not behind Funnel) the radio goes RRC idle, and
+  battery current drops from about 29 mA to 19 mA
+- [ ] The RRC tail after a transfer (see "Power budget"): about 50 s after MQTT traffic in a debug
+  build, 20–25 s after a cell change
+
+Moved out of stage 4:
+
+- QoS 1 redelivery after a reconnect: `MqttDriver` always starts a clean session, so the broker
+  drops anything queued while the device was away. Persistent sessions are #682
+- Health check and recovery from a modem that stops answering (`RESET_N` on MK14+; MK13 can't
+  reset the modem from firmware): #683
 
 ### Stage 5 — OTA over NB-IoT
 
@@ -243,7 +386,8 @@ the modem sleeps between paging windows.
 Order to be decided from the stage 3–4 measurements.
 
 - [ ] TLS 1.3 PSK session resumption for MQTT (cheap stopgap from cornucopia-app#492)
-- [ ] PSM between wakes for nodes that can tolerate command latency, with a cellular-specific wake/sync cadence
+- [ ] PSM between wakes for nodes that can tolerate command latency, with a cellular-specific wake/sync cadence (`AT+QSCLK=1` then, for deep sleep)
+- [ ] Release the RRC connection sooner after a send: RAI on `QISEND` (`rai=2`, after the reply) or a shorter `AT+QCFG="DataInactTimer"` (default 60 s); see "Power budget"
 - [ ] Shorter field names in telemetry payloads (−35% measured, see cornucopia-app#492); needs server changes
 - [ ] Server-side handling of the link-quality telemetry fields
 - [ ] `network-config` setting to choose WiFi / NB-IoT, instead of the compile-time setting
@@ -290,22 +434,43 @@ Steps:
 - **Keepalive is the biggest fixed data cost.** esp-mqtt sends a PINGREQ every *keepalive/2*
   whether or not other traffic went out (it only resets the timer on CONNACK and PINGRESP, see
   `process_keepalive()` in `mqtt_client.c`). The WiFi build's 120 s keepalive means a ping a
-  minute. Each
-  ping + response over TLS/TCP is roughly 200 B with ACKs (estimate: 2 B MQTT + 29 B TLS record
-  + 40 B TCP/IP, each way, plus ACKs), so about **290 KB/day**. That alone is twice the 1NCE
+  minute. Each ping + response over TLS/TCP is roughly 200 B with ACKs (estimate: 2 B MQTT,
+  29 B TLS record and 40 B TCP/IP, each way, plus ACKs), so about **290 KB/day**. That alone is twice the 1NCE
   budget (500 MB / 10 years ≈ 137 KB/day). Cellular builds use 10 min for now (a ping every 5
   min, about 58 KB/day); at 30 min (a ping every 15 min), it's about 19 KB/day.
+- **Server-side TCP keepalives hide the NAT timeout, and keep the radio connected.** Tailscale
+  Funnel (the `mosquitto-home` bench broker) accepts connections on Go servers, and Go enables
+  TCP keepalives by default: a probe after 15 s idle, then every 15 s. Each probe is a downlink
+  packet: it keeps the carrier NAT mapping alive, pages the modem, and restarts its 60 s RRC
+  inactivity timer, without any traffic MQTT or the device's byte counters would show. So measure
+  the NAT timeout, and RRC idle, through a broker endpoint without TCP keepalives, and check the
+  production endpoint for them too.
 - **So: keepalive ≈ 2 × (NAT timeout − margin)** (pings go out at half the keepalive), capped by
   how quickly we want to notice a dead link. Measure the NAT timeout: open an MQTT session with a
   very long keepalive, stay idle for increasing periods (5, 10, 20, 40, 80 min), then publish a
   command from the server. The first interval where it doesn't arrive brackets the timeout.
+- **Keepalive vs eDRX cycle.** They cost energy in different ways, so they don't trade off
+  one-for-one. A ping is an uplink: the modem sends it straight away, without waiting for a
+  paging window, and then stays RRC connected until the inactivity timer runs out (60 s), at
+  milliamps. So each ping costs a fixed amount of energy (a few seconds of Tx plus the 60 s
+  tail, see "Power budget"), whatever the eDRX cycle. The eDRX cycle sets the *idle* current
+  between transfers (38 µA at 40.96 s) and how long a command takes to arrive. Both add to the
+  average; with pings every 5 min the pings dominate by far, which is why the keepalive should go
+  as high as the NAT allows, and why releasing RRC early (RAI) matters more than a longer cycle.
+- **Avoiding pings altogether: 1NCE's VPN Service** (not implemented, an option for later). 1NCE
+  can put a SIM's traffic in an OpenVPN tunnel with a static private IP per SIM and no carrier
+  NAT in between. With no NAT mapping to keep alive, the keepalive only has to detect a dead link,
+  so it could go to hours. It needs our own OpenVPN endpoint in front of the broker, and the broker
+  reachable only through it. First step: check in the 1NCE portal whether the SIM's IP address
+  matches the `10.0.0.2` the PDP context reports (`AT+CGPADDR`); if it does, the address is
+  already the SIM's own and the tunnel only has to route it.
 - **Session expiry** matters only across reconnects. As long as TCP stays up, eDRX doesn't
   disconnect MQTT: the broker sends straight away and the network buffers the downlink until the
   next paging window. esp-mqtt uses MQTT 3.1.1, where how long a persistent session lives is a
   broker setting, not something the device asks for (`MqttDriver::connect(startCleanSession)` only
   picks clean vs persistent). It needs to cover the longest reconnect gap we expect, which stays
-  short until we add PSM in stage 6. Check the broker's setting then; no change needed for stages
-  3–4.
+  short until we add PSM in stage 6. Check the broker's setting then. Today the device always
+  starts a clean session anyway, so nothing queued while it was away is redelivered (#682).
 
 ### UART baud rate
 
