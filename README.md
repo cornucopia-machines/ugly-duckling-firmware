@@ -68,6 +68,10 @@ The current network-config shape (delivered via `UPDATE`):
   "ntp": {
     "host": "pool.ntp.org", // NTP server host name, optional
   },
+  "links": ["wifi"], // link to reach the broker over: "wifi" (default) or "cellular"
+  "cellular": {
+    "edrxCycle": 0, // NB-IoT modem settings, only used with the "cellular" link
+  },
 }
 ```
 
@@ -242,20 +246,16 @@ report. See `components/kernel/src/PowerManager.hpp` and `sdkconfig.pm_diagnosti
 idf.py build -DUD_PM_DIAGNOSTICS=1
 ```
 
-You can set `-DUD_CONNECTIVITY=CELLULAR` (default `WIFI`) to build for the NB-IoT modem on the
-Desert Lark daughter board, on Carrot boards that have the connector (MK13+). The modem then
-replaces WiFi: MQTT (with TLS) runs over the modem's TCP sockets, and the time comes from the
-network or the modem's NTP client. Work in progress: no firmware updates over NB-IoT yet (the
-device rejects them), and no WiFi provisioning over BLE. See
+Carrot builds can also connect over the NB-IoT modem on the Desert Lark daughter board, on boards
+that have the connector (MK13+). Which link a device uses is a runtime choice: `"links":
+["cellular"]` in network-config (see [Network configuration](#network-configuration)) instead of
+the default WiFi. The modem then replaces WiFi: MQTT (with TLS) runs over the modem's TCP sockets,
+and the time comes from the network or the modem's NTP client. Work in progress: no firmware
+updates over NB-IoT yet (the device rejects them), and no WiFi provisioning over BLE. See
 [docs/specs/NB-IoT.md](docs/specs/NB-IoT.md) for the plan. The console must not be on UART0
 (`UD_UART0_CONSOLE`), which uses the modem's pins; the driver then leaves the modem alone and the
-device stays offline. On a board without the modem connector, a cellular build fails at startup.
-The setting is cached in the build directory, so a later build there without
-`-DUD_CONNECTIVITY` still builds for cellular; use a separate build directory:
-
-```bash
-idf.py -B build-carrot-cellular -DUD_CONNECTIVITY=CELLULAR build flash monitor
-```
+device stays offline. Asking for `cellular` on Spinach or on a board without the modem connector
+logs an error and falls back to WiFi.
 
 #### Pinning to a specific model (development / simulation)
 

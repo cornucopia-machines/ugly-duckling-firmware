@@ -3,11 +3,9 @@
 #include <Strings.hpp>
 #include <drivers/BleDriver.hpp>
 #include <drivers/RtcDriver.hpp>
-
-#ifdef UD_CONNECTIVITY_WIFI
 #include <drivers/WiFiDriver.hpp>
-#endif
-#ifdef UD_CONNECTIVITY_CELLULAR
+
+#ifdef UD_PLATFORM_CARROT
 #include <drivers/cellular/CellularDriver.hpp>
 #include <drivers/cellular/Cereg.hpp>
 #endif
@@ -29,12 +27,14 @@ class DebugConsole {
 public:
     DebugConsole(
         const std::shared_ptr<BatteryManager>& battery,
-#ifdef UD_CONNECTIVITY_CELLULAR
+        const std::shared_ptr<WiFiDriver>& wifi,
+#ifdef UD_PLATFORM_CARROT
         const std::shared_ptr<drivers::cellular::CellularDriver>& cellular,
 #endif
         const std::shared_ptr<BleDriver>& ble)
         : battery(battery)
-#ifdef UD_CONNECTIVITY_CELLULAR
+        , wifi(wifi)
+#ifdef UD_PLATFORM_CARROT
         , cellular(cellular)
 #endif
         , ble(ble) {
@@ -57,11 +57,14 @@ private:
         status += "\033[33m" + std::string(firmwareVersion) + "\033[0m";
         status += ", uptime: \033[33m" + toStringWithPrecision(static_cast<double>(uptime.count()) / 1000.0, 1) + "\033[0m s";
         status += ", BLE: " + bleStatus();
-#ifdef UD_CONNECTIVITY_WIFI
-        status += ", WIFI: " + std::string(wifiStatus());
-#endif
-#ifdef UD_CONNECTIVITY_CELLULAR
-        status += ", NB-IoT: " + cellularStatus();
+        // Only the driver for the link in use exists
+        if (wifi != nullptr) {
+            status += ", WIFI: " + std::string(wifiStatus());
+        }
+#ifdef UD_PLATFORM_CARROT
+        if (cellular != nullptr) {
+            status += ", NB-IoT: " + cellularStatus();
+        }
 #endif
         status += ", RTC \033[33m" + std::string(RtcDriver::isTimeSet() ? "OK" : "UNSYNCED") + "\033[0m";
         status += ", heap \033[33m" + toStringWithPrecision(heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024.0, 2) + "\033[0m kB";
@@ -80,7 +83,7 @@ private:
         fsync(fileno(stdout));
     }
 
-#ifdef UD_CONNECTIVITY_CELLULAR
+#ifdef UD_PLATFORM_CARROT
     std::string cellularStatus() const {
         auto link = cellular->getStatus();
         if (!link.modemUp) {
@@ -124,7 +127,6 @@ private:
     }
 #endif
 
-#ifdef UD_CONNECTIVITY_WIFI
     static const char* wifiStatus() {
         auto* netif = esp_netif_get_default_netif();
         if (netif == nullptr) {
@@ -171,7 +173,6 @@ private:
         }
         return "\033[0;33mIP?\033[0m";
     }
-#endif
 
     std::string bleStatus() {
         switch (ble->getStatus()) {
@@ -193,7 +194,8 @@ private:
     }
 
     const std::shared_ptr<BatteryManager> battery;
-#ifdef UD_CONNECTIVITY_CELLULAR
+    const std::shared_ptr<WiFiDriver> wifi;
+#ifdef UD_PLATFORM_CARROT
     const std::shared_ptr<drivers::cellular::CellularDriver> cellular;
 #endif
     const std::shared_ptr<BleDriver> ble;

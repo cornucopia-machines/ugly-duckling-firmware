@@ -2,6 +2,7 @@
 #include "FirmwareRollback.hpp"
 #include "HardwareVersion.hpp"
 #include "NetworkConfig.hpp"
+#include "NetworkLink.hpp"
 #include "PowerManager.hpp"
 #include "config/ConfigState.hpp"
 #include "devices/DeviceDefinition.hpp"
@@ -47,6 +48,7 @@ void publishBootMessage(
     const std::string& firmwareVersion,
     const std::string& macAddress,
     const std::shared_ptr<NetworkConfig>& networkConfig,
+    NetworkLink link,
     InitState initState,
     const JsonArray& peripheralsInitJson,
     const JsonArray& functionsInitJson,
@@ -76,12 +78,8 @@ void publishBootMessage(
 #else
             json["debug"] = false;
 #endif
-        // The link MQTT goes over. A build with both links will have to report the one in use
-#ifdef UD_CONNECTIVITY_WIFI
-            json["connectivity"] = "wifi";
-#elifdef UD_CONNECTIVITY_CELLULAR
-            json["connectivity"] = "cellular";
-#endif
+            // The link MQTT goes over
+            json["connectivity"] = toString(link);
             json["reset"] = resetReason;
             json["consecutiveCrashes"] = consecutiveCrashes;
             json["wakeup"] = esp_sleep_get_wakeup_causes();

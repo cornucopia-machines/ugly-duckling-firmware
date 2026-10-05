@@ -3,6 +3,7 @@
 #include <FirmwareRollback.hpp>
 #include <HardwareVersion.hpp>
 #include <NetworkConfig.hpp>
+#include <NetworkLink.hpp>
 #include <PowerManager.hpp>
 #include <config/ConfigState.hpp>
 #include <devices/DeviceDefinition.hpp>
@@ -38,6 +39,7 @@ void publishBootMessage(
     const std::string& firmwareVersion,
     const std::string& macAddress,
     const std::shared_ptr<NetworkConfig>& networkConfig,
+    NetworkLink link,
     InitState initState,
     const JsonArray& peripheralsInitJson,
     const JsonArray& functionsInitJson,

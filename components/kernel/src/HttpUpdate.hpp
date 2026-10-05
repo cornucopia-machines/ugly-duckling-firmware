@@ -74,6 +74,25 @@ public:
         return nvs->contains(UPDATE_KEY);
     }
 
+    /**
+     * @brief Stands in for performPendingHttpUpdateIfNecessary() on a link firmware can't be
+     * downloaded over (docs/specs/NB-IoT.md, stage 5). An update scheduled over WiFi in the same
+     * UPDATE as the switch to such a link is dropped and rejected, so the server stops retrying.
+     */
+    static std::optional<config::RejectionCode> discardPendingUpdate(const std::shared_ptr<NvsStore>& nvs) {
+        if (nvs->contains(UPDATE_FAILED_KEY)) {
+            nvs->remove(UPDATE_FAILED_KEY);
+            LOGTE(UPDATE, "Previous firmware update failed, rejecting");
+            return config::RejectionCode::Internal;
+        }
+        if (!nvs->contains(UPDATE_KEY)) {
+            return std::nullopt;
+        }
+        nvs->remove(UPDATE_KEY);
+        LOGTW(UPDATE, "Firmware update pending, but it can only be downloaded over WiFi, rejecting");
+        return config::RejectionCode::Unimplemented;
+    }
+
     static constexpr const char* UPDATE_KEY = "pending-update";
     static constexpr const char* UPDATE_FAILED_KEY = "update-failed";
 

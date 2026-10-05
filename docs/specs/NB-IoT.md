@@ -13,6 +13,7 @@ Tracking issues:
 - [#640](https://github.com/cornucopia-machines/ugly-duckling-firmware/issues/640) — move the console off UART0 (done, #675)
 - [cornucopia-app#492](https://github.com/cornucopia-machines/cornucopia-app/issues/492) — end-state transport (CoAP over DTLS 1.2 + CID)
 - [cornucopia-app#507](https://github.com/cornucopia-machines/cornucopia-app/issues/507) — device time acquisition (NITZ)
+- [cornucopia-app#533](https://github.com/cornucopia-machines/cornucopia-app/issues/533) — choose WiFi or cellular when (re-)provisioning a device
 - Hardware design: [`ugly-duckling-hardware/docs/specs/nb-iot.md`](https://github.com/cornucopia-machines/ugly-duckling-hardware/blob/main/docs/specs/nb-iot.md)
 
 ## Terms
@@ -49,7 +50,7 @@ The BC660K-GL has no PPP, so lwIP can't run over it. That leaves two ways to do 
    payload size limits. `MqttDriver` would need a parallel implementation.
 2. **esp-mqtt over a custom `esp_transport`** built on the modem's TCP socket commands
    (`AT+QIOPEN` / `QISEND` / `QIRD`). `esp_mqtt_client_config_t.network.transport` accepts a
-   custom transport (`nullptr` for WiFi builds in `MqttDriver::configMqttClient()`), so
+   custom transport (`nullptr` over WiFi in `MqttDriver::configMqttClient()`), so
    `MqttDriver` itself stays almost untouched, and the bytes on the wire are the same as over WiFi.
 
 **We go with option 2.** None of the protocols is ours to implement:
@@ -81,7 +82,7 @@ its own lwIP socket), and the example's `tls_transport.cpp` skips certificate ve
 `TlsTransport` drives mbedTLS directly. That keeps certificate handling identical to the WiFi path
 (`configServerCert`, verification required, hostname checked), keeps the TLS endpoint ours rather
 than the modem firmware's, and is the same mbedTLS we will need for DTLS later. RAM shouldn't be
-a problem: the WiFi path already runs MQTT over TLS, and a cellular build doesn't start the WiFi
+a problem: the WiFi path already runs MQTT over TLS, and a device on the cellular link doesn't start the WiFi
 driver, lwIP's WiFi netif or their buffers, so it should need less internal RAM, not more.
 
 ### Socket data as hex
@@ -108,23 +109,42 @@ example adds `sock_commands_*.cpp` per chip.
 
 ### Choosing WiFi or NB-IoT
 
-For the prototype, a CMake setting `-DUD_CONNECTIVITY=WIFI|CELLULAR` (default `WIFI`; same
-mechanism as `UD_DEBUG` and `UD_PM_DIAGNOSTICS`, built in its own directory such as
-`build-carrot-cellular`) switches `initConnectivity()` between the WiFi and cellular drivers. One
-setting with named values, rather than a `UD_CELLULAR` boolean, makes the two options mutually
-exclusive by construction, and leaves room for `BOTH` until this becomes a runtime choice. CMake
-rejects anything else, and rejects `CELLULAR` on Spinach.
+Every Carrot build has both links; `links` in **network-config** chooses one at boot:
 
-CMake turns the setting into one compile definition per link, `UD_CONNECTIVITY_WIFI` or
-`UD_CONNECTIVITY_CELLULAR`. Code is gated on the link it needs (the WiFi driver, OTA and the
-`wifi` telemetry section on `UD_CONNECTIVITY_WIFI`; the modem on `UD_CONNECTIVITY_CELLULAR`),
-never on the other one being absent, so a `BOTH` build only has to define both.
+```json
+"links": ["cellular"],
+"cellular": {
+  "edrxCycle": 0
+}
+```
+
+- `links` lists the links to use, in order of preference: `"wifi"` or `"cellular"`. Without it
+  the device uses WiFi, as every device did before the setting existed. A list leaves room for
+  "WiFi, falling back to NB-IoT" (`["wifi", "cellular"]`, stage 6) without changing the shape;
+  until then only a single entry is supported.
+- `cellular` holds the modem settings (see "Sleeping: eDRX, not PSM"). It's only used with the
+  cellular link.
+- Anything the device can't honor (more than one link, an unknown one, or `cellular` on a board
+  without a modem connector or on Spinach) is logged as an error, and the device uses WiFi.
+- Changing the link reboots the device, like any other network-config change. Only the driver
+  for the chosen link is started: a device on the cellular link never starts the WiFi driver or
+  lwIP's WiFi netif.
+- Network-config carries the device's client key, which the server only keeps until the device
+  confirms the config. So every change to `links` or `cellular` comes with a freshly issued
+  client certificate and key. That's fine: these settings aren't meant to change in normal
+  operation.
+- The cellular code (esp_modem and the drivers) is only compiled on Carrot (`UD_PLATFORM_CARROT`,
+  defined by CMake next to `UD_PLATFORM`), since the Desert Lark board only exists there.
 
 Both drivers set the same `networkReady` state, so `MqttDriver` and the rest don't need to know
 which link is in use. Each logs the details of its link (SSID or cell, and the IP address) when
 the network comes up; the "Device ready" line no longer does, since with NB-IoT the device is
-often ready before the network is. Later this becomes a `network-config` setting, and later
-still, use whichever link is available.
+often ready before the network is. The BOOT message reports the link in use (`connectivity`).
+
+A link change is confirmed as soon as the device boots with it, like any other configuration, so
+switching a device without coverage or a working SIM to `cellular` leaves it unreachable until
+someone gets to it. The next step is to confirm a link change only once MQTT has
+connected over the new link, and revert otherwise (stage 4).
 
 ### UART0 console fallback
 
@@ -135,22 +155,24 @@ That way one build can still be debugged over the pogo header, at the cost of NB
 
 ### Link quality in telemetry
 
-The cellular build adds a `cellular` section to device telemetry, next to where the WiFi fields
+On the cellular link, device telemetry has a `cellular` section, next to where the WiFi fields
 go: `cell`, `band`, `rsrp`, `rsrq`, `sinr` and `ecl` from `AT+QENG=0` (as of the last
 registration check, while camped), plus `bytes-sent` / `bytes-received` over the modem since the
 last telemetry message. The server ignores fields it doesn't
 know, so this needs no server change up front; server-side handling follows once the shape has
 settled.
 
-### OTA is off in cellular builds until stage 5
+### OTA is off over NB-IoT until stage 5
 
 `HttpUpdater` downloads with `esp_http_client` over lwIP and waits on `WiFiDriver` directly, so it
-can't work over the modem. In a build without WiFi:
+can't work over the modem. On the cellular link:
 
 - the `update` handler answers a `firmware` entry with `RejectionCode::Unimplemented`, so the
   server stops retrying instead of the device rebooting into an update attempt that is bound to
   fail;
-- the `http-update` command isn't registered.
+- the `http-update` command isn't registered;
+- an update scheduled over WiFi in the same UPDATE as a switch to the cellular link is dropped
+  at boot and rejected with `Unimplemented` too.
 
 ### Sleeping: eDRX, not PSM
 
@@ -162,8 +184,8 @@ socket and the TLS/MQTT session on top of it. Light sleep at eDRX 40.96 s is 38 
 wakes. That 37 µA isn't where the power goes (see "Power budget" below), so PSM only pays off for
 devices that report a few times a day, and stays an option for stage 6.
 
-The modem settings live in the `cellular` section of **device-config**, not network-config, so
-changing them doesn't mean sending network-config's credentials to the device again:
+The modem settings live in the `cellular` section of **network-config**, next to `links` (see
+"Choosing WiFi or NB-IoT"):
 
 ```json
 "cellular": {
@@ -219,7 +241,7 @@ re-read the registration. RI would have avoided the lost bytes, but buys nothing
 ### Power budget
 
 Today's 30–40 mA is mostly the ESP32: `CellularDriver` holds a no-light-sleep lock for as long
-as the modem is up, in every cellular build.
+as the modem is up, on every device on the cellular link.
 
 Measured on the bench (MK13, `UD_NOSLEEP` debug build, battery current from the BQ27220):
 **RRC connected costs about 10 mA more than RRC idle** (29 mA vs 19 mA, with the module's own
@@ -268,8 +290,8 @@ track the tail.
 
 Goal: on boot, the console shows replies to a few AT commands.
 
-- [x] Add `espressif/esp_modem` (2.1, PPP off, URC handler on); builds with our C++ exceptions. Flash cost: +67 KB for the cellular build over a release WiFi build; WiFi builds don't link it
-- [x] `-DUD_CONNECTIVITY=WIFI|CELLULAR` CMake setting; in this stage `CELLULAR` only adds the modem driver next to WiFi
+- [x] Add `espressif/esp_modem` (2.1, PPP off, URC handler on); builds with our C++ exceptions. Flash cost: +67 KB over a release WiFi-only build; every Carrot build links it since both links are built in (stage 4)
+- [x] `-DUD_CONNECTIVITY=WIFI|CELLULAR` CMake setting; in this stage `CELLULAR` only adds the modem driver next to WiFi (replaced by `links` in network-config in stage 4)
 - [x] Describe the modem UART pins per device model (`DeviceDefinition::getCellularModemPins()`). MK13: TX/RX are swapped (hardware#93), so `tx = GPIO17`, `rx = GPIO16`
 - [x] Use UART1 through the GPIO matrix; don't start if the console is on UART0 (see above)
 - [x] `CellularDriver`, `CellularModuleDriver` interface, `Bc660KDriver : GenericModule`
@@ -292,7 +314,7 @@ Follow-ups, not needed for stage 3:
 - [ ] Make the band list configurable before devices go outside Europe
 - [ ] Bench aid: AT passthrough from the console (type an AT command, see the reply), debug builds only. Needs console input over USB Serial/JTAG, which nothing reads today
 
-### Stage 3 — MQTT over NB-IoT (`UD_CONNECTIVITY=CELLULAR`)
+### Stage 3 — MQTT over NB-IoT
 
 Goal: BOOT, SYNC (config/update request) and TELEMETRY reach the existing broker over NB-IoT.
 
@@ -330,7 +352,10 @@ To check on the first bench run:
 Goal: commands and UPDATE messages sent from the server arrive with predictable latency, and
 the modem sleeps between paging windows.
 
-- [x] `cellular` section in device-config (see "Sleeping: eDRX, not PSM")
+- [x] `cellular` section in device-config (see "Sleeping: eDRX, not PSM"); moved to network-config with `links`
+- [x] `links` in network-config chooses WiFi or NB-IoT at boot, in place of `-DUD_CONNECTIVITY`; every Carrot build has both links, the cellular code gated on `UD_PLATFORM_CARROT` (see "Choosing WiFi or NB-IoT"). Links that can't be honored fall back to WiFi with an error; a firmware update pending from before a switch to cellular is dropped and rejected
+- [ ] Confirm a link change only once MQTT has connected over the new link; revert to the confirmed config otherwise. Firmware updates need the same delayed confirmation
+- [ ] cornucopia-app: choose the link when (re-)provisioning a device, issuing a fresh client certificate and key with every change ([cornucopia-app#533](https://github.com/cornucopia-machines/cornucopia-app/issues/533))
 - [x] PSM off (`AT+CPSMS=0`), only written when it differs
 - [x] eDRX with the configured cycle (`AT+CEDRXS=2,5,…`), or off (`AT+CEDRXS=3`), written on every boot: `AT+CEDRXS?` shows the requested cycle whether or not eDRX is on, so it can't tell whether a write is needed. Log what the network grants (`AT+CEDRXRDP` on every registration check, logged when it changes; `+CEDRXP`)
 - [x] Idle paging cycle (`AT+QDRX?`, only answers with it while RRC idle), logged when it changes: without eDRX, that is what bounds command latency and the modem's sleep current
@@ -339,7 +364,7 @@ the modem sleeps between paging windows.
 - [x] ESP32 light sleep: wake on UART RX edges (see "Waking the ESP32 on UART edges"); hold the no-light-sleep lock only while a command is in flight; any line that doesn't parse as a URC means "poll `QIRD` and re-read registration and RRC state" (logged at Verbose only, since a published log record would wake the radio)
 - [x] The transport's safety `QIRD` poll goes from 10 s to 2 min: the module stays awake for 10 s after any UART activity (`AT+QCFG="slplocktimes"`), so a 10 s poll would keep it awake for good. Data found by this poll is logged (`Found … bytes the modem didn't announce`), to tell how often URCs get lost altogether
 - [ ] Revisit whether the safety poll is needed at all: if the bench never logs `Found … bytes the modem didn't announce` (every wake leaves at least part of a line, which already triggers a read), drop it, and with it the module wake-ups it costs; esp-mqtt's keepalive still catches a connection that went quiet
-- [ ] Keepalive in device-config (`cellular.keepalive`); measure 1NCE's NAT idle timeout and set the default from it (see "Keepalive and session expiry")
+- [ ] Keepalive in network-config (`cellular.keepalive`); measure 1NCE's NAT idle timeout and set the default from it (see "Keepalive and session expiry")
 - [ ] Subscriptions over the AT transport: commands (QoS 2) and `update` (QoS 1) arrive while the modem sleeps
 - [ ] Measure command latency against the paging cycle, average current (`current` in telemetry), `rrc-idle-ratio` and `rrc-connections`
 - [ ] Demo: valve override from the app reaches the device over NB-IoT
@@ -411,7 +436,6 @@ Order to be decided from the stage 3–4 measurements.
 - [ ] Release the RRC connection sooner after a send: RAI on `QISEND` (`rai=2`, after the reply) or a shorter `AT+QCFG="DataInactTimer"` (default 60 s); see "Power budget"
 - [ ] Shorter field names in telemetry payloads (−35% measured, see cornucopia-app#492); needs server changes
 - [ ] Server-side handling of the link-quality telemetry fields
-- [ ] `network-config` setting to choose WiFi / NB-IoT, instead of the compile-time setting
 - [ ] Use both: WiFi when available, NB-IoT fallback
 
 ### Stage 7 — CoAP over DTLS 1.2 + CID (cornucopia-app#492)
@@ -457,7 +481,7 @@ Steps:
   `process_keepalive()` in `mqtt_client.c`). The WiFi build's 120 s keepalive means a ping a
   minute. Each ping + response over TLS/TCP is roughly 200 B with ACKs (estimate: 2 B MQTT,
   29 B TLS record and 40 B TCP/IP, each way, plus ACKs), so about **290 KB/day**. That alone is twice the 1NCE
-  budget (500 MB / 10 years ≈ 137 KB/day). Cellular builds use 10 min for now (a ping every 5
+  budget (500 MB / 10 years ≈ 137 KB/day). The cellular link uses 10 min for now (a ping every 5
   min, about 58 KB/day); at 30 min (a ping every 15 min), it's about 19 KB/day.
 - **Server-side TCP keepalives hide the NAT timeout, and keep the radio connected.** Tailscale
   Funnel (the `mosquitto-home` bench broker) accepts connections on Go servers, and Go enables

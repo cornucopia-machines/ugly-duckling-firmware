@@ -6,14 +6,12 @@
 #include "Telemetry.hpp"
 #include "Watchdog.hpp"
 #include "drivers/BleDriver.hpp"
+#include "drivers/WiFiDriver.hpp"
 #include "mqtt/MqttDriver.hpp"
 #include "mqtt/MqttRoot.hpp"
 #include <TelemetryTask.hpp>
 
-#ifdef UD_CONNECTIVITY_WIFI
-#include "drivers/WiFiDriver.hpp"
-#endif
-#ifdef UD_CONNECTIVITY_CELLULAR
+#ifdef UD_PLATFORM_CARROT
 #include "drivers/cellular/CellularDriver.hpp"
 #endif
 
@@ -51,10 +49,8 @@ void initTelemetryPublishTask(
     const std::shared_ptr<MqttRoot>& mqttRoot,
     const std::shared_ptr<BatteryManager>& batteryManager,
     const std::shared_ptr<PowerManager>& powerManager,
-#ifdef UD_CONNECTIVITY_WIFI
     const std::shared_ptr<WiFiDriver>& wifi,
-#endif
-#ifdef UD_CONNECTIVITY_CELLULAR
+#ifdef UD_PLATFORM_CARROT
     const std::shared_ptr<cellular::CellularDriver>& cellular,
 #endif
     const std::shared_ptr<BleDriver>& ble,
@@ -85,13 +81,16 @@ void initTelemetryPublishTask(
                 }
             }
 
-#ifdef UD_CONNECTIVITY_WIFI
-            auto wifiData = telemetry["wifi"].to<JsonObject>();
-            wifi->populateTelemetry(wifiData);
-#endif
-#ifdef UD_CONNECTIVITY_CELLULAR
-            auto cellularData = telemetry["cellular"].to<JsonObject>();
-            cellular->populateTelemetry(cellularData);
+            // Only the driver for the link in use exists
+            if (wifi != nullptr) {
+                auto wifiData = telemetry["wifi"].to<JsonObject>();
+                wifi->populateTelemetry(wifiData);
+            }
+#ifdef UD_PLATFORM_CARROT
+            if (cellular != nullptr) {
+                auto cellularData = telemetry["cellular"].to<JsonObject>();
+                cellular->populateTelemetry(cellularData);
+            }
 #endif
 
             auto mqttData = telemetry["mqtt"].to<JsonObject>();

@@ -6,12 +6,10 @@
 #include <Telemetry.hpp>
 #include <Watchdog.hpp>
 #include <drivers/BleDriver.hpp>
+#include <drivers/WiFiDriver.hpp>
 #include <mqtt/MqttRoot.hpp>
 
-#ifdef UD_CONNECTIVITY_WIFI
-#include <drivers/WiFiDriver.hpp>
-#endif
-#ifdef UD_CONNECTIVITY_CELLULAR
+#ifdef UD_PLATFORM_CARROT
 #include <drivers/cellular/CellularDriver.hpp>
 #endif
 
@@ -24,6 +22,8 @@ using namespace cornucopia::ugly_duckling::kernel::mqtt;
 
 /**
  * @brief Publishes `telemetry` (NoRetain, QoS 1) on the given interval.
+ *
+ * Of `wifi` and `cellular`, only the driver for the link in use is set; the other is nullptr.
  */
 void initTelemetryPublishTask(
     milliseconds publishInterval,
@@ -31,10 +31,8 @@ void initTelemetryPublishTask(
     const std::shared_ptr<MqttRoot>& mqttRoot,
     const std::shared_ptr<BatteryManager>& batteryManager,
     const std::shared_ptr<PowerManager>& powerManager,
-#ifdef UD_CONNECTIVITY_WIFI
     const std::shared_ptr<WiFiDriver>& wifi,
-#endif
-#ifdef UD_CONNECTIVITY_CELLULAR
+#ifdef UD_PLATFORM_CARROT
     const std::shared_ptr<cellular::CellularDriver>& cellular,
 #endif
     const std::shared_ptr<BleDriver>& ble,
