@@ -1,5 +1,6 @@
 #include "KernelStatus.hpp"
 #include "NetworkConfig.hpp"
+#include "devices/DeviceConfiguration.hpp"
 #include "drivers/BleDriver.hpp"
 #include "drivers/RtcDriver.hpp"
 #include "drivers/cellular/CellularModemPins.hpp"
@@ -27,6 +28,7 @@ using namespace cornucopia::ugly_duckling::kernel;
 ConnectivityDrivers initConnectivity(
     const std::shared_ptr<ModuleStates>& states,
     const std::shared_ptr<NetworkConfig>& networkConfig,
+    [[maybe_unused]] const std::shared_ptr<devices::DeviceConfiguration>& deviceConfig,
     const std::shared_ptr<BleDriver>& ble,
     [[maybe_unused]] const std::optional<cellular::CellularModemPins>& modemPins) {
     ConnectivityDrivers drivers;
@@ -76,6 +78,7 @@ ConnectivityDrivers initConnectivity(
     auto ntpServer = networkConfig->ntp.get()->host.get();
     auto cellular = std::make_shared<cellular::CellularDriver>(
         *modemPins,
+        deviceConfig->cellular.get(),
         states->networkConnecting,
         states->networkReady,
         states->rtcInSync,

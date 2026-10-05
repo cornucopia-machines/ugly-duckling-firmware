@@ -3,6 +3,7 @@
 #include <Log.hpp>
 #include <drivers/cellular/AtResponse.hpp>
 #include <drivers/cellular/AtSocket.hpp>
+#include <drivers/cellular/Edrx.hpp>
 #include <drivers/cellular/RadioStatus.hpp>
 
 #include <chrono>
@@ -58,6 +59,15 @@ public:
     virtual bool configure() = 0;
 
     /**
+     * @brief Keeps the module reachable while it sleeps: PSM off, and eDRX with the given cycle,
+     * or off for plain DRX paging.
+     *
+     * The module keeps these across restarts, and the network learns about every change, so
+     * only what differs gets written. The network decides what it grants, see queryEdrx().
+     */
+    virtual bool configurePowerSaving(std::optional<milliseconds> edrxCycle) = 0;
+
+    /**
      * @brief Sends an AT command, waking the module first, and waits for its final result code.
      *
      * @param command the command without the trailing CR, e.g. "AT+CSQ"
@@ -88,6 +98,26 @@ public:
      * @brief The serving cell's radio state, without logging it.
      */
     virtual std::optional<ServingCell> queryServingCell() = 0;
+
+    /**
+     * @brief The eDRX parameters the network granted on the current cell.
+     */
+    virtual std::optional<EdrxParameters> queryEdrx() = 0;
+
+    /**
+     * @brief The paging cycle the module uses while RRC idle and not in eDRX: the cell's default
+     * paging cycle (1.28 to 10.24 s in NB-IoT).
+     *
+     * @return nullopt while RRC connected, when the module only reports connected mode DRX
+     */
+    virtual std::optional<milliseconds> queryIdlePagingCycle() = 0;
+
+    /**
+     * @brief Whether the module has an RRC connection to the cell (true) or is idle (false).
+     *
+     * The module only updates this on radio events, so it can be a little out of date.
+     */
+    virtual std::optional<bool> queryRrcConnected() = 0;
 
     /**
      * @brief The IP address of the default PDP context, if the network has assigned one.

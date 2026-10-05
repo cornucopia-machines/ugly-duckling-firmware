@@ -1,6 +1,9 @@
 {
   "version": "0.2",
   "language": "en",
+  "ignoreRegExpList": [
+    "AT\\+\\w+"
+  ],
   "words": [
     "aabbcc",
     "bitbang",
@@ -20,6 +23,7 @@
     "Dscs",
     "DTIM",
     "duckling",
+    "edrx",
     "eeprom",
     "efuse",
     "espefuse",
@@ -35,6 +39,7 @@
     "IFLOWB",
     "ISOILML",
     "JLCPCB",
+    "keepalive",
     "libble",
     "libmbed",
     "LOADEN",
@@ -58,6 +63,7 @@
     "pullup",
     "pullups",
     "PWM",
+    "Quectel",
     "RBATL",
     "rodata",
     "rssi",

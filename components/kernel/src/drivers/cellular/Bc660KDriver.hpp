@@ -1,11 +1,13 @@
 #pragma once
 
 #include <Log.hpp>
+#include <PowerManager.hpp>
 #include <Task.hpp>
 #include <drivers/cellular/AtResponse.hpp>
 #include <drivers/cellular/AtSocket.hpp>
 #include <drivers/cellular/CellularModuleDriver.hpp>
 #include <drivers/cellular/Cereg.hpp>
+#include <drivers/cellular/Edrx.hpp>
 #include <drivers/cellular/EspModem.hpp>
 #include <drivers/cellular/NetworkTime.hpp>
 #include <drivers/cellular/RadioStatus.hpp>
@@ -58,28 +60,36 @@ public:
     }
 
     bool wake() override {
+        PowerManagementLockGuard awake(noLightSleep);
         std::scoped_lock lock(commandMutex);
         return wakeLocked();
     }
 
     bool configure() override {
+        // First, since it may restart the module, which loses the settings below
+        bool success = ensureRxdWakeup();
+
         // None of these is ever wrong to repeat, so there's no point checking first
         static constexpr std::array SETTINGS {
             // Echo is on after power-on; off keeps the command out of every response
             "ATE0",
             // A readable "+CME ERROR: <text>" instead of a bare ERROR
             "AT+CMEE=2",
-            // Keep the module out of light and deep sleep for now; sleep comes with eDRX and PSM
-            // (stage 4). Not saved to NVRAM, so it has to be sent after every module restart
-            "AT+QSCLK=0",
+            // Let the module light sleep between paging occasions; it wakes on the network's
+            // schedule and on UART activity from us (the first command after that is lost, see
+            // wakeLocked()). Not deep sleep: that only happens in PSM, which is off. Not saved to
+            // NVRAM, so it has to be sent after every module restart
+            "AT+QSCLK=2",
             // Only URC mode 3 carries the EMM reject cause, which is what tells "no coverage"
             // apart from "subscription refused"
             "AT+CEREG=3",
             // Report entering and leaving PSM
             "AT+QNBIOTEVENT=1,1",
+            // Report the RRC connection going up and down (+CSCON), for the debug console and
+            // for telemetry on how long the radio stays connected
+            "AT+CSCON=1",
         };
 
-        bool success = true;
         for (const char* setting : SETTINGS) {
             auto response = command(setting, DEFAULT_TIMEOUT);
             if (!response.ok()) {
@@ -97,6 +107,13 @@ public:
             success = ensureSetting(setting) && success;
         }
         return success;
+    }
+
+    bool configurePowerSaving(std::optional<milliseconds> edrxCycle) override {
+        // In PSM the module is unreachable until its own next wake, and it doesn't report URCs;
+        // eDRX keeps it reachable with a bounded delay instead
+        bool success = ensureSetting({ .query = "AT+CPSMS?", .expected = "+CPSMS: 0", .set = "AT+CPSMS=0" });
+        return ensureEdrx(edrxCycle) && success;
     }
 
     AtResponse command(const std::string& command, milliseconds timeout) override {
@@ -137,6 +154,18 @@ public:
         // Numeric mode only: the "servingcell" form belongs to Quectel's LTE modules and returns
         // ERROR here
         return findDecoded(command("AT+QENG=0", QENG_TIMEOUT), parseQengServingCell);
+    }
+
+    std::optional<EdrxParameters> queryEdrx() override {
+        return findDecoded(command("AT+CEDRXRDP", DEFAULT_TIMEOUT), parseCedrxrdp);
+    }
+
+    std::optional<milliseconds> queryIdlePagingCycle() override {
+        return findDecoded(command("AT+QDRX?", DEFAULT_TIMEOUT), parseQdrxIdleCycle);
+    }
+
+    std::optional<bool> queryRrcConnected() override {
+        return findDecoded(command("AT+CSCON?", DEFAULT_TIMEOUT), parseCsconRead);
     }
 
     std::optional<std::string> queryIpAddress() override {
@@ -277,7 +306,7 @@ private:
      */
     struct PersistedSetting {
         const char* query;
-        // The first response line to the query when the setting is right
+        // The first response line to the query when the setting is right, or its leading fields
         std::string_view expected;
         const char* set;
     };
@@ -298,6 +327,9 @@ private:
      * @param awaitAfterOk see parseAtResponse()
      */
     AtResponse command(const std::string& command, milliseconds timeout, std::string_view awaitAfterOk) {
+        // The UART driver only keeps the ESP32 awake while transmitting; in light sleep the
+        // response would be lost, as waking on UART edges loses the first bytes
+        PowerManagementLockGuard awake(noLightSleep);
         std::scoped_lock lock(commandMutex);
         // The module can be asleep before any command, and the first AT only wakes it
         if (!wakeLocked()) {
@@ -306,14 +338,28 @@ private:
         return send(command, timeout, awaitAfterOk);
     }
 
-    bool ensureSetting(const PersistedSetting& setting) {
+    /**
+     * @return nullopt if the setting is right, otherwise the first line of what the module
+     * answered, for the log
+     */
+    std::optional<std::string> checkSetting(const PersistedSetting& setting) {
         auto response = command(setting.query, DEFAULT_TIMEOUT);
-        if (response.ok() && !response.lines.empty() && response.lines.front() == setting.expected) {
+        if (response.ok() && !response.lines.empty()) {
+            std::string_view line = response.lines.front();
+            if (line == setting.expected || (line.starts_with(setting.expected) && line[setting.expected.size()] == ',')) {
+                return std::nullopt;
+            }
+        }
+        return response.lines.empty() ? "?" : response.lines.front();
+    }
+
+    bool ensureSetting(const PersistedSetting& setting) {
+        auto current = checkSetting(setting);
+        if (!current) {
             return true;
         }
-        LOGTI(CELLULAR, "Setting %s (was: %s)", setting.set,
-            response.lines.empty() ? "?" : response.lines.front().c_str());
-        response = command(setting.set, DEFAULT_TIMEOUT);
+        LOGTI(CELLULAR, "Setting %s (was: %s)", setting.set, current->c_str());
+        auto response = command(setting.set, DEFAULT_TIMEOUT);
         if (!response.ok()) {
             LOGTW(CELLULAR, "%s failed: %s %s", setting.set, toString(response.result), response.error.c_str());
             return false;
@@ -389,8 +435,8 @@ private:
     }
 
     static bool isUrc(std::string_view line, std::string_view command) {
-        static constexpr std::array<std::string_view, 6> URC_PREFIXES {
-            "+CEREG:", "+QIURC:", "+CTZEU:", "+CTZV:", "+IP:", "+QNBIOTEVENT:"
+        static constexpr std::array<std::string_view, 8> URC_PREFIXES {
+            "+CEREG:", "+QIURC:", "+CTZEU:", "+CTZV:", "+IP:", "+QNBIOTEVENT:", "+CSCON:", "+CEDRXP:"
         };
         for (auto prefix : URC_PREFIXES) {
             if (line.starts_with(prefix)) {
@@ -471,6 +517,54 @@ private:
             return false;
         }
         return true;
+    }
+
+    bool ensureRxdWakeup() {
+        // Without it, the module can't be woken over the UART once it sleeps. Saved to NVRAM, but
+        // only takes effect after a restart
+        static constexpr PersistedSetting RXD_WAKEUP {
+            .query = R"(AT+QCFG="wakeupRXD")", .expected = R"(+QCFG: "wakeupRXD",1)", .set = R"(AT+QCFG="wakeupRXD",1)"
+        };
+        auto current = checkSetting(RXD_WAKEUP);
+        if (!current) {
+            return true;
+        }
+        LOGTI(CELLULAR, "Setting %s (was: %s), and restarting %s for it to take effect", RXD_WAKEUP.set, current->c_str(), getName());
+        auto response = command(RXD_WAKEUP.set, DEFAULT_TIMEOUT);
+        if (!response.ok()) {
+            LOGTW(CELLULAR, "%s failed: %s %s", RXD_WAKEUP.set, toString(response.result), response.error.c_str());
+            return false;
+        }
+        // Answers OK, then resets straight away
+        command("AT+QRST=1", DEFAULT_TIMEOUT);
+        // Booting takes a moment; waking retries until it answers
+        return wake();
+    }
+
+    bool ensureEdrx(std::optional<milliseconds> cycle) {
+        // Written on every boot: AT+CEDRXS? shows the requested cycle whether or not eDRX is on,
+        // so it can't tell us whether it needs writing. The bench module answered with our cycle
+        // and still didn't use eDRX until it was written
+        std::string set;
+        if (cycle) {
+            auto code = encodeEdrxCycle(*cycle);
+            if (!code) {
+                LOGTW(CELLULAR, "NB-IoT has no %lld ms eDRX cycle, leaving the module's setting as it is",
+                    static_cast<long long>(cycle->count()));
+                return false;
+            }
+            // Mode 2 also reports what the network grants as +CEDRXP
+            set = R"(AT+CEDRXS=2,5,")" + *code + "\"";
+        } else {
+            // Mode 3 also discards the requested cycle
+            set = "AT+CEDRXS=3";
+        }
+        LOGTD(CELLULAR, "Requesting eDRX: %s", set.c_str());
+        auto response = command(set, DEFAULT_TIMEOUT);
+        if (!response.ok()) {
+            LOGTW(CELLULAR, "%s failed: %s %s", set.c_str(), toString(response.result), response.error.c_str());
+        }
+        return response.ok();
     }
 
     bool ensureBands() {
@@ -566,6 +660,9 @@ private:
     static constexpr milliseconds WAKE_TIMEOUT = 300ms;
     static constexpr milliseconds WAKE_INITIAL_BACKOFF = 100ms;
     static constexpr milliseconds WAKE_MAX_BACKOFF = 1s;
+
+    // Keeps the ESP32 out of light sleep while a command is in flight
+    PowerManagementLock noLightSleep { "cellular", ESP_PM_NO_LIGHT_SLEEP };
 
     // Keeps the wake sequence and the command that follows it together
     std::mutex commandMutex;

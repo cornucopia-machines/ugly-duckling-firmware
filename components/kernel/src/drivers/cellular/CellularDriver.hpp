@@ -1,25 +1,30 @@
 #pragma once
 
+#include <EspException.hpp>
 #include <Log.hpp>
-#include <PowerManager.hpp>
 #include <Queue.hpp>
 #include <State.hpp>
 #include <Task.hpp>
 #include <drivers/cellular/AtSocketTransport.hpp>
 #include <drivers/cellular/Bc660KDriver.hpp>
+#include <drivers/cellular/CellularConfig.hpp>
 #include <drivers/cellular/CellularModemPins.hpp>
 #include <drivers/cellular/CellularModuleDriver.hpp>
 #include <drivers/cellular/Cereg.hpp>
+#include <drivers/cellular/Edrx.hpp>
 #include <drivers/cellular/EspModem.hpp>
 #include <drivers/cellular/NetworkTime.hpp>
 #include <drivers/cellular/RadioStatus.hpp>
 
 #include <ArduinoJson.h>
+#include <driver/uart_wakeup.h>
+#include <esp_sleep.h>
 #include <sdkconfig.h>
 #include <soc/uart_pins.h>
 
 #include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <ctime>
 #include <exception>
 #include <functional>
@@ -47,6 +52,8 @@ struct CellularStatus {
     std::optional<std::string> ipAddress;
     // Only while camped on a cell
     std::optional<ServingCell> servingCell;
+    // Whether the radio has an RRC connection to the cell (true) or is idle (false)
+    std::optional<bool> rrcConnected;
 };
 
 /**
@@ -67,12 +74,14 @@ public:
 
     CellularDriver(
         const CellularModemPins& pins,
+        const std::shared_ptr<CellularConfig>& config,
         StateSource& networkConnecting,
         StateSource& networkReady,
         const State& rtcInSync,
         std::string ntpServer,
         TimeHandler onNetworkTime)
         : pins(pins)
+        , edrxCycle(toEdrxCycle(config->edrxCycle.get()))
         , networkConnecting(networkConnecting)
         , networkReady(networkReady)
         , rtcInSync(rtcInSync)
@@ -83,8 +92,6 @@ public:
                 run();
             } catch (const std::exception& e) {
                 LOGTE(CELLULAR, "Cellular modem failed: %s", e.what());
-                // Don't keep the device out of light sleep for a modem we've given up on
-                noLightSleepGuard.reset();
             }
             // Only gets here when the modem is out of the picture
             this->networkConnecting.clear();
@@ -129,6 +136,7 @@ public:
         auto [sent, received] = transport.takeTrafficCounts();
         json["bytes-sent"] = sent;
         json["bytes-received"] = received;
+        populateRrcTelemetry(json);
     }
 
 private:
@@ -144,13 +152,11 @@ private:
         LOGTI(CELLULAR, "Starting modem on UART%d (TX GPIO %d, RX GPIO %d)",
             static_cast<int>(MODEM_UART), static_cast<int>(pins.tx->getGpio()), static_cast<int>(pins.rx->getGpio()));
 
-        // The UART driver only holds its PM lock while transmitting, so in light sleep anything the
-        // modem sends -- the reply to a command we are waiting on, or a URC -- would be lost. Stay
-        // awake for as long as the modem is up; waking on UART activity instead belongs with
-        // putting the modem itself to sleep (docs/specs/NB-IoT.md, stage 4).
-        noLightSleepGuard = std::make_unique<PowerManagementLockGuard>(noLightSleep);
-
         auto dte = createDte(pins);
+        enableUartWakeup();
+        // esp_modem's UART terminal warns about every UART_WAKEUP event, which it doesn't handle.
+        // Published, each warning is an uplink whose acknowledgement wakes us again
+        esp_log_level_set("uart_terminal", ESP_LOG_ERROR);
         module = std::make_shared<Bc660KDriver>(dte);
         module->onUrc([this](std::string_view line) {
             handleUrc(line);
@@ -158,13 +164,15 @@ private:
 
         if (!module->wake()) {
             LOGTE(CELLULAR, "%s is not answering; is the daughter board connected?", module->getName());
-            noLightSleepGuard.reset();
             return;
         }
         LOGTI(CELLULAR, "%s is answering", module->getName());
 
         if (!module->configure()) {
             LOGTW(CELLULAR, "Some %s settings could not be applied", module->getName());
+        }
+        if (!module->configurePowerSaving(edrxCycle)) {
+            LOGTW(CELLULAR, "Could not configure %s power saving", module->getName());
         }
         module->logStatus();
         updateStatus([](CellularStatus& status) { status.modemUp = true; });
@@ -198,6 +206,13 @@ private:
             }
             // Not logged once registered; read anyway to keep the status current
             auto cell = !registered || !wasRegistered ? module->logRadioStatus() : module->queryServingCell();
+            // The URC only reports changes, and could have been missed
+            if (auto rrcConnected = module->queryRrcConnected()) {
+                updateRrcState(*rrcConnected);
+            }
+            if (registered) {
+                logPagingIfChanged();
+            }
             updateStatus([&](CellularStatus& status) {
                 status.registration = registration ? std::optional(registration->status) : std::nullopt;
                 status.servingCell = cell && cell->isCamped() ? cell : std::nullopt;
@@ -299,6 +314,73 @@ private:
         }
     }
 
+    /**
+     * @brief Logs how often the modem listens for paging, which bounds how long a command takes
+     * to arrive, when that changes: what the network made of the eDRX cycle we asked for, and the
+     * cell's own paging cycle, which applies without eDRX.
+     *
+     * Read on every registration check rather than once: the network grants eDRX with an attach
+     * or a tracking area update, which can still be in progress right after registering. The
+     * paging cycle can only be read while RRC idle.
+     */
+    void logPagingIfChanged() {
+        auto edrx = module->queryEdrx();
+        if (edrx && edrx != lastEdrx) {
+            LOGTI(CELLULAR, "eDRX: %s", describe(*edrx).c_str());
+            lastEdrx = edrx;
+        }
+        auto cycle = module->queryIdlePagingCycle();
+        if (cycle && cycle != lastIdlePagingCycle) {
+            LOGTI(CELLULAR, "Paging cycle while idle: %lld ms", static_cast<long long>(cycle->count()));
+            lastIdlePagingCycle = cycle;
+        }
+    }
+
+    /**
+     * @brief Tracks the RRC state for the status, and how long and how often the radio is
+     * connected, which is where most of the modem's energy goes. Called from the URC handler too.
+     */
+    void updateRrcState(bool connected) {
+        std::scoped_lock lock(statusMutex);
+        if (status.rrcConnected == connected) {
+            return;
+        }
+        auto now = steady_clock::now();
+        if (connected) {
+            rrcConnectedSince = now;
+            rrcConnections++;
+        } else if (status.rrcConnected == true) {
+            rrcConnectedTime += now - rrcConnectedSince;
+        }
+        status.rrcConnected = connected;
+    }
+
+    /**
+     * @brief The share of the time since the last call the radio spent RRC idle, and how many
+     * times it connected, the same way PowerManager reports the ESP32's light sleep.
+     */
+    void populateRrcTelemetry(JsonObject& json) {
+        std::scoped_lock lock(statusMutex);
+        auto now = steady_clock::now();
+        auto connectedTime = rrcConnectedTime;
+        if (status.rrcConnected == true) {
+            connectedTime += now - rrcConnectedSince;
+            rrcConnectedSince = now;
+        }
+        auto elapsed = now - rrcLastReported;
+        if (elapsed.count() > 0) {
+            json["rrc-idle-ratio"] = 1.0 - (duration<double>(connectedTime) / duration<double>(elapsed));
+            json["rrc-connections"] = rrcConnections;
+        }
+        rrcLastReported = now;
+        rrcConnectedTime = steady_clock::duration::zero();
+        rrcConnections = 0;
+    }
+
+    static std::optional<milliseconds> toEdrxCycle(milliseconds configured) {
+        return configured > 0ms ? std::optional(configured) : std::nullopt;
+    }
+
     void logQuery(const char* query) {
         auto response = module->command(query, 5s);
         if (!response.ok()) {
@@ -319,6 +401,12 @@ private:
         config.uart_config.cts_io_num = UART_PIN_NO_CHANGE;
         // 115200 is far above what NB-IoT delivers (docs/specs/NB-IoT.md, "UART baud rate")
         config.uart_config.baud_rate = 115200;
+        // Not the default PLL clock: before light sleep, IDF suspends every enabled UART and waits
+        // for it to sync its registers, which needs the UART's clock running. On the PLL that
+        // wait never ended, and the device froze the first time it went to sleep. XTAL is also
+        // what IDF recommends for peripherals while the CPU frequency scales. It doesn't stay on
+        // in light sleep: waking on RX edges needs no clock
+        config.uart_config.source_clk = UART_SCLK_XTAL;
         // Room for a full AT+QIRD response: 512 bytes of data as 1024 hex digits, plus framing
         config.dte_buffer_size = 2048;
         auto dte = esp_modem::create_uart_dte(&config);
@@ -326,6 +414,24 @@ private:
             throw std::runtime_error("could not create UART terminal");
         }
         return dte;
+    }
+
+    /**
+     * @brief Wakes the ESP32 from light sleep when the modem starts sending.
+     *
+     * Counting RX edges is the only UART wake-up that works without the 40 MHz crystal running
+     * in light sleep, which would cost milliamps. It loses the first few bytes of whatever woke
+     * us, so handleUrc() treats a line it can't make sense of as "something happened" and looks
+     * for itself (docs/specs/NB-IoT.md, "Waking the ESP32 on UART edges"). While a command is in
+     * flight the ESP32 stays awake, so responses arrive intact.
+     */
+    static void enableUartWakeup() {
+        uart_wakeup_cfg_t config {};
+        config.wakeup_mode = UART_WK_MODE_ACTIVE_THRESH;
+        // The fewest edges the hardware takes
+        config.rx_edge_threshold = 3;
+        ESP_ERROR_THROW(uart_wakeup_setup(MODEM_UART, &config));
+        ESP_ERROR_THROW(esp_sleep_enable_uart_wakeup(MODEM_UART));
     }
 
     // Runs on the UART's receive task, so it must not send commands to the module
@@ -346,13 +452,30 @@ private:
             }
             return;
         }
+        if (auto connected = parseCsconUrc(line)) {
+            // Verbose only: a published log record is an uplink, so if this got published,
+            // logging "idle" would bring the radio straight back to connected
+            LOGTV(CELLULAR, "RRC %s", *connected ? "connected" : "idle");
+            updateRrcState(*connected);
+            return;
+        }
+        if (auto edrx = parseCedrxp(line)) {
+            LOGTI(CELLULAR, "eDRX changed by the network: %s", describe(*edrx).c_str());
+            return;
+        }
         if (line.starts_with("+IP:")) {
             // The PDP context got its address
             LOGTD(CELLULAR, "URC: %.*s", static_cast<int>(line.size()), line.data());
             networkChanged.overwrite(true);
             return;
         }
-        LOGTD(CELLULAR, "URC: %.*s", static_cast<int>(line.size()), line.data());
+        // Most likely a URC that woke the ESP32 from light sleep and lost its first bytes, e.g.
+        // 'RC: "recv",0,40'. Whatever it was, look for what it could have been: socket data and a
+        // change in registration or RRC state. Verbose only: a published log record would bring
+        // the radio back to connected, and its acknowledgement could wake us the same way
+        LOGTV(CELLULAR, "Unrecognized line from the modem, checking for news: %.*s", static_cast<int>(line.size()), line.data());
+        transport.checkForData();
+        networkChanged.overwrite(true);
     }
 
     static bool sharesPinsWithConsole([[maybe_unused]] const CellularModemPins& pins) {
@@ -378,6 +501,8 @@ private:
     static constexpr uart_port_t MODEM_UART = UART_NUM_1;
 
     const CellularModemPins pins;
+    // nullopt for eDRX off
+    const std::optional<milliseconds> edrxCycle;
     StateSource& networkConnecting;
     StateSource& networkReady;
     const State& rtcInSync;
@@ -391,14 +516,19 @@ private:
     CopyQueue<bool> networkChanged { "cellular-network", 1 };
     steady_clock::time_point networkReadySince;
     std::optional<steady_clock::time_point> lastNtpAttempt;
+    std::optional<EdrxParameters> lastEdrx;
+    std::optional<milliseconds> lastIdlePagingCycle;
     // Set from the URC handler too
     std::atomic<steady_clock::time_point> lastTimeSync;
 
     mutable std::mutex statusMutex;
     CellularStatus status;
-
-    PowerManagementLock noLightSleep { "cellular", ESP_PM_NO_LIGHT_SLEEP };
-    std::unique_ptr<PowerManagementLockGuard> noLightSleepGuard;
+    // Guarded by statusMutex too
+    steady_clock::time_point rrcConnectedSince;
+    steady_clock::duration rrcConnectedTime {};
+    // Counted from when the driver starts, like the ESP32's sleep time
+    steady_clock::time_point rrcLastReported = steady_clock::now();
+    uint32_t rrcConnections = 0;
 };
 
 }    // namespace cornucopia::ugly_duckling::kernel::drivers::cellular
