@@ -2,6 +2,7 @@
 
 #include <Log.hpp>
 
+#include <esp_crt_bundle.h>
 #include <esp_transport.h>
 #include <mbedtls/error.h>
 #include <mbedtls/net_sockets.h>
@@ -13,6 +14,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -30,7 +32,8 @@ LOGGING_TAG(TLS, "tls")
  * esp-mqtt's own TLS support (esp-tls) opens the socket itself, so it can't run over the
  * cellular modem's AT socket transport. This does the same with mbedTLS directly, on top of
  * whatever transport it's given: same server certificate and optional client certificate as the
- * WiFi path, verification required, and the hostname checked against the certificate.
+ * WiFi path, verification required, and the hostname checked against the certificate. The OTA
+ * download uses it too, verifying against the CA bundle instead of a pinned certificate.
  */
 class TlsTransport {
 public:
@@ -41,7 +44,12 @@ public:
         std::string clientKey;
     };
 
-    TlsTransport(esp_transport_handle_t parent, Credentials tlsCredentials)
+    /**
+     * @param tlsCredentials the server certificate to pin, and the client certificate if any;
+     * std::nullopt verifies the server against the CA bundle built into the firmware instead,
+     * without a client certificate, for servers we don't pin a certificate for (the OTA image host)
+     */
+    TlsTransport(esp_transport_handle_t parent, std::optional<Credentials> tlsCredentials)
         : parent(parent)
         , credentials(std::move(tlsCredentials))
         , handle(esp_transport_init()) {
@@ -73,14 +81,23 @@ private:
 
         check("mbedtls_ssl_config_defaults", mbedtls_ssl_config_defaults(&config, MBEDTLS_SSL_IS_CLIENT, MBEDTLS_SSL_TRANSPORT_STREAM, MBEDTLS_SSL_PRESET_DEFAULT));
 
-        // PEM parsing wants the terminating NUL counted in the length
-        check("parsing the server certificate", mbedtls_x509_crt_parse(&serverCert, asBytes(credentials.serverCert), credentials.serverCert.size() + 1));
-        mbedtls_ssl_conf_ca_chain(&config, &serverCert, nullptr);
         mbedtls_ssl_conf_authmode(&config, MBEDTLS_SSL_VERIFY_REQUIRED);
 
-        if (!credentials.clientCert.empty() && !credentials.clientKey.empty()) {
-            check("parsing the client certificate", mbedtls_x509_crt_parse(&clientCert, asBytes(credentials.clientCert), credentials.clientCert.size() + 1));
-            check("parsing the client key", mbedtls_pk_parse_key(&clientKey, asBytes(credentials.clientKey), credentials.clientKey.size() + 1, nullptr, 0));
+        if (!credentials) {
+            // Looks the issuer up in the bundle during the handshake
+            if (esp_crt_bundle_attach(&config) != ESP_OK) {
+                throw std::runtime_error("TLS setup failed: attaching the CA bundle");
+            }
+            return;
+        }
+
+        // PEM parsing wants the terminating NUL counted in the length
+        check("parsing the server certificate", mbedtls_x509_crt_parse(&serverCert, asBytes(credentials->serverCert), credentials->serverCert.size() + 1));
+        mbedtls_ssl_conf_ca_chain(&config, &serverCert, nullptr);
+
+        if (!credentials->clientCert.empty() && !credentials->clientKey.empty()) {
+            check("parsing the client certificate", mbedtls_x509_crt_parse(&clientCert, asBytes(credentials->clientCert), credentials->clientCert.size() + 1));
+            check("parsing the client key", mbedtls_pk_parse_key(&clientKey, asBytes(credentials->clientKey), credentials->clientKey.size() + 1, nullptr, 0));
             check("mbedtls_ssl_conf_own_cert", mbedtls_ssl_conf_own_cert(&config, &clientCert, &clientKey));
         }
     }
@@ -265,7 +282,7 @@ private:
     static constexpr milliseconds RECORD_TIMEOUT = 5s;
 
     esp_transport_handle_t parent;
-    const Credentials credentials;
+    const std::optional<Credentials> credentials;
     esp_transport_handle_t handle;
 
     mbedtls_ssl_config config {};

@@ -141,6 +141,10 @@ CONFIG_ESP_COREDUMP_LOGS=n
 # Handle undelivered MQTT messages
 CONFIG_MQTT_REPORT_DELETED_MESSAGES=y
 
+# Let the HTTP client run over a transport we provide: the OTA download goes over the cellular
+# modem's AT sockets, which lwIP can't reach (docs/specs/NB-IoT.md, stage 5)
+CONFIG_ESP_HTTP_CLIENT_ENABLE_CUSTOM_TRANSPORT=y
+
 # We don't need TLS server functionality
 CONFIG_MBEDTLS_TLS_CLIENT_ONLY=y
 

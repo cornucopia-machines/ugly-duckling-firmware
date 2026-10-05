@@ -6,14 +6,16 @@
 #include <State.hpp>
 #include <Watchdog.hpp>
 #include <config/ConfigState.hpp>
-#include <drivers/WiFiDriver.hpp>
+#include <mqtt/TlsTransport.hpp>
 
 #include <ArduinoJson.h>
 #include <esp_crt_bundle.h>
 #include <esp_heap_caps.h>
 #include <esp_http_client.h>
 #include <esp_https_ota.h>
+#include <esp_transport.h>
 
+#include <chrono>
 #include <memory>
 #include <optional>
 #include <string>
@@ -25,6 +27,18 @@ LOGGING_TAG(UPDATE, "update")
 
 class HttpUpdater {
 public:
+    /**
+     * @brief The link the image is downloaded over.
+     */
+    struct Network {
+        const State& ready;
+        // Waited on (for a while) before downloading, so that MQTT's TLS handshake isn't running
+        // alongside ours; nullptr when MQTT isn't started during the update
+        const State* mqttReady = nullptr;
+        // The cellular modem's socket transport to download over; nullptr for lwIP's own
+        esp_transport_handle_t modemTransport = nullptr;
+    };
+
     static void startUpdate(const std::string& url, const std::shared_ptr<NvsStore>& nvs) {
         nvs->set(HttpUpdater::UPDATE_KEY, url);
         Task::run("update", 3072, [](Task& _task) {
@@ -33,7 +47,7 @@ public:
         });
     }
 
-    static std::optional<config::RejectionCode> performPendingHttpUpdateIfNecessary(const std::shared_ptr<NvsStore>& nvs, const std::shared_ptr<WiFiDriver>& wifi, const State& mqttReady, std::shared_ptr<Watchdog> watchdog, const std::string& firmwareVersion) {
+    static std::optional<config::RejectionCode> performPendingHttpUpdateIfNecessary(const std::shared_ptr<NvsStore>& nvs, const Network& network, std::shared_ptr<Watchdog> watchdog, const std::string& firmwareVersion) {
         // If a previous update attempt failed or crashed (marker survived the reboot),
         // report the failure so the server knows not to re-send the same update.
         if (nvs->contains(UPDATE_FAILED_KEY)) {
@@ -61,7 +75,7 @@ public:
         }
 
         HttpUpdater updater(nvs, std::move(watchdog), firmwareVersion);
-        updater.performPendingHttpUpdate(url, wifi, mqttReady);
+        updater.performPendingHttpUpdate(url, network);
     }
 
     /**
@@ -72,25 +86,6 @@ public:
      */
     static bool isUpdatePending(const std::shared_ptr<NvsStore>& nvs) {
         return nvs->contains(UPDATE_KEY);
-    }
-
-    /**
-     * @brief Stands in for performPendingHttpUpdateIfNecessary() on a link firmware can't be
-     * downloaded over (docs/specs/NB-IoT.md, stage 5). An update scheduled over WiFi in the same
-     * UPDATE as the switch to such a link is dropped and rejected, so the server stops retrying.
-     */
-    static std::optional<config::RejectionCode> discardPendingUpdate(const std::shared_ptr<NvsStore>& nvs) {
-        if (nvs->contains(UPDATE_FAILED_KEY)) {
-            nvs->remove(UPDATE_FAILED_KEY);
-            LOGTE(UPDATE, "Previous firmware update failed, rejecting");
-            return config::RejectionCode::Internal;
-        }
-        if (!nvs->contains(UPDATE_KEY)) {
-            return std::nullopt;
-        }
-        nvs->remove(UPDATE_KEY);
-        LOGTW(UPDATE, "Firmware update pending, but it can only be downloaded over WiFi, rejecting");
-        return config::RejectionCode::Unimplemented;
     }
 
     static constexpr const char* UPDATE_KEY = "pending-update";
@@ -110,7 +105,7 @@ private:
      * a failure too brings the device back up fully. The next boot reports the failure via the
      * UPDATE_FAILED_KEY marker.
      */
-    [[noreturn]] void performPendingHttpUpdate(const std::string& url, const std::shared_ptr<WiFiDriver>& wifi, const State& mqttReady) {
+    [[noreturn]] void performPendingHttpUpdate(const std::string& url, const Network& network) {
         LOGTI(UPDATE, "Updating from version %s via URL %s",
             firmwareVersion.c_str(), url.c_str());
 
@@ -119,8 +114,10 @@ private:
         // rejection on the next boot so the server stops retrying.
         nvs->set(UPDATE_FAILED_KEY, url);
 
+        bool overModem = network.modemTransport != nullptr;
+
         LOGTD(UPDATE, "Waiting for network...");
-        if (!wifi->getNetworkReady().awaitSet(15s)) {
+        if (!network.ready.awaitSet(overModem ? MODEM_NETWORK_READY_TIMEOUT : NETWORK_READY_TIMEOUT)) {
             LOGTE(UPDATE, "Network not ready, aborting update, restarting...");
             delayedRestart();
         }
@@ -128,9 +125,24 @@ private:
         // Let MQTT finish connecting first: two concurrent TLS handshakes (plus BLE) can exhaust
         // internal RAM on ESP32-C6. Proceed without MQTT if it can't connect, though; an
         // unreachable broker should not block the update.
-        LOGTD(UPDATE, "Waiting for MQTT...");
-        if (!mqttReady.awaitSet(15s)) {
-            LOGTW(UPDATE, "MQTT not ready, updating without it");
+        if (network.mqttReady != nullptr) {
+            LOGTD(UPDATE, "Waiting for MQTT...");
+            if (!network.mqttReady->awaitSet(15s)) {
+                LOGTW(UPDATE, "MQTT not ready, updating without it");
+            }
+        }
+
+        // Over the modem, the HTTP client runs on its socket transport, with TLS on top for HTTPS.
+        // Lives until the restart below, as the HTTP client only borrows it
+        std::unique_ptr<mqtt::TlsTransport> modemTls;
+        esp_transport_handle_t transport = nullptr;
+        if (overModem) {
+            transport = network.modemTransport;
+            if (url.starts_with("https://")) {
+                // The image host is verified against the CA bundle, without a client certificate
+                modemTls = std::make_unique<mqtt::TlsTransport>(network.modemTransport, std::nullopt);
+                transport = modemTls->getHandle();
+            }
         }
 
         esp_http_client_config_t httpConfig = {};
@@ -144,6 +156,11 @@ private:
         httpConfig.user_data = this;
         httpConfig.crt_bundle_attach = esp_crt_bundle_attach;
         httpConfig.keep_alive_enable = true;
+        if (overModem) {
+            httpConfig.transport = transport;
+            // How long a read may wait: NB-IoT round trips take seconds, more in poor coverage
+            httpConfig.timeout_ms = static_cast<int>(duration_cast<milliseconds>(MODEM_HTTP_TIMEOUT).count());
+        }
 
         esp_https_ota_config_t otaConfig = {};
         otaConfig.http_config = &httpConfig;
@@ -252,6 +269,12 @@ private:
     size_t downloaded = 0;
 
     static constexpr const size_t DOWNLOAD_NOTIFICATION_BATCH = 128 * 1024;
+
+    static constexpr std::chrono::milliseconds NETWORK_READY_TIMEOUT = std::chrono::seconds(15);
+    // Registering on a cell can take minutes, especially from a cold start
+    static constexpr std::chrono::milliseconds MODEM_NETWORK_READY_TIMEOUT = std::chrono::minutes(5);
+    // The same as MQTT's network timeout over the modem
+    static constexpr std::chrono::milliseconds MODEM_HTTP_TIMEOUT = std::chrono::seconds(30);
 };
 
 }    // namespace cornucopia::ugly_duckling::kernel

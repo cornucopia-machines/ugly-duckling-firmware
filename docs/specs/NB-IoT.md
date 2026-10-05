@@ -14,6 +14,7 @@ Tracking issues:
 - [cornucopia-app#492](https://github.com/cornucopia-machines/cornucopia-app/issues/492) — end-state transport (CoAP over DTLS 1.2 + CID)
 - [cornucopia-app#507](https://github.com/cornucopia-machines/cornucopia-app/issues/507) — device time acquisition (NITZ)
 - [cornucopia-app#533](https://github.com/cornucopia-machines/cornucopia-app/issues/533) — choose WiFi or cellular when (re-)provisioning a device
+- [cornucopia-app#535](https://github.com/cornucopia-machines/cornucopia-app/issues/535) — firmware over MQTT in chunks, towards delta OTA ([#674](https://github.com/cornucopia-machines/ugly-duckling-firmware/issues/674))
 - Hardware design: [`ugly-duckling-hardware/docs/specs/nb-iot.md`](https://github.com/cornucopia-machines/ugly-duckling-hardware/blob/main/docs/specs/nb-iot.md)
 
 ## Terms
@@ -101,7 +102,7 @@ CellularDriver              ← owns the UART, power/wake, registration, network
   └─ CellularModuleDriver   ← chipset-specific AT: init sequence, sockets, URC parsing, NTP
        └─ Bc660KDriver      ← esp_modem GenericModule subclass; Quectel QI*/QENG/QSCLK commands
 AtSocketTransport           ← esp_transport for esp-mqtt, talks only to CellularModuleDriver's socket API
-TlsTransport                ← mbedTLS over any esp_transport; MqttDriver wraps AtSocketTransport in it
+TlsTransport                ← mbedTLS over any esp_transport; MqttDriver and HttpUpdater wrap AtSocketTransport in it
 ```
 
 Supporting another modem then means adding another `CellularModuleDriver`, the same way the
@@ -162,17 +163,28 @@ last telemetry message. The server ignores fields it doesn't
 know, so this needs no server change up front; server-side handling follows once the shape has
 settled.
 
-### OTA is off over NB-IoT until stage 5
+### OTA over the modem, without MQTT
 
-`HttpUpdater` downloads with `esp_http_client` over lwIP and waits on `WiFiDriver` directly, so it
-can't work over the modem. On the cellular link:
+Firmware updates use the same `HttpUpdater` on both links: the `firmware` entry in UPDATE (or the
+`update` command) stores the URL and reboots, and the next boot downloads the image with
+`esp_https_ota`, then reboots again either way. The BC660K has no HTTP AT commands
+(`AT+QFOTADL` only updates the modem itself), so on the cellular link the HTTP client runs over
+the modem's socket transport instead of lwIP: IDF's `CONFIG_ESP_HTTP_CLIENT_ENABLE_CUSTOM_TRANSPORT`
+lets `esp_http_client` take a transport of ours, which it uses for every connect, redirects
+included. That transport is `AtSocketTransport`, with `TlsTransport` on top for HTTPS, verifying
+the image host against the CA bundle (the same one the WiFi path uses) rather than the pinned MQTT
+server certificate: `TlsTransport` takes `std::nullopt` for its credentials then. The HTTP client
+and HTTPS OTA post their progress to IDF's default event loop, which used to be created by
+`WiFiDriver`; `startDevice()` now creates it on every link.
 
-- the `update` handler answers a `firmware` entry with `RejectionCode::Unimplemented`, so the
-  server stops retrying instead of the device rebooting into an update attempt that is bound to
-  fail;
-- the `http-update` command isn't registered;
-- an update scheduled over WiFi in the same UPDATE as a switch to the cellular link is dropped
-  at boot and rejected with `Unimplemented` too.
+The modem driver has a single socket, so on the cellular link the update boot downloads before
+MQTT is started, and doesn't start it at all: there are no MQTT logs during the update, only the
+serial console. The outcome reaches the server after the reboot, in BOOT and SYNC, as over WiFi.
+Waiting for the network allows 5 minutes instead of 15 s, since registering can take that long,
+and HTTP reads wait up to 30 s, like MQTT's over the modem.
+
+Not resumable yet: an interrupted download is rejected and has to start over, and every update
+costs about 2 MB of the 1NCE budget. See stage 5 for what comes next.
 
 ### Sleeping: eDRX, not PSM
 
@@ -328,7 +340,7 @@ Goal: BOOT, SYNC (config/update request) and TELEMETRY reach the existing broker
 - [x] mbedTLS over the AT transport (`TlsTransport`); same server cert, optional client cert, verification required. Logs how long the handshake took
 - [x] `MqttDriver`: pass the custom transport in cellular builds; keepalive 10 min (pings every 5 min, about 58 KB/day) until the NAT timeout is measured, network timeout 30 s, 8 KB task stack for TLS on top of the AT layer
 - [x] The transport stack follows the URI's scheme, since esp-mqtt ignores it once given a transport: TLS for `mqtts`/`wss`, IDF's WebSocket transport on top for `ws`/`wss`. WebSocket costs a few hundred bytes of HTTP upgrade per connection and 2–6 bytes per packet, so plain `mqtts` is the better choice for NB-IoT once the broker is reachable that way
-- [x] OTA off: reject `firmware` entries with `Unimplemented`, don't register `http-update`
+- [x] OTA off: reject `firmware` entries with `Unimplemented`, don't register `http-update` (until stage 5)
 - [x] Time: `RtcDriver` takes time from the modem instead of SNTP. NITZ first, as `+CTZEU` (`AT+CTZR=3`), which carries UTC, so there's no offset to get wrong. `AT+QNTP` 30 s after the network is up if no NITZ came, then daily. (`AT+CTZU` is a BG96 command the BC660K doesn't have, and `+CCLK` would mean guessing whether the module reports local time)
 - [x] Telemetry: link-quality fields from `AT+QENG=0`, and bytes sent and received over the modem (see "Link quality in telemetry")
 - [x] `DebugConsole`: in cellular builds, show the cellular link in place of `WIFI: off` (registration state, IP address, RSRP/ECL). It refreshes every 250 ms, so it reads what `CellularDriver` last saw (`getStatus()`, updated on every registration check) rather than sending AT commands itself
@@ -353,7 +365,7 @@ Goal: commands and UPDATE messages sent from the server arrive with predictable 
 the modem sleeps between paging windows.
 
 - [x] `cellular` section in device-config (see "Sleeping: eDRX, not PSM"); moved to network-config with `links`
-- [x] `links` in network-config chooses WiFi or NB-IoT at boot, in place of `-DUD_CONNECTIVITY`; every Carrot build has both links, the cellular code gated on `UD_PLATFORM_CARROT` (see "Choosing WiFi or NB-IoT"). Links that can't be honored fall back to WiFi with an error; a firmware update pending from before a switch to cellular is dropped and rejected
+- [x] `links` in network-config chooses WiFi or NB-IoT at boot, in place of `-DUD_CONNECTIVITY`; every Carrot build has both links, the cellular code gated on `UD_PLATFORM_CARROT` (see "Choosing WiFi or NB-IoT"). Links that can't be honored fall back to WiFi with an error; a firmware update pending from before a switch to cellular was dropped and rejected (until stage 5, which downloads it over the modem)
 - [ ] Confirm a link change only once MQTT has connected over the new link; revert to the confirmed config otherwise. Firmware updates need the same delayed confirmation
 - [ ] cornucopia-app: choose the link when (re-)provisioning a device, issuing a fresh client certificate and key with every change ([cornucopia-app#533](https://github.com/cornucopia-machines/cornucopia-app/issues/533))
 - [x] PSM off (`AT+CPSMS=0`), only written when it differs
@@ -422,10 +434,32 @@ Moved out of stage 4:
 
 ### Stage 5 — OTA over NB-IoT
 
-- [ ] Decide the download path: HTTP(S) over the AT socket transport (esp_http_client has no custom transport hook, so it needs a thin HTTP client or the localhost-listener trick from the esp_modem example) vs the modem's HTTP commands, if the BC660K has them
-- [ ] Resume interrupted downloads (HTTP range requests); a ~1.5 MB image is a large share of the 1NCE data budget, so retries must not start from zero
-- [ ] Ship firmware update over NB-IoT end-to-end, including rollback; remove the stage 3 rejection
+Goal: the existing HTTP update, with a full image, works over the modem, with firmware changes
+only (see "OTA over the modem, without MQTT").
+
+- [x] Turn on `CONFIG_ESP_HTTP_CLIENT_ENABLE_CUSTOM_TRANSPORT`
+- [x] `TlsTransport`: without credentials (`std::nullopt`), verify against the CA bundle (`esp_crt_bundle_attach()`), with no client certificate, for the image host; with credentials, the pinned MQTT server certificate as before
+- [x] Create the default event loop on every link, not only in `WiFiDriver`: without it, every event the HTTP client and HTTPS OTA post fails with `ESP_ERR_INVALID_STATE`, one error log line each
+- [x] `HttpUpdater` waits on a `networkReady` state and takes an optional modem transport, instead of `WiFiDriver`; longer timeouts on cellular, where registration can take minutes
+- [x] On the update boot over cellular, don't start MQTT: the modem driver has one socket (`CONNECT_ID = 0`) and the download needs it. No MQTT logs during the update; the outcome is reported in BOOT on the next boot, as over WiFi
+- [x] Remove the stage 3 rejection: `firmwareUpdatesSupported`, `HttpUpdater::discardPendingUpdate()`, registering `http-update` on WiFi only
+- [ ] Bench: a full image at ECL 0 and ECL 2, time and bytes (cross-check with the 1NCE portal); whether the modem's 2 KB receive buffer holds up under a sustained download
+- [ ] Ship end-to-end, including rollback
 - [ ] Separately: modem firmware updates (Quectel DFOTA), if we need them
+
+To check on the bench:
+
+- [x] The download works over the modem (MK13, 1NCE): TLS handshake with
+  `firmware.cornucopia-machines.eu` in about 5.2 s (275 bytes sent, 3 KB received), then
+  `Downloaded 129.00 KB` 64 s after connecting, about 2 KB/s, so roughly 17 minutes for a 2 MB
+  image. ECL and the time for the whole image still to note
+
+Not resumable, and about 2 MB per update. Both are fixed by the next step, outside this spec: the server
+sends the image in chunks over the device's MQTT session (no HTTP on the device, logs during the
+download, the same path on WiFi), then delta patches with `esp_delta_ota`. See
+[cornucopia-app#535](https://github.com/cornucopia-machines/cornucopia-app/issues/535) (protocol
+and server) and [#674](https://github.com/cornucopia-machines/ugly-duckling-firmware/issues/674)
+(delta OTA).
 
 ### Stage 6 — Use less data and battery, get lower latency
 

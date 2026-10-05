@@ -68,7 +68,7 @@ static void initCellular(ConnectivityDrivers& drivers, const std::shared_ptr<Mod
         ntpServer.empty() ? std::string(RtcDriver::DEFAULT_NTP_SERVER) : ntpServer,
         [rtc](time_t utcTime, const char* source) { rtc->setTime(utcTime, source); });
     drivers.cellular = cellular;
-    drivers.mqttTransport = cellular->getTransport();
+    drivers.modemTransport = cellular->getTransport();
 }
 #endif
 

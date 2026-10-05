@@ -43,9 +43,8 @@ public:
         , hostname(hostname) {
         LOGTV(WIFI, "Registering WiFi handlers");
 
-        // Initialize TCP/IP adapter and event loop
+        // Initialize TCP/IP adapter; the default event loop is created in startDevice()
         ESP_ERROR_CHECK(esp_netif_init());
-        ESP_ERROR_CHECK(esp_event_loop_create_default());
 
         // Create default WiFi station interface
         esp_netif_create_default_wifi_sta();

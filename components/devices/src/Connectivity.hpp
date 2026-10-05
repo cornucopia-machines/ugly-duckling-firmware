@@ -39,8 +39,9 @@ struct ConnectivityDrivers {
     std::shared_ptr<cellular::CellularDriver> cellular;
 #endif
     std::shared_ptr<RtcDriver> rtc;
-    // The transport MQTT connects over; nullptr for lwIP's own
-    esp_transport_handle_t mqttTransport = nullptr;
+    // The cellular modem's socket transport, which MQTT and the OTA download connect over;
+    // nullptr for lwIP's own
+    esp_transport_handle_t modemTransport = nullptr;
 };
 
 ConnectivityDrivers initConnectivity(
