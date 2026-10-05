@@ -449,10 +449,10 @@ only (see "OTA over the modem, without MQTT").
 
 To check on the bench:
 
-- [x] The download works over the modem (MK13, 1NCE): TLS handshake with
-  `firmware.cornucopia-machines.eu` in about 5.2 s (275 bytes sent, 3 KB received), then
-  `Downloaded 129.00 KB` 64 s after connecting, about 2 KB/s, so roughly 17 minutes for a 2 MB
-  image. ECL and the time for the whole image still to note
+- [x] The download works over the modem (MK13, 1NCE, RSRP −99 dBm, ECL 1): TLS handshake with
+  `firmware.cornucopia-machines.eu` in about 5.2 s (275 bytes sent, 3 KB received), then a steady
+  2 KB/s or so (`Downloaded 129.00 KB` 64 s after connecting), so roughly 17 minutes for a 2 MB
+  image. The time for the whole image, and ECL 0 / ECL 2, still to note
 
 Not resumable, and about 2 MB per update. Both are fixed by the next step, outside this spec: the server
 sends the image in chunks over the device's MQTT session (no HTTP on the device, logs during the
