@@ -81,34 +81,6 @@ if(NOT DEFINED UD_DEPENDENCIES_LOCK_DIR)
 endif()
 idf_build_set_property(DEPENDENCIES_LOCK "${UD_DEPENDENCIES_LOCK_DIR}/dependencies.${_ud_platform}.lock")
 
-# UD_CONNECTIVITY — how the device reaches the server: WIFI (default) or CELLULAR, the NB-IoT
-# modem on the Desert Lark daughter board (Carrot only). A build-time choice for now; it is meant
-# to become a network-config setting (docs/specs/NB-IoT.md, "Choosing WiFi or NB-IoT").
-#
-# Each link gets its own compile definition, UD_CONNECTIVITY_WIFI or UD_CONNECTIVITY_CELLULAR, and
-# code is gated on the link it needs rather than on the absence of the other, so a build with
-# both only has to define both.
-
-if(NOT DEFINED UD_CONNECTIVITY)
-    set(UD_CONNECTIVITY "$ENV{UD_CONNECTIVITY}")
-endif()
-if(UD_CONNECTIVITY STREQUAL "")
-    set(UD_CONNECTIVITY WIFI)
-endif()
-string(TOUPPER "${UD_CONNECTIVITY}" UD_CONNECTIVITY)
-
-if(UD_CONNECTIVITY STREQUAL "CELLULAR")
-    if(NOT _ud_platform STREQUAL "carrot")
-        message(FATAL_ERROR "Error: UD_CONNECTIVITY=CELLULAR is only supported on carrot, not '${_ud_platform}'")
-    endif()
-    message("Building with cellular connectivity")
-    add_compile_definitions(UD_CONNECTIVITY_CELLULAR)
-elseif(UD_CONNECTIVITY STREQUAL "WIFI")
-    add_compile_definitions(UD_CONNECTIVITY_WIFI)
-else()
-    message(FATAL_ERROR "Error: Unrecognized UD_CONNECTIVITY '${UD_CONNECTIVITY}', expected WIFI or CELLULAR")
-endif()
-
 # UD_DEBUG
 
 if(NOT DEFINED UD_DEBUG)
@@ -227,7 +199,7 @@ if(WOKWI)
 endif()
 
 # Make sure we reconfigure if any of the debug parameters change
-set_property(DIRECTORY PROPERTY UD_DEBUG_TRACKER "${UD_DEBUG} ${UD_DEBUG_CONSOLE} ${UD_NOSLEEP} ${UD_PM_DIAGNOSTICS} ${UD_UART0_CONSOLE} ${UD_CONNECTIVITY}")
+set_property(DIRECTORY PROPERTY UD_DEBUG_TRACKER "${UD_DEBUG} ${UD_DEBUG_CONSOLE} ${UD_NOSLEEP} ${UD_PM_DIAGNOSTICS} ${UD_UART0_CONSOLE}")
 
 set(SDKCONFIG_FILES)
 list(APPEND SDKCONFIG_FILES "${CMAKE_CURRENT_LIST_DIR}/sdkconfig.defaults")
@@ -257,6 +229,10 @@ endif()
 list(JOIN SDKCONFIG_FILES ";" SDKCONFIG_DEFAULTS)
 
 add_compile_definitions(UD_PLATFORM="${_ud_platform}")
+# One definition per platform too, for code that only exists on one of them: the NB-IoT modem
+# (Desert Lark) is Carrot only, so the cellular code is gated on UD_PLATFORM_CARROT
+string(TOUPPER "${_ud_platform}" _ud_platform_upper)
+add_compile_definitions(UD_PLATFORM_${_ud_platform_upper})
 
 add_link_options("-Wl,--gc-sections")
 

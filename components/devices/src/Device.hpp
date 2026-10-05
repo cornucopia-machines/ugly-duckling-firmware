@@ -169,11 +169,12 @@ static void startDevice() {
         LOGD("No battery configured");
     }
 
-    auto connectivity = initConnectivity(states, networkConfig, boot.deviceConfig, ble, deviceDefinition->getCellularModemPins());
+    auto connectivity = initConnectivity(states, networkConfig, ble, deviceDefinition->getCellularModemPins());
 
 #ifdef UD_DEBUG_CONSOLE
     new DebugConsole(batteryManager,
-#ifdef UD_CONNECTIVITY_CELLULAR
+        connectivity.wifi,
+#ifdef UD_PLATFORM_CARROT
         connectivity.cellular,
 #endif
         ble);
@@ -208,15 +209,18 @@ static void startDevice() {
     // by the first SYNC this boot publishes.
     auto pendingFirmwareRejection = std::make_shared<std::optional<RejectionCode>>();
 
-#ifdef UD_CONNECTIVITY_WIFI
-    // Handle any pending HTTP update (reboots after the attempt, whether it succeeds or not)
-    registerHttpUpdateCommand(mqttRoot, legacyConfigNvs);
-    auto firmwareDownloadRejection = HttpUpdater::performPendingHttpUpdateIfNecessary(legacyConfigNvs, connectivity.wifi, states->mqttReady, watchdog, firmwareVersion);
-#else
     // No OTA over the modem yet (docs/specs/NB-IoT.md, stage 5): the downloader needs lwIP. The
     // update handler rejects firmware entries instead of scheduling one
+    bool firmwareUpdatesSupported = connectivity.link == NetworkLink::WiFi;
     std::optional<RejectionCode> firmwareDownloadRejection;
-#endif
+    if (firmwareUpdatesSupported) {
+        // Handle any pending HTTP update (reboots after the attempt, whether it succeeds or not)
+        registerHttpUpdateCommand(mqttRoot, legacyConfigNvs);
+        firmwareDownloadRejection = HttpUpdater::performPendingHttpUpdateIfNecessary(legacyConfigNvs, connectivity.wifi, states->mqttReady, watchdog, firmwareVersion);
+    } else {
+        // Scheduled over WiFi together with a switch to another link
+        firmwareDownloadRejection = HttpUpdater::discardPendingUpdate(legacyConfigNvs);
+    }
 
     // Detect whether the bootloader rolled back from a failed OTA partition. This and a failed
     // download cannot co-occur: a failed download never writes a new partition, so there's nothing
@@ -243,7 +247,7 @@ static void startDevice() {
         deviceDefinition, boot.deviceConfig, boot.configNvs, shutdownManager,
         boot.deviceManifestEntry);
 
-    registerUpdateHandler(mqttRoot, boot.deviceManifestEntry.fingerprint, boot.networkManifestEntry.fingerprint, runtime.functionRegistry, boot.configStateStore, syncTriggerQueue, legacyConfigNvs, firmwareVersion, pendingFirmwareRejection);
+    registerUpdateHandler(mqttRoot, boot.deviceManifestEntry.fingerprint, boot.networkManifestEntry.fingerprint, runtime.functionRegistry, boot.configStateStore, syncTriggerQueue, legacyConfigNvs, firmwareVersion, firmwareUpdatesSupported, pendingFirmwareRejection);
     initSyncTask(mqttRoot, syncTriggerQueue, states, runtime.functionRegistry, runtime.deviceManifestEntry, boot.networkManifestEntry, pendingConfigRejection, pendingFirmwareRejection, firmwareVersion);
 
     // Booting a `requested` set is strict (docs/Configuration.md, "The confirmed/requested state
@@ -287,20 +291,18 @@ static void startDevice() {
     auto functionsInitJson = runtime.functionsInitDoc.template as<JsonArray>();
 
     initTelemetryPublishTask(boot.deviceConfig->publishInterval.get(), watchdog, mqttRoot, batteryManager, powerManager,
-#ifdef UD_CONNECTIVITY_WIFI
         connectivity.wifi,
-#endif
-#ifdef UD_CONNECTIVITY_CELLULAR
+#ifdef UD_PLATFORM_CARROT
         connectivity.cellular,
 #endif
         ble, runtime.telemetryCollector, telemetryPublishQueue);
 
-#ifdef UD_CONNECTIVITY_WIFI
-    // Enable power saving once we are done initializing
-    WiFiDriver::setPowerSaveMode(boot.deviceConfig->sleepWhenIdle.get());
-#endif
+    if (connectivity.wifi != nullptr) {
+        // Enable power saving once we are done initializing
+        WiFiDriver::setPowerSaveMode(boot.deviceConfig->sleepWhenIdle.get());
+    }
 
-    publishBootMessage(mqttRoot, resetReason, bootCount, consecutiveCrashes, firmwareVersion, macAddress, networkConfig, runtime.initState, peripheralsInitJson, functionsInitJson,
+    publishBootMessage(mqttRoot, resetReason, bootCount, consecutiveCrashes, firmwareVersion, macAddress, networkConfig, connectivity.link, runtime.initState, peripheralsInitJson, functionsInitJson,
         powerManager, deviceDefinition, hardwareVersion, rejectionToReport, firmwareDownloadRejection, rollback);
 
     states->kernelReady.set();

@@ -10,11 +10,8 @@ using namespace std::chrono_literals;
 namespace cornucopia::ugly_duckling::kernel::drivers::cellular {
 
 /**
- * @brief The "cellular" section of device-config: how the modem trades responsiveness for power
+ * @brief The "cellular" section of network-config: how the modem trades responsiveness for power
  * (docs/specs/NB-IoT.md, "Stage 4").
- *
- * In device-config rather than network-config, so that changing it doesn't mean sending the
- * credentials in network-config to the device again.
  */
 struct CellularConfig : ConfigurationSection {
     /**

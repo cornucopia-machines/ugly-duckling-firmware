@@ -1,16 +1,20 @@
 #pragma once
 
+#include <NetworkLink.hpp>
 #include <drivers/RtcDriver.hpp>
+#include <drivers/cellular/CellularConfig.hpp>
 #include <mqtt/MqttDriver.hpp>
 
 #include <algorithm>
 #include <string>
+#include <vector>
 
 using namespace cornucopia::ugly_duckling::kernel;
 using namespace cornucopia::ugly_duckling::kernel::mqtt;
 
 /**
- * @brief Network configuration: MQTT broker settings, NTP, and device identity.
+ * @brief Network configuration: MQTT broker settings, NTP, device identity, and the link to reach
+ * the broker over.
  *
  * Two shapes exist depending on the migration state:
  *   - **Old** (pre-migration, from NVS `config` namespace): has `instance`/`location`, no `id`.
@@ -26,6 +30,17 @@ struct NetworkConfig : MqttDriver::Config {
     Property<std::string> instance { this, "instance" };
     Property<std::string> location { this, "location" };
     NamedConfigurationEntry<RtcDriver::Config> ntp { this, "ntp" };
+
+    /**
+     * @brief The links to reach the server over, in order of preference: "wifi" or "cellular".
+     * Only a single link is supported for now; none means WiFi (see chooseNetworkLink()).
+     */
+    ArrayProperty<std::string> links { this, "links" };
+
+    /**
+     * @brief NB-IoT modem settings, see CellularConfig. Only used with the cellular link.
+     */
+    NamedConfigurationEntry<drivers::cellular::CellularConfig> cellular { this, "cellular" };
 
     // TODO(legacy-v1-topics): remove fallback and the location/instance fields
     std::string getTopicRoot() const {

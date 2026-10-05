@@ -1,39 +1,27 @@
 #include "KernelStatus.hpp"
+#include "Log.hpp"
 #include "NetworkConfig.hpp"
-#include "devices/DeviceConfiguration.hpp"
+#include "NetworkLink.hpp"
 #include "drivers/BleDriver.hpp"
 #include "drivers/RtcDriver.hpp"
+#include "drivers/WiFiDriver.hpp"
+#include "drivers/WifiApRecord.hpp"
 #include "drivers/cellular/CellularModemPins.hpp"
 #include <Connectivity.hpp>
 
-#ifdef UD_CONNECTIVITY_WIFI
-#include "drivers/WiFiDriver.hpp"
-#include "drivers/WifiApRecord.hpp"
-
-#include <vector>
-#endif
-#ifdef UD_CONNECTIVITY_CELLULAR
+#ifdef UD_PLATFORM_CARROT
 #include "drivers/cellular/CellularDriver.hpp"
-
-#include <stdexcept>
 #endif
 
 #include <ctime>
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 using namespace cornucopia::ugly_duckling::kernel;
 
-ConnectivityDrivers initConnectivity(
-    const std::shared_ptr<ModuleStates>& states,
-    const std::shared_ptr<NetworkConfig>& networkConfig,
-    [[maybe_unused]] const std::shared_ptr<devices::DeviceConfiguration>& deviceConfig,
-    const std::shared_ptr<BleDriver>& ble,
-    [[maybe_unused]] const std::optional<cellular::CellularModemPins>& modemPins) {
-    ConnectivityDrivers drivers;
-
-#ifdef UD_CONNECTIVITY_WIFI
+static void initWiFi(ConnectivityDrivers& drivers, const std::shared_ptr<ModuleStates>& states, const std::shared_ptr<NetworkConfig>& networkConfig, const std::shared_ptr<BleDriver>& ble) {
     auto wifi = std::make_shared<WiFiDriver>(
         states->networkConnecting,
         states->networkReady,
@@ -42,7 +30,7 @@ ConnectivityDrivers initConnectivity(
     drivers.wifi = wifi;
 
     // Init real time clock, straight away: the SNTP setup has to beat the first DHCP lease
-    auto rtc = std::make_shared<RtcDriver>(wifi->getNetworkReady(), networkConfig->ntp.get(), states->rtcInSync);
+    drivers.rtc = std::make_shared<RtcDriver>(wifi->getNetworkReady(), networkConfig->ntp.get(), states->rtcInSync);
 
     ble->setOnWifiScanRequested([wifi, ble]() {
         wifi->startWifiScan([ble](const std::vector<WifiApRecord>& records) {
@@ -62,23 +50,18 @@ ConnectivityDrivers initConnectivity(
     wifi->setOnStatusChanged([ble](const std::string& status) {
         ble->setWifiStatus(status);
     });
-#else
+}
+
+#ifdef UD_PLATFORM_CARROT
+static void initCellular(ConnectivityDrivers& drivers, const std::shared_ptr<ModuleStates>& states, const std::shared_ptr<NetworkConfig>& networkConfig, const cellular::CellularModemPins& modemPins) {
     // No lwIP to run SNTP over: the time comes from the modem
     auto rtc = std::make_shared<RtcDriver>(states->rtcInSync);
-#endif
-    ble->setOnTimeReceived([rtc](time_t utcTime) { rtc->setTime(utcTime); });
     drivers.rtc = rtc;
-
-#ifdef UD_CONNECTIVITY_CELLULAR
-    if (!modemPins) {
-        // A cellular build on such a board could never connect, so don't pretend to start
-        throw std::runtime_error("Built for cellular connectivity, but this board has no modem connector");
-    }
 
     auto ntpServer = networkConfig->ntp.get()->host.get();
     auto cellular = std::make_shared<cellular::CellularDriver>(
-        *modemPins,
-        deviceConfig->cellular.get(),
+        modemPins,
+        networkConfig->cellular.get(),
         states->networkConnecting,
         states->networkReady,
         states->rtcInSync,
@@ -86,7 +69,43 @@ ConnectivityDrivers initConnectivity(
         [rtc](time_t utcTime, const char* source) { rtc->setTime(utcTime, source); });
     drivers.cellular = cellular;
     drivers.mqttTransport = cellular->getTransport();
+}
 #endif
+
+ConnectivityDrivers initConnectivity(
+    const std::shared_ptr<ModuleStates>& states,
+    const std::shared_ptr<NetworkConfig>& networkConfig,
+    const std::shared_ptr<BleDriver>& ble,
+    [[maybe_unused]] const std::optional<cellular::CellularModemPins>& modemPins) {
+#ifdef UD_PLATFORM_CARROT
+    bool cellularAvailable = modemPins.has_value();
+#else
+    bool cellularAvailable = false;
+#endif
+    auto choice = chooseNetworkLink(networkConfig->links.get(), cellularAvailable);
+    if (choice.error) {
+        LOGE("Cannot use the links in network-config (%s), using WiFi instead", choice.error->c_str());
+    }
+    LOGI("Connecting over %s", toString(choice.link));
+
+    ConnectivityDrivers drivers;
+    drivers.link = choice.link;
+    switch (choice.link) {
+        case NetworkLink::WiFi:
+            initWiFi(drivers, states, networkConfig, ble);
+            break;
+        case NetworkLink::Cellular:
+#ifdef UD_PLATFORM_CARROT
+            // chooseNetworkLink() only picks cellular when there are modem pins
+            if (modemPins) {
+                initCellular(drivers, states, networkConfig, *modemPins);
+            }
+#endif
+            break;
+    }
+
+    auto rtc = drivers.rtc;
+    ble->setOnTimeReceived([rtc](time_t utcTime) { rtc->setTime(utcTime); });
 
     return drivers;
 }

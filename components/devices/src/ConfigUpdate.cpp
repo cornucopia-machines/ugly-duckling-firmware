@@ -151,6 +151,7 @@ void registerUpdateHandler(
     const std::shared_ptr<CopyQueue<bool>>& syncTriggerQueue,
     const std::shared_ptr<NvsStore>& nvs,
     const std::string& firmwareVersion,
+    bool firmwareUpdatesSupported,
     const std::shared_ptr<std::optional<RejectionCode>>& pendingFirmwareRejection) {
     // Subscribed at QoS 1. Subscription QoS is only a ceiling -- the broker delivers at
     // min(publish QoS, subscription QoS) -- and the server still publishes UPDATE at QoS 2, so
@@ -160,25 +161,21 @@ void registerUpdateHandler(
     // firmware entry only writes the same URL to NVS and reboots (HttpUpdate::startUpdate) --
     // there is no in-process download for a second delivery to race. `commands` stays at QoS 2
     // until responses carry a correlation id (cornucopia-app#508); commands are not idempotent.
-    mqttRoot->subscribe("update", QoS::AtLeastOnce, [deviceConfirmedFingerprint, networkConfirmedFingerprint, functionRegistry, configStateStore, syncTriggerQueue, nvs, firmwareVersion, pendingFirmwareRejection](const std::string&, const JsonObject& request) {
+    mqttRoot->subscribe("update", QoS::AtLeastOnce, [deviceConfirmedFingerprint, networkConfirmedFingerprint, functionRegistry, configStateStore, syncTriggerQueue, nvs, firmwareVersion, firmwareUpdatesSupported, pendingFirmwareRejection](const std::string&, const JsonObject& request) {
         // Firmware decision: parse the entry, then enforce the "clean config state" precondition
         // (docs/specs/device-readdressing.md, "Precondition"). A firmware upgrade is suppressed
         // when a config request is still in flight; the server retries once the config settles.
         ConfigState preUpdateState = configStateStore->load();
         auto firmwareDecision = decideFirmwareUpdate(request["firmware"], firmwareVersion, preUpdateState.requested.has_value());
-#ifdef UD_CONNECTIVITY_WIFI
-        bool firmwareUnsupported = false;
-#else
         // Firmware only downloads over WiFi, not over the modem yet (docs/specs/NB-IoT.md, stage
         // 5): rejecting the entry stops the server from retrying, where accepting it would reboot
         // into a download bound to fail
-        bool firmwareUnsupported = firmwareDecision.url.has_value();
+        bool firmwareUnsupported = !firmwareUpdatesSupported && firmwareDecision.url.has_value();
         if (firmwareUnsupported) {
             LOGW("Firmware update to %s not supported without WiFi, rejecting", firmwareDecision.url->c_str());
             *pendingFirmwareRejection = RejectionCode::Unimplemented;
             firmwareDecision.url.reset();
         }
-#endif
         if (firmwareDecision.url) {
             LOGI("Firmware update available, will download from %s", firmwareDecision.url->c_str());
         } else if (firmwareDecision.skippedDueToPendingConfig) {

@@ -45,6 +45,9 @@ ConfigUpdateResult applyConfigUpdate(
  * firmware entry is skipped and a `FailedPrecondition` rejection is reported via
  * `pendingFirmwareRejection` on the next SYNC. Config changes in the same UPDATE are processed
  * normally regardless.
+ *
+ * @param firmwareUpdatesSupported whether firmware can be downloaded over the link in use; if not,
+ * firmware entries are rejected with `Unimplemented`
  */
 void registerUpdateHandler(
     const std::shared_ptr<MqttRoot>& mqttRoot,
@@ -55,4 +58,5 @@ void registerUpdateHandler(
     const std::shared_ptr<CopyQueue<bool>>& syncTriggerQueue,
     const std::shared_ptr<NvsStore>& nvs,
     const std::string& firmwareVersion,
+    bool firmwareUpdatesSupported,
     const std::shared_ptr<std::optional<RejectionCode>>& pendingFirmwareRejection);
