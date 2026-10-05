@@ -16,6 +16,7 @@ idf_component_register(
         esp_driver_gptimer
         esp_driver_i2c
         esp_driver_ledc
+        esp_driver_uart
         esp_event
         esp_http_client
         esp_https_ota

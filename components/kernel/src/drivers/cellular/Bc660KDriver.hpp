@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Log.hpp>
+#include <PowerManager.hpp>
 #include <Task.hpp>
 #include <drivers/cellular/AtResponse.hpp>
 #include <drivers/cellular/AtSocket.hpp>
@@ -59,20 +60,26 @@ public:
     }
 
     bool wake() override {
+        PowerManagementLockGuard awake(noLightSleep);
         std::scoped_lock lock(commandMutex);
         return wakeLocked();
     }
 
     bool configure() override {
+        // First, since it may restart the module, which loses the settings below
+        bool success = ensureRxdWakeup();
+
         // None of these is ever wrong to repeat, so there's no point checking first
         static constexpr std::array SETTINGS {
             // Echo is on after power-on; off keeps the command out of every response
             "ATE0",
             // A readable "+CME ERROR: <text>" instead of a bare ERROR
             "AT+CMEE=2",
-            // Keep the module out of light and deep sleep for now; sleep comes with eDRX and PSM
-            // (stage 4). Not saved to NVRAM, so it has to be sent after every module restart
-            "AT+QSCLK=0",
+            // Let the module light sleep between paging occasions; it wakes on the network's
+            // schedule and on UART activity from us (the first command after that is lost, see
+            // wakeLocked()). Not deep sleep: that only happens in PSM, which is off. Not saved to
+            // NVRAM, so it has to be sent after every module restart
+            "AT+QSCLK=2",
             // Only URC mode 3 carries the EMM reject cause, which is what tells "no coverage"
             // apart from "subscription refused"
             "AT+CEREG=3",
@@ -83,7 +90,6 @@ public:
             "AT+CSCON=1",
         };
 
-        bool success = true;
         for (const char* setting : SETTINGS) {
             auto response = command(setting, DEFAULT_TIMEOUT);
             if (!response.ok()) {
@@ -321,6 +327,9 @@ private:
      * @param awaitAfterOk see parseAtResponse()
      */
     AtResponse command(const std::string& command, milliseconds timeout, std::string_view awaitAfterOk) {
+        // The UART driver only keeps the ESP32 awake while transmitting; in light sleep the
+        // response would be lost, as waking on UART edges loses the first bytes
+        PowerManagementLockGuard awake(noLightSleep);
         std::scoped_lock lock(commandMutex);
         // The module can be asleep before any command, and the first AT only wakes it
         if (!wakeLocked()) {
@@ -329,17 +338,28 @@ private:
         return send(command, timeout, awaitAfterOk);
     }
 
-    bool ensureSetting(const PersistedSetting& setting) {
+    /**
+     * @return nullopt if the setting is right, otherwise the first line of what the module
+     * answered, for the log
+     */
+    std::optional<std::string> checkSetting(const PersistedSetting& setting) {
         auto response = command(setting.query, DEFAULT_TIMEOUT);
         if (response.ok() && !response.lines.empty()) {
             std::string_view line = response.lines.front();
             if (line == setting.expected || (line.starts_with(setting.expected) && line[setting.expected.size()] == ',')) {
-                return true;
+                return std::nullopt;
             }
         }
-        LOGTI(CELLULAR, "Setting %s (was: %s)", setting.set,
-            response.lines.empty() ? "?" : response.lines.front().c_str());
-        response = command(setting.set, DEFAULT_TIMEOUT);
+        return response.lines.empty() ? "?" : response.lines.front();
+    }
+
+    bool ensureSetting(const PersistedSetting& setting) {
+        auto current = checkSetting(setting);
+        if (!current) {
+            return true;
+        }
+        LOGTI(CELLULAR, "Setting %s (was: %s)", setting.set, current->c_str());
+        auto response = command(setting.set, DEFAULT_TIMEOUT);
         if (!response.ok()) {
             LOGTW(CELLULAR, "%s failed: %s %s", setting.set, toString(response.result), response.error.c_str());
             return false;
@@ -499,6 +519,28 @@ private:
         return true;
     }
 
+    bool ensureRxdWakeup() {
+        // Without it, the module can't be woken over the UART once it sleeps. Saved to NVRAM, but
+        // only takes effect after a restart
+        static constexpr PersistedSetting RXD_WAKEUP {
+            .query = R"(AT+QCFG="wakeupRXD")", .expected = R"(+QCFG: "wakeupRXD",1)", .set = R"(AT+QCFG="wakeupRXD",1)"
+        };
+        auto current = checkSetting(RXD_WAKEUP);
+        if (!current) {
+            return true;
+        }
+        LOGTI(CELLULAR, "Setting %s (was: %s), and restarting %s for it to take effect", RXD_WAKEUP.set, current->c_str(), getName());
+        auto response = command(RXD_WAKEUP.set, DEFAULT_TIMEOUT);
+        if (!response.ok()) {
+            LOGTW(CELLULAR, "%s failed: %s %s", RXD_WAKEUP.set, toString(response.result), response.error.c_str());
+            return false;
+        }
+        // Answers OK, then resets straight away
+        command("AT+QRST=1", DEFAULT_TIMEOUT);
+        // Booting takes a moment; waking retries until it answers
+        return wake();
+    }
+
     bool ensureEdrx(std::optional<milliseconds> cycle) {
         // Written on every boot: AT+CEDRXS? shows the requested cycle whether or not eDRX is on,
         // so it can't tell us whether it needs writing. The bench module answered with our cycle
@@ -618,6 +660,9 @@ private:
     static constexpr milliseconds WAKE_TIMEOUT = 300ms;
     static constexpr milliseconds WAKE_INITIAL_BACKOFF = 100ms;
     static constexpr milliseconds WAKE_MAX_BACKOFF = 1s;
+
+    // Keeps the ESP32 out of light sleep while a command is in flight
+    PowerManagementLock noLightSleep { "cellular", ESP_PM_NO_LIGHT_SLEEP };
 
     // Keeps the wake sequence and the command that follows it together
     std::mutex commandMutex;

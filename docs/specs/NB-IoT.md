@@ -232,7 +232,7 @@ cell change, with only signalling, 20–25 s later. That suggests the network re
 20 s, short of the module's own 60 s (`AT+QCFG="DataInactTimer"`), and that something kept sending
 after the MQTT traffic (in a debug build, published log records are the likely candidate). To
 measure with `publishLogs` at `Info`: the Verbose `RRC connected` / `RRC idle` log lines against
-the last `Queuing topic …`, and `rrc-connected-ms` per telemetry interval.
+the last `Queuing topic …`, and `rrc-idle-ratio` / `rrc-connections` per telemetry interval.
 
 Estimates for a release build with stage 4 done, eDRX off (see stage 4):
 
@@ -249,8 +249,9 @@ transfer is most of it. Releasing RRC right after a transfer (RAI on `QISEND`; a
 `AT+QCFG="DataInactTimer"` only helps if it's shorter than the network's own timer) and a
 keepalive as long as the NAT allows would bring it to **about 1–1.5 mA**. The floor, set by sleep, is **about 0.25–0.45 mA plus the board**; eDRX at
 40.96 s would only have saved up to 0.2 mA of that. The order of wins: ESP32 light sleep, then
-the RRC tail, then fewer transmissions. The `rrc-connected-ms` telemetry field (time spent RRC
-connected since the last telemetry message) tracks the tail.
+the RRC tail, then fewer transmissions. The `rrc-idle-ratio` and `rrc-connections` telemetry fields
+(share of time spent RRC idle and number of RRC connections since the last telemetry message)
+track the tail.
 
 ## Plan
 
@@ -333,13 +334,14 @@ the modem sleeps between paging windows.
 - [x] PSM off (`AT+CPSMS=0`), only written when it differs
 - [x] eDRX with the configured cycle (`AT+CEDRXS=2,5,…`), or off (`AT+CEDRXS=3`), written on every boot: `AT+CEDRXS?` shows the requested cycle whether or not eDRX is on, so it can't tell whether a write is needed. Log what the network grants (`AT+CEDRXRDP` on every registration check, logged when it changes; `+CEDRXP`)
 - [x] Idle paging cycle (`AT+QDRX?`, only answers with it while RRC idle), logged when it changes: without eDRX, that is what bounds command latency and the modem's sleep current
-- [x] RRC state (`AT+CSCON=1`, `+CSCON` URC, re-read on every registration check): `CONN` / `IDLE` in the debug console, time spent connected in telemetry (`rrc-connected-ms`). Changes are only logged at Verbose: debug builds published every log line over MQTT, so logging "idle" brought the radio straight back to connected, and the bench device never left `CONN`. Any steady stream of published logs keeps RRC connected the same way, so measure power with `publishLogs` at `Info` (the release default). Debug builds now default to `Debug` instead of `Verbose`
-- [ ] Modem sleep: `AT+QSCLK=2` (light sleep only; `1` would also allow deep sleep, which only happens in PSM). Check `AT+QCFG="wakeupRXD"` is on
-- [ ] ESP32 light sleep: wake on UART RX edges (see "Waking the ESP32 on UART edges"); hold the no-light-sleep lock only while a command is in flight; any line that doesn't parse as a URC means "poll `QIRD` and re-read registration and RRC state"
-- [ ] The transport's safety `QIRD` poll goes from 10 s to the eDRX cycle: the module stays awake for 10 s after any UART activity (`AT+QCFG="slplocktimes"`), so a 10 s poll would keep it awake for good
+- [x] RRC state (`AT+CSCON=1`, `+CSCON` URC, re-read on every registration check): `CONN` / `IDLE` in the debug console, in telemetry the share of time spent RRC idle and the number of RRC connections since the last telemetry message (`rrc-idle-ratio`, `rrc-connections`, like `pm.sleep-ratio` / `pm.sleep-count`). Changes are only logged at Verbose: debug builds published every log line over MQTT, so logging "idle" brought the radio straight back to connected, and the bench device never left `CONN`. Any steady stream of published logs keeps RRC connected the same way, so measure power with `publishLogs` at `Info` (the release default). Debug builds now default to `Debug` instead of `Verbose`
+- [x] Modem sleep: `AT+QSCLK=2` (light sleep only; `1` would also allow deep sleep, which only happens in PSM). `AT+QCFG="wakeupRXD",1` if it's off, followed by `AT+QRST=1`, since it only takes effect after a restart
+- [x] ESP32 light sleep: wake on UART RX edges (see "Waking the ESP32 on UART edges"); hold the no-light-sleep lock only while a command is in flight; any line that doesn't parse as a URC means "poll `QIRD` and re-read registration and RRC state" (logged at Verbose only, since a published log record would wake the radio)
+- [x] The transport's safety `QIRD` poll goes from 10 s to 2 min: the module stays awake for 10 s after any UART activity (`AT+QCFG="slplocktimes"`), so a 10 s poll would keep it awake for good. Data found by this poll is logged (`Found … bytes the modem didn't announce`), to tell how often URCs get lost altogether
+- [ ] Revisit whether the safety poll is needed at all: if the bench never logs `Found … bytes the modem didn't announce` (every wake leaves at least part of a line, which already triggers a read), drop it, and with it the module wake-ups it costs; esp-mqtt's keepalive still catches a connection that went quiet
 - [ ] Keepalive in device-config (`cellular.keepalive`); measure 1NCE's NAT idle timeout and set the default from it (see "Keepalive and session expiry")
 - [ ] Subscriptions over the AT transport: commands (QoS 2) and `update` (QoS 1) arrive while the modem sleeps
-- [ ] Measure command latency against the eDRX cycle, average current (`current` in telemetry) and `rrc-connected-ms`
+- [ ] Measure command latency against the paging cycle, average current (`current` in telemetry), `rrc-idle-ratio` and `rrc-connections`
 - [ ] Demo: valve override from the app reaches the device over NB-IoT
 
 To check on the bench:
@@ -356,7 +358,26 @@ To check on the bench:
   that the attach itself carries the request, `AT+CEDRXRDP` still answers `+CEDRXRDP: 0` ("access
   technology not supporting eDRX") on that cell, and no `+CEDRXP` follows: so far it looks like
   Telekom doesn't grant eDRX to 1NCE's roaming SIMs there
-- [ ] What the lines that woke the ESP32 look like after losing their first bytes
+- [ ] What the lines that woke the ESP32 look like after losing their first bytes (Verbose `Unrecognized line from the modem`), and whether any get lost altogether (`Found … bytes the modem didn't announce`)
+- [ ] Whether the module had `wakeupRXD` on, and how long `AT+QRST=1` takes if not
+- [ ] ESP32 `pm.sleep-ratio` and battery current in a sleeping build, with the radio idle
+- [x] The first sleeping build froze the first time the ESP32 went to light sleep: no log, no
+  watchdog reset, no core dump. Without the UART wake-up it still froze; with IDF's UART handling
+  before sleep turned off for UART1 (`ESP_SLEEP_NO_HANDLING`) it didn't. Before light sleep IDF
+  suspends every enabled UART (`sleep_uart_prepare()`), forcing XOFF and waiting for the UART to
+  sync its registers, which needs the UART's clock. WiFi builds never hit this: since the console
+  moved to USB Serial/JTAG they have no HP UART enabled. The modem UART now runs on XTAL instead
+  of the default PLL clock
+- [x] Confirmed: with the modem UART on XTAL (and IDF's UART handling before sleep left on), the
+  sleeping build boots, connects and stays connected
+- [x] esp_modem logs `unknown uart event type: 8` (`UART_WAKEUP`, which it doesn't handle) as a
+  warning on every UART wake. Published, each one was an uplink whose acknowledgement woke the
+  ESP32 again: the server showed lost log records and a subscription timeout. The
+  `uart_terminal` tag now logs errors only
+- [x] The MQTT connection attempt and subscription acks were still bounded by the WiFi network
+  timeout (15 s) over NB-IoT; they now use the modem's 30 s too. A subscription that times out
+  is only made again with the next clean session, so commands stopped arriving; recovering from
+  that is #685
 - [x] The radio never goes RRC idle with the MQTT connection open to `mosquitto-home` (Tailscale
   Funnel), even with no MQTT traffic for minutes. Suspected cause: Funnel's TCP keepalives (see
   "Keepalive and session expiry"). To confirm: the Verbose `RRC connected` / `RRC idle` lines

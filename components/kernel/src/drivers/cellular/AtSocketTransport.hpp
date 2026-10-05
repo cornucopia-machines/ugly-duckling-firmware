@@ -78,6 +78,14 @@ public:
         return { trafficSent.exchange(0), trafficReceived.exchange(0) };
     }
 
+    /**
+     * @brief Makes the next poll ask the module for data, for when it may have announced some in
+     * a URC that didn't arrive intact.
+     */
+    void checkForData() {
+        xSemaphoreGive(dataSignal);
+    }
+
 private:
     static AtSocketTransport& from(esp_transport_handle_t transport) {
         return *static_cast<AtSocketTransport*>(esp_transport_get_context_data(transport));
@@ -158,36 +166,49 @@ private:
         if (!connected) {
             return -1;
         }
-        if (!shouldReceive(timeout)) {
+        auto reason = shouldReceive(timeout);
+        if (reason == ReceiveReason::None) {
             return 0;
         }
         if (!receive()) {
             return -1;
         }
         if (bufferStart < bufferEnd) {
+            if (reason == ReceiveReason::SafetyPoll) {
+                // Tells how often URCs get lost altogether, which bounds how late such data is
+                LOGTD(CELLULAR, "Found %zu bytes the modem didn't announce", bufferEnd - bufferStart);
+            }
             return 1;
         }
         // Whatever the peer sent before closing has been read by now
         return closedByPeer ? -1 : 0;
     }
 
+    enum class ReceiveReason : uint8_t {
+        None,
+        // The module said there's data, or may have (see checkForData())
+        Announced,
+        // It's been SAFETY_POLL_INTERVAL since the last read
+        SafetyPoll,
+    };
+
     /**
      * @brief Whether to ask the module for data: it told us it has some, or it's been a while.
      * Waits up to the timeout for the module to say so.
      */
-    bool shouldReceive(milliseconds timeout) {
+    ReceiveReason shouldReceive(milliseconds timeout) {
         if (moreWaiting || closedByPeer) {
-            return true;
+            return ReceiveReason::Announced;
         }
         auto sinceLastReceive = duration_cast<milliseconds>(steady_clock::now() - lastReceive);
         if (sinceLastReceive >= SAFETY_POLL_INTERVAL) {
-            return true;
+            return ReceiveReason::SafetyPoll;
         }
         auto wait = std::min(timeout, SAFETY_POLL_INTERVAL - sinceLastReceive);
         if (xSemaphoreTake(dataSignal, pdMS_TO_TICKS(wait.count())) == pdTRUE) {
-            return true;
+            return ReceiveReason::Announced;
         }
-        return wait < timeout;
+        return wait < timeout ? ReceiveReason::SafetyPoll : ReceiveReason::None;
     }
 
     /**
@@ -259,8 +280,11 @@ private:
         xSemaphoreGive(dataSignal);
     }
 
-    // How often to look for received data without the module having said there is any
-    static constexpr milliseconds SAFETY_POLL_INTERVAL = 10s;
+    // How often to look for received data without the module having said there is any. Every read
+    // wakes the module, and it stays awake for 10 s after UART activity (AT+QCFG="slplocktimes"),
+    // so polling every 10 s would keep it awake for good. A URC that wakes the ESP32 mostly
+    // arrives, just without its first bytes, so this only catches the rare one lost entirely
+    static constexpr milliseconds SAFETY_POLL_INTERVAL = 2min;
 
     esp_transport_handle_t handle;
     const SemaphoreHandle_t dataSignal;

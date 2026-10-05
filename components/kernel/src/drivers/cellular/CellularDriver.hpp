@@ -1,7 +1,7 @@
 #pragma once
 
+#include <EspException.hpp>
 #include <Log.hpp>
-#include <PowerManager.hpp>
 #include <Queue.hpp>
 #include <State.hpp>
 #include <Task.hpp>
@@ -17,11 +17,14 @@
 #include <drivers/cellular/RadioStatus.hpp>
 
 #include <ArduinoJson.h>
+#include <driver/uart_wakeup.h>
+#include <esp_sleep.h>
 #include <sdkconfig.h>
 #include <soc/uart_pins.h>
 
 #include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <ctime>
 #include <exception>
 #include <functional>
@@ -89,8 +92,6 @@ public:
                 run();
             } catch (const std::exception& e) {
                 LOGTE(CELLULAR, "Cellular modem failed: %s", e.what());
-                // Don't keep the device out of light sleep for a modem we've given up on
-                noLightSleepGuard.reset();
             }
             // Only gets here when the modem is out of the picture
             this->networkConnecting.clear();
@@ -135,7 +136,7 @@ public:
         auto [sent, received] = transport.takeTrafficCounts();
         json["bytes-sent"] = sent;
         json["bytes-received"] = received;
-        json["rrc-connected-ms"] = takeRrcConnectedTime().count();
+        populateRrcTelemetry(json);
     }
 
 private:
@@ -151,13 +152,11 @@ private:
         LOGTI(CELLULAR, "Starting modem on UART%d (TX GPIO %d, RX GPIO %d)",
             static_cast<int>(MODEM_UART), static_cast<int>(pins.tx->getGpio()), static_cast<int>(pins.rx->getGpio()));
 
-        // The UART driver only holds its PM lock while transmitting, so in light sleep anything the
-        // modem sends -- the reply to a command we are waiting on, or a URC -- would be lost. Stay
-        // awake for as long as the modem is up; waking on UART activity instead belongs with
-        // putting the modem itself to sleep (docs/specs/NB-IoT.md, stage 4).
-        noLightSleepGuard = std::make_unique<PowerManagementLockGuard>(noLightSleep);
-
         auto dte = createDte(pins);
+        enableUartWakeup();
+        // esp_modem's UART terminal warns about every UART_WAKEUP event, which it doesn't handle.
+        // Published, each warning is an uplink whose acknowledgement wakes us again
+        esp_log_level_set("uart_terminal", ESP_LOG_ERROR);
         module = std::make_shared<Bc660KDriver>(dte);
         module->onUrc([this](std::string_view line) {
             handleUrc(line);
@@ -165,7 +164,6 @@ private:
 
         if (!module->wake()) {
             LOGTE(CELLULAR, "%s is not answering; is the daughter board connected?", module->getName());
-            noLightSleepGuard.reset();
             return;
         }
         LOGTI(CELLULAR, "%s is answering", module->getName());
@@ -339,8 +337,8 @@ private:
     }
 
     /**
-     * @brief Tracks the RRC state for the status and for the time spent connected, which is
-     * where most of the modem's energy goes. Called from the URC handler too.
+     * @brief Tracks the RRC state for the status, and how long and how often the radio is
+     * connected, which is where most of the modem's energy goes. Called from the URC handler too.
      */
     void updateRrcState(bool connected) {
         std::scoped_lock lock(statusMutex);
@@ -350,25 +348,33 @@ private:
         auto now = steady_clock::now();
         if (connected) {
             rrcConnectedSince = now;
+            rrcConnections++;
         } else if (status.rrcConnected == true) {
-            rrcConnectedTime += duration_cast<milliseconds>(now - rrcConnectedSince);
+            rrcConnectedTime += now - rrcConnectedSince;
         }
         status.rrcConnected = connected;
     }
 
     /**
-     * @brief Time spent in RRC connected state since the last call.
+     * @brief The share of the time since the last call the radio spent RRC idle, and how many
+     * times it connected, the same way PowerManager reports the ESP32's light sleep.
      */
-    milliseconds takeRrcConnectedTime() {
+    void populateRrcTelemetry(JsonObject& json) {
         std::scoped_lock lock(statusMutex);
-        auto total = rrcConnectedTime;
+        auto now = steady_clock::now();
+        auto connectedTime = rrcConnectedTime;
         if (status.rrcConnected == true) {
-            auto now = steady_clock::now();
-            total += duration_cast<milliseconds>(now - rrcConnectedSince);
+            connectedTime += now - rrcConnectedSince;
             rrcConnectedSince = now;
         }
-        rrcConnectedTime = 0ms;
-        return total;
+        auto elapsed = now - rrcLastReported;
+        if (elapsed.count() > 0) {
+            json["rrc-idle-ratio"] = 1.0 - (duration<double>(connectedTime) / duration<double>(elapsed));
+            json["rrc-connections"] = rrcConnections;
+        }
+        rrcLastReported = now;
+        rrcConnectedTime = steady_clock::duration::zero();
+        rrcConnections = 0;
     }
 
     static std::optional<milliseconds> toEdrxCycle(milliseconds configured) {
@@ -395,6 +401,12 @@ private:
         config.uart_config.cts_io_num = UART_PIN_NO_CHANGE;
         // 115200 is far above what NB-IoT delivers (docs/specs/NB-IoT.md, "UART baud rate")
         config.uart_config.baud_rate = 115200;
+        // Not the default PLL clock: before light sleep, IDF suspends every enabled UART and waits
+        // for it to sync its registers, which needs the UART's clock running. On the PLL that
+        // wait never ended, and the device froze the first time it went to sleep. XTAL is also
+        // what IDF recommends for peripherals while the CPU frequency scales. It doesn't stay on
+        // in light sleep: waking on RX edges needs no clock
+        config.uart_config.source_clk = UART_SCLK_XTAL;
         // Room for a full AT+QIRD response: 512 bytes of data as 1024 hex digits, plus framing
         config.dte_buffer_size = 2048;
         auto dte = esp_modem::create_uart_dte(&config);
@@ -402,6 +414,24 @@ private:
             throw std::runtime_error("could not create UART terminal");
         }
         return dte;
+    }
+
+    /**
+     * @brief Wakes the ESP32 from light sleep when the modem starts sending.
+     *
+     * Counting RX edges is the only UART wake-up that works without the 40 MHz crystal running
+     * in light sleep, which would cost milliamps. It loses the first few bytes of whatever woke
+     * us, so handleUrc() treats a line it can't make sense of as "something happened" and looks
+     * for itself (docs/specs/NB-IoT.md, "Waking the ESP32 on UART edges"). While a command is in
+     * flight the ESP32 stays awake, so responses arrive intact.
+     */
+    static void enableUartWakeup() {
+        uart_wakeup_cfg_t config {};
+        config.wakeup_mode = UART_WK_MODE_ACTIVE_THRESH;
+        // The fewest edges the hardware takes
+        config.rx_edge_threshold = 3;
+        ESP_ERROR_THROW(uart_wakeup_setup(MODEM_UART, &config));
+        ESP_ERROR_THROW(esp_sleep_enable_uart_wakeup(MODEM_UART));
     }
 
     // Runs on the UART's receive task, so it must not send commands to the module
@@ -439,7 +469,13 @@ private:
             networkChanged.overwrite(true);
             return;
         }
-        LOGTD(CELLULAR, "URC: %.*s", static_cast<int>(line.size()), line.data());
+        // Most likely a URC that woke the ESP32 from light sleep and lost its first bytes, e.g.
+        // 'RC: "recv",0,40'. Whatever it was, look for what it could have been: socket data and a
+        // change in registration or RRC state. Verbose only: a published log record would bring
+        // the radio back to connected, and its acknowledgement could wake us the same way
+        LOGTV(CELLULAR, "Unrecognized line from the modem, checking for news: %.*s", static_cast<int>(line.size()), line.data());
+        transport.checkForData();
+        networkChanged.overwrite(true);
     }
 
     static bool sharesPinsWithConsole([[maybe_unused]] const CellularModemPins& pins) {
@@ -489,10 +525,10 @@ private:
     CellularStatus status;
     // Guarded by statusMutex too
     steady_clock::time_point rrcConnectedSince;
-    milliseconds rrcConnectedTime { 0 };
-
-    PowerManagementLock noLightSleep { "cellular", ESP_PM_NO_LIGHT_SLEEP };
-    std::unique_ptr<PowerManagementLockGuard> noLightSleepGuard;
+    steady_clock::duration rrcConnectedTime {};
+    // Counted from when the driver starts, like the ESP32's sleep time
+    steady_clock::time_point rrcLastReported = steady_clock::now();
+    uint32_t rrcConnections = 0;
 };
 
 }    // namespace cornucopia::ugly_duckling::kernel::drivers::cellular

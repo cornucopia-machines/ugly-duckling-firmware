@@ -181,7 +181,7 @@ public:
             },
             .network {
                 .reconnect_timeout_ms = duration_cast<milliseconds>(MQTT_CONNECTION_TIMEOUT).count(),
-                .timeout_ms = static_cast<int>((modemTransport == nullptr ? MQTT_NETWORK_TIMEOUT : MODEM_NETWORK_TIMEOUT).count()),
+                .timeout_ms = static_cast<int>(duration_cast<milliseconds>(networkTimeout()).count()),
                 .refresh_connection_after_ms = 0,    // No need to refresh connection
                 .disable_auto_reconnect = false,
                 .tcp_keep_alive_cfg = {},
@@ -283,6 +283,10 @@ private:
     static constexpr milliseconds MQTT_NETWORK_TIMEOUT = 15s;
     // NB-IoT round trips take seconds, more in poor coverage
     static constexpr milliseconds MODEM_NETWORK_TIMEOUT = 30s;
+
+    milliseconds networkTimeout() const {
+        return modemTransport == nullptr ? MQTT_NETWORK_TIMEOUT : MODEM_NETWORK_TIMEOUT;
+    }
 
     static constexpr milliseconds MQTT_MESSAGE_RETRANSMIT_TIMEOUT = 5s;
     static constexpr milliseconds MQTT_CONNECTION_TIMEOUT = MQTT_NETWORK_TIMEOUT;
@@ -411,7 +415,7 @@ private:
             // Cull pending subscriptions
             // TODO Do this with deleted messages?
             std::erase_if(pendingSubscriptions, [&](const auto& pendingSubscription) {
-                if (now - pendingSubscription.subscribedAt > MQTT_NETWORK_TIMEOUT) {
+                if (now - pendingSubscription.subscribedAt > networkTimeout()) {
                     LOGTE(MQTT, "Subscription timed out with message id %d", pendingSubscription.messageId);
                     // Force next session to start clean, so we can re-subscribe
                     nextSessionShouldBeClean = true;
@@ -428,7 +432,7 @@ private:
                     disconnectCount++;
                     break;
                 case MqttState::Connecting:
-                    if (now - connectionStarted > MQTT_CONNECTION_TIMEOUT) {
+                    if (now - connectionStarted > networkTimeout()) {
                         LOGTE(MQTT, "Connecting to MQTT server timed out");
                         ready.clear();
                         disconnect();
