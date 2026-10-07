@@ -305,7 +305,7 @@ private:
                 downloaded += static_cast<size_t>(event->data_len);
                 auto afterBatch = downloaded / DOWNLOAD_NOTIFICATION_BATCH;
                 if (beforeBatch < afterBatch) {
-                    LOGTI(UPDATE, "Downloaded %.02f KB", ((double) downloaded / 1024.0));
+                    LOGTI(UPDATE, "Downloaded %zu kB", downloaded / 1024);
                 }
                 break;
             }
