@@ -317,6 +317,15 @@ TEST_CASE("parseQird reads data without the remaining length") {
     REQUIRE(read->hex == "3132");
 }
 
+TEST_CASE("parseQird keeps data whose remaining length is negative") {
+    auto read = parseQird("+QIRD: 2,-2,\"3132\"");
+
+    REQUIRE(read.has_value());
+    REQUIRE(read->length == 2);
+    REQUIRE_FALSE(read->remaining.has_value());
+    REQUIRE(read->hex == "3132");
+}
+
 TEST_CASE("parseQird reads an empty buffer") {
     auto read = parseQird("+QIRD: 0");
 

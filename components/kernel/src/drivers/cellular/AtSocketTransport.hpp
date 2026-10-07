@@ -242,7 +242,9 @@ private:
         if (moreWaiting) {
             return ReceiveReason::Draining;
         }
-        if (closedByPeer) {
+        // Before the polls: data a poll would find while an announcement is pending didn't need
+        // the poll, which is what the per-connection counts are meant to tell
+        if (closedByPeer || uxSemaphoreGetCount(dataSignal) > 0) {
             return ReceiveReason::Announced;
         }
         auto now = steady_clock::now();

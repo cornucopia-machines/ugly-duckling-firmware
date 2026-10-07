@@ -65,6 +65,9 @@ struct SocketRead {
  *
  * +QIRD: <actual_read_length>[,<remaining_length>],"<data>", or just "+QIRD: 0" when there is
  * nothing to read. Rejects a line whose hex doesn't match the length it claims.
+ *
+ * A negative remaining length counts as unknown: during a download the module answered
+ * +QIRD: 512,-512,"<data>" once, with all 512 bytes there, and dropping them broke the stream.
  */
 inline std::optional<SocketRead> parseQird(std::string_view line) {
     auto fields = parseAtFields(line, "+QIRD:");
@@ -75,9 +78,12 @@ inline std::optional<SocketRead> parseQird(std::string_view line) {
     if (!length || *length < 0) {
         return std::nullopt;
     }
+    auto remainingAt = [&](size_t index) -> std::optional<size_t> {
+        auto value = fields->size() > index ? (*fields)[index].asInt() : std::nullopt;
+        return value && *value >= 0 ? std::optional<size_t>(*value) : std::nullopt;
+    };
     if (*length == 0) {
-        auto remaining = fields->size() > 1 ? (*fields)[1].asInt() : std::nullopt;
-        return SocketRead { .length = 0, .remaining = remaining ? std::optional<size_t>(*remaining) : std::nullopt, .hex = {} };
+        return SocketRead { .length = 0, .remaining = remainingAt(1), .hex = {} };
     }
     // The data is always the last field: with showlength the remaining length sits in between
     if (fields->size() < 2 || fields->size() > 3) {
@@ -87,14 +93,7 @@ inline std::optional<SocketRead> parseQird(std::string_view line) {
     if (!hex || hex->size() != static_cast<size_t>(*length) * 2) {
         return std::nullopt;
     }
-    std::optional<size_t> remaining;
-    if (fields->size() == 3) {
-        auto value = (*fields)[1].asInt();
-        if (!value || *value < 0) {
-            return std::nullopt;
-        }
-        remaining = static_cast<size_t>(*value);
-    }
+    auto remaining = fields->size() == 3 ? remainingAt(1) : std::nullopt;
     return SocketRead { .length = static_cast<size_t>(*length), .remaining = remaining, .hex = *hex };
 }
 
