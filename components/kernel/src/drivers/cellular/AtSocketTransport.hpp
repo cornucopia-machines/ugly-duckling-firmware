@@ -143,6 +143,10 @@ private:
         announcementsAtLastReceive = announcementsAtConnect;
         unrecognizedLinesAtLastReceive = unrecognizedLines.load();
         receiveBufferFilling = false;
+        bytesByTrigger = {};
+        burstTrigger = ReceiveReason::Announced;
+        bufferFullAtConnect = bufferFullNotices.load();
+        uartErrorsAtConnect = module->getUartErrorCount();
         connectedAt = steady_clock::now();
         if (!module->openSocket(host, port)) {
             return -1;
@@ -189,6 +193,11 @@ private:
                 return -1;
             }
             if (bufferStart < bufferEnd) {
+                // Reads that drain the rest of a burst count towards whatever found the burst
+                if (reason != ReceiveReason::Draining) {
+                    burstTrigger = reason;
+                }
+                bytesByTrigger[static_cast<size_t>(burstTrigger)] += bufferEnd - bufferStart;
                 if (reason == ReceiveReason::SafetyPoll) {
                     // Tells how often URCs get lost altogether, which bounds how late such data is
                     LOGTD(CELLULAR, "Found %zu bytes the modem didn't announce", bufferEnd - bufferStart);
@@ -207,13 +216,16 @@ private:
 
     enum class ReceiveReason : uint8_t {
         None,
-        // The module said there's data, or may have (see checkForData()), or the last read
-        // wasn't empty yet
+        // The module said there's data, or may have (see checkForData()), or the connection
+        // was closed
         Announced,
+        // The last read wasn't empty yet
+        Draining,
         // Data is flowing, and it's been ACTIVE_POLL_INTERVAL since the last read
         ActivePoll,
         // It's been SAFETY_POLL_INTERVAL since the last read
         SafetyPoll,
+        Count,
     };
 
     /**
@@ -227,7 +239,10 @@ private:
      * the buffer empty. So for a while after sending or receiving anything, it's polled.
      */
     ReceiveReason shouldReceive(milliseconds timeout) {
-        if (moreWaiting || closedByPeer) {
+        if (moreWaiting) {
+            return ReceiveReason::Draining;
+        }
+        if (closedByPeer) {
             return ReceiveReason::Announced;
         }
         auto now = steady_clock::now();
@@ -309,28 +324,42 @@ private:
         }
         connected = false;
         module->closeSocket();
-        LOGTI(CELLULAR, "Connection closed after %lld s, %zu bytes sent, %zu bytes received, %" PRIu32 " data announcements",
+        // Which reads found the data tells whether polling is still needed: data only a poll
+        // found would otherwise have waited for the module to announce its buffer full
+        LOGTI(CELLULAR, "Connection closed after %lld s, %zu bytes sent, %zu bytes received "
+                        "(%zu found after an announcement, %zu by active polling, %zu by the safety poll), "
+                        "%" PRIu32 " data announcements, %" PRIu32 " buffer full, %" PRIu32 " UART errors",
             static_cast<long long>(duration_cast<seconds>(steady_clock::now() - connectedAt).count()),
-            bytesSent, bytesReceived, announcements.load() - announcementsAtConnect);
+            bytesSent, bytesReceived,
+            bytesByTrigger[static_cast<size_t>(ReceiveReason::Announced)],
+            bytesByTrigger[static_cast<size_t>(ReceiveReason::ActivePoll)],
+            bytesByTrigger[static_cast<size_t>(ReceiveReason::SafetyPoll)],
+            announcements.load() - announcementsAtConnect,
+            bufferFullNotices.load() - bufferFullAtConnect,
+            module->getUartErrorCount() - uartErrorsAtConnect);
         return 0;
     }
 
     /**
-     * @brief Logs when the module's receive buffer fills past the half mark: once it's full, the
-     * module drops what arrives (docs/specs/NB-IoT.md, "`QISEND` / `QIRD` size limits"). Says
+     * @brief Logs, at verbose, when the module's receive buffer fills past the half mark. Says
      * whether the module announced the data since the last read, which tells a lost URC apart
      * from data that came in faster than it was read. Once per crossing, not on every read.
+     *
+     * A full buffer on its own loses nothing: during downloads it reached its 2168 bytes all the
+     * time, often within 50 ms of the last read, and the data kept coming intact. What marks
+     * the loss is the module's "buff full" URC (docs/specs/NB-IoT.md, "`QISEND` / `QIRD` size
+     * limits"), which is counted per connection.
      */
     void logIfBufferFilling(std::optional<size_t> remaining, steady_clock::duration sinceLastReceive, uint32_t announced, uint32_t unrecognized) {
         bool filling = remaining && *remaining >= RECEIVE_BUFFER_WARNING;
         if (filling && !receiveBufferFilling) {
             if (announced != announcementsAtLastReceive) {
-                LOGTD(CELLULAR, "%zu bytes waiting in the modem; last read %lld ms ago, data announced %lld ms ago",
+                LOGTV(CELLULAR, "%zu bytes waiting in the modem; last read %lld ms ago, data announced %lld ms ago",
                     *remaining,
                     static_cast<long long>(duration_cast<milliseconds>(sinceLastReceive).count()),
                     static_cast<long long>(duration_cast<milliseconds>(steady_clock::now() - lastAnnouncedAt.load()).count()));
             } else {
-                LOGTD(CELLULAR, "%zu bytes waiting in the modem; last read %lld ms ago, not announced since%s",
+                LOGTV(CELLULAR, "%zu bytes waiting in the modem; last read %lld ms ago, not announced since%s",
                     *remaining,
                     static_cast<long long>(duration_cast<milliseconds>(sinceLastReceive).count()),
                     unrecognized != unrecognizedLinesAtLastReceive ? " (but an unrecognized line came)" : "");
@@ -350,6 +379,7 @@ private:
                 break;
             case SocketEventType::BufferFull:
                 LOGTW(CELLULAR, "Modem receive buffer full");
+                bufferFullNotices++;
                 announcements++;
                 lastAnnouncedAt = steady_clock::now();
                 break;
@@ -367,9 +397,11 @@ private:
     // arrives, just without its first bytes, so this only catches the rare one lost entirely
     static constexpr milliseconds SAFETY_POLL_INTERVAL = 2min;
     // How often to look for received data while it's flowing, and for how long after the last
-    // data sent or received. At about 2 KB/s, 250 ms is around 500 bytes, well inside the
-    // module's 2168-byte buffer; the window covers an NB-IoT round trip
-    static constexpr milliseconds ACTIVE_POLL_INTERVAL = 250ms;
+    // data sent or received. The average rate is only about 2 KB/s, but the module hands over
+    // data in clumps: during downloads, more than 2 KB arrived within the 250 ms between two
+    // polls. At 460800 baud an empty AT+QIRD takes a few milliseconds, and between polls the
+    // ESP32 can still light sleep. The window covers an NB-IoT round trip
+    static constexpr milliseconds ACTIVE_POLL_INTERVAL = 50ms;
     static constexpr milliseconds ACTIVE_WINDOW = 5s;
     // Half the module's receive buffer (2168 bytes on the BC660K)
     static constexpr size_t RECEIVE_BUFFER_WARNING = 1024;
@@ -396,6 +428,14 @@ private:
     uint32_t announcementsAtLastReceive = 0;
     uint32_t unrecognizedLinesAtLastReceive = 0;
     bool receiveBufferFilling = false;
+
+    // Bytes received per connection, by what found them (see pollRead())
+    std::array<size_t, static_cast<size_t>(ReceiveReason::Count)> bytesByTrigger {};
+    ReceiveReason burstTrigger = ReceiveReason::Announced;
+    // Counted across connections; the connection's share is the difference since it opened
+    std::atomic<uint32_t> bufferFullNotices { 0 };
+    uint32_t bufferFullAtConnect = 0;
+    uint32_t uartErrorsAtConnect = 0;
 
     std::array<uint8_t, 512> receiveBuffer {};
     size_t bufferStart = 0;

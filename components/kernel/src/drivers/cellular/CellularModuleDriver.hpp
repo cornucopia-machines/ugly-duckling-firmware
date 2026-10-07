@@ -181,6 +181,12 @@ public:
     virtual size_t getMaxReceiveSize() const = 0;
 
     /**
+     * @brief How many times the UART lost or garbled data from the module since boot: overflows
+     * and framing or parity errors.
+     */
+    virtual uint32_t getUartErrorCount() const = 0;
+
+    /**
      * @brief Registers the handler for socket events (data waiting, connection closed).
      *
      * Called from the UART's receive task: the handler must not send commands to the module.

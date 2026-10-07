@@ -34,6 +34,20 @@ using namespace std::chrono_literals;
 
 namespace cornucopia::ugly_duckling::kernel::drivers::cellular {
 
+inline const char* describe(esp_modem::terminal_error error) {
+    switch (error) {
+        case esp_modem::terminal_error::BUFFER_OVERFLOW:
+            return "receive overflow";
+        case esp_modem::terminal_error::CHECKSUM_ERROR:
+            return "parity error";
+        case esp_modem::terminal_error::UNEXPECTED_CONTROL_FLOW:
+            return "framing error or break";
+        case esp_modem::terminal_error::DEVICE_GONE:
+            return "device gone";
+    }
+    return "unknown";
+}
+
 /**
  * @brief Quectel BC660K-GL NB-IoT module, on the Desert Lark daughter board.
  *
@@ -59,6 +73,13 @@ public:
         , port(port) {
         dte->set_urc_cb([this](uint8_t* data, size_t len) {
             return processUrcData(std::string_view(reinterpret_cast<const char*>(data), len));
+        });
+        // On an overflow, esp_modem flushes everything the UART has buffered, which can take the
+        // rest of an AT+QIRD response with it. It logs these under uart_terminal, which is turned
+        // down to ERROR to keep out its warnings about light-sleep wakeups
+        dte->set_error_cb([this](esp_modem::terminal_error error) {
+            uartErrors++;
+            LOGTW(CELLULAR, "UART error from the modem: %s", describe(error));
         });
     }
 
@@ -331,8 +352,14 @@ public:
             bool more = data->remaining ? *data->remaining > 0 : data->length == length;
             return SocketReceive { .length = data->length, .more = more, .remaining = data->remaining };
         }
-        LOGTW(CELLULAR, "%s: no data line in the response", read.c_str());
+        // The data was taken out of the module's buffer either way, so the stream has a gap now
+        LOGTW(CELLULAR, "%s: no data line in the response, %zu lines%s%.40s", read.c_str(), response.lines.size(),
+            response.lines.empty() ? "" : ", the first: ", response.lines.empty() ? "" : response.lines.front().c_str());
         return std::nullopt;
+    }
+
+    uint32_t getUartErrorCount() const override {
+        return uartErrors.load();
     }
 
     size_t getMaxReceiveSize() const override {
@@ -829,6 +856,7 @@ private:
     static constexpr milliseconds SLOW_COMMAND = 1s;
 
     const uart_port_t port;
+    std::atomic<uint32_t> uartErrors { 0 };
 
     // Keeps the ESP32 out of light sleep while a command is in flight
     PowerManagementLock noLightSleep { "cellular", ESP_PM_NO_LIGHT_SLEEP };
