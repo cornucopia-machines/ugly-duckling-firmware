@@ -157,12 +157,12 @@ private:
         // esp_modem's UART terminal warns about every UART_WAKEUP event, which it doesn't handle.
         // Published, each warning is an uplink whose acknowledgement wakes us again
         esp_log_level_set("uart_terminal", ESP_LOG_ERROR);
-        module = std::make_shared<Bc660KDriver>(dte);
+        module = std::make_shared<Bc660KDriver>(dte, MODEM_UART);
         module->onUrc([this](std::string_view line) {
             handleUrc(line);
         });
 
-        if (!module->wake()) {
+        if (!module->start()) {
             LOGTE(CELLULAR, "%s is not answering; is the daughter board connected?", module->getName());
             return;
         }
@@ -399,7 +399,8 @@ private:
         config.uart_config.rx_io_num = pins.rx->getGpio();
         config.uart_config.rts_io_num = UART_PIN_NO_CHANGE;
         config.uart_config.cts_io_num = UART_PIN_NO_CHANGE;
-        // 115200 is far above what NB-IoT delivers (docs/specs/NB-IoT.md, "UART baud rate")
+        // The module's default; start() moves both sides to the fast rate (docs/specs/NB-IoT.md,
+        // "UART baud rate")
         config.uart_config.baud_rate = 115200;
         // Not the default PLL clock: before light sleep, IDF suspends every enabled UART and waits
         // for it to sync its registers, which needs the UART's clock running. On the PLL that
