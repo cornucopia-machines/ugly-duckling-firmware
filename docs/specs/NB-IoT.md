@@ -217,7 +217,7 @@ line, our UART RX. The ESP32-C6 can wake from light sleep on UART RX in four way
 
 | Mode | Wakes on | Clock in sleep | Bytes lost |
 | ---- | -------- | -------------- | ---------- |
-| Edge count (`UART_WK_MODE_ACTIVE_THRESH`) | ≥ 3 RX edges | none | the first few (≈ 318 µs wake-up ≈ 4 bytes at 115200) |
+| Edge count (`UART_WK_MODE_ACTIVE_THRESH`) | ≥ 3 RX edges | none | the first few (≈ 318 µs wake-up ≈ 15 bytes at 460800) |
 | FIFO threshold / start bit / character sequence | received data | 40 MHz XTAL | none |
 
 Keeping the 40 MHz crystal on in light sleep costs about 3.3 mA instead of about 34 µA
@@ -519,10 +519,26 @@ Steps:
 
 ### UART baud rate
 
-The BC660K supports `AT+IPR` up to 460800, but 115200 (≈ 11.5 KB/s) is far above what NB-IoT
-delivers: the manual's own `AT+QIPERF` example shows ~10–12 kbps uplink (≈ 1.5 KB/s). So no need
-to go faster. The only remaining question is whether a *slower* rate saves meaningful power on
-the UART, which isn't worth chasing before the stage 4 current measurements.
+The UART runs at 460800, the most the BC660K takes (`AT+IPR`; 115200 is its default). The rate
+isn't about NB-IoT's throughput, which 115200 (≈ 11.5 KB/s) easily covers: it's about how fast the
+module's 2 KB receive buffer can be emptied. The module drops received data once the buffer is
+full instead of holding it back with TCP flow control, and during downloads more than 2 KB
+arrived between two reads. A 512-byte `AT+QIRD`, as 1 KB of hex, takes about 90 ms at 115200 and
+about 22 ms at 460800 ([#690](https://github.com/cornucopia-machines/ugly-duckling-firmware/issues/690)).
+
+- `AT+IPR` takes effect straight away (the `OK` still comes at the old rate) and is saved to the
+  module's NVRAM. The module has no autobaud, and nothing documented resets the rate, not even
+  `RESET_N`: only another `AT+IPR`.
+- So at startup the driver looks for the module at both rates, the fast one first, alternating
+  while the module boots. If it answers at 115200, it's switched, and the switch is confirmed
+  with an `AT` at the new rate; if that fails, it goes back to 115200.
+- The module's I/O runs at 3.3 V (`VIO_SEL` grounded), with no level shifter in between; the
+  hardware design guide's 460 kbps limit is for transistor level shifters.
+- The UART is clocked from the 40 MHz crystal: a divisor of 86.8125, 0.01% off.
+- A light-sleep wake on RX edges takes about 318 µs (see "Waking the ESP32 on UART edges"):
+  about 15 bytes at 460800 instead of 4. A `+QIURC: "recv",0,<len>` still leaves enough for an
+  unrecognized line, which makes the socket check for data; a short URC like `+CSCON: 0` can
+  be lost entirely. To check on the bench.
 
 ### Measuring bytes and airtime
 

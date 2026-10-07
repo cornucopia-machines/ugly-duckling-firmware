@@ -47,6 +47,14 @@ public:
     virtual const char* getName() const = 0;
 
     /**
+     * @brief Finds the module after boot, at whichever UART rate it is on, and switches it to the
+     * fastest rate the link takes.
+     *
+     * Call before anything else; afterwards, wake() is enough.
+     */
+    virtual bool start() = 0;
+
+    /**
      * @brief Makes sure the module is awake and answering commands.
      */
     virtual bool wake() = 0;

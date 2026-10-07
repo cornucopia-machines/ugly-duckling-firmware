@@ -12,11 +12,14 @@
 #include <drivers/cellular/NetworkTime.hpp>
 #include <drivers/cellular/RadioStatus.hpp>
 
+#include <driver/uart.h>
+
 #include <algorithm>
 #include <array>
 #include <atomic>
 #include <chrono>
 #include <ctime>
+#include <initializer_list>
 #include <iterator>
 #include <memory>
 #include <mutex>
@@ -48,8 +51,12 @@ namespace cornucopia::ugly_duckling::kernel::drivers::cellular {
  */
 class Bc660KDriver final : public CellularModuleDriver, public esp_modem::GenericModule {
 public:
-    explicit Bc660KDriver(const std::shared_ptr<esp_modem::DTE>& dte)
-        : GenericModule(dte, std::make_unique<esp_modem::PdpContext>("")) {
+    /**
+     * @param port the UART the DTE runs on, set up at DEFAULT_BAUD_RATE; start() changes its rate
+     */
+    Bc660KDriver(const std::shared_ptr<esp_modem::DTE>& dte, uart_port_t port)
+        : GenericModule(dte, std::make_unique<esp_modem::PdpContext>(""))
+        , port(port) {
         dte->set_urc_cb([this](uint8_t* data, size_t len) {
             return processUrcData(std::string_view(reinterpret_cast<const char*>(data), len));
         });
@@ -57,6 +64,29 @@ public:
 
     const char* getName() const override {
         return "BC660K-GL";
+    }
+
+    /**
+     * The module has no autobaud, and AT+IPR is saved to its NVRAM, so it can be on either rate:
+     * the default on a new module, the fast one ever after. Nothing documented resets it, not
+     * even RESET_N. Each switch is confirmed at the new rate, and undone if that fails, so a link
+     * that can't take the fast rate costs speed, never the module.
+     */
+    bool start() override {
+        PowerManagementLockGuard awake(noLightSleep);
+        std::scoped_lock lock(commandMutex);
+        auto rate = findBaudRateLocked();
+        if (!rate) {
+            return false;
+        }
+        if (*rate == FAST_BAUD_RATE) {
+            LOGTD(CELLULAR, "%s is answering at %d baud", getName(), FAST_BAUD_RATE);
+            return true;
+        }
+        switchBaudRateLocked();
+        // Whichever way the switch went, find the module again; at the fast rate, the first AT
+        // answers
+        return findBaudRateLocked().has_value();
     }
 
     bool wake() override {
@@ -386,6 +416,73 @@ private:
         return false;
     }
 
+    /**
+     * @brief Finds the module's UART rate, trying both in turn: like wakeLocked(), it keeps going
+     * while the module boots, which it does together with the board.
+     *
+     * @return the rate it answered at, which the UART is left on
+     */
+    std::optional<int> findBaudRateLocked() {
+        auto backoff = WAKE_INITIAL_BACKOFF;
+        for (int attempt = 1; attempt <= WAKE_ATTEMPTS; attempt++) {
+            // Fast first: once switched, the module stays there
+            for (int rate : { FAST_BAUD_RATE, DEFAULT_BAUD_RATE }) {
+                setHostBaudRate(rate);
+                // An AT sent at the other rate reaches the module as a few garbage bytes without a
+                // CR, which it keeps: the next AT would extend that line, and get ERROR. A bare CR
+                // ends it; its answer, ERROR or nothing, doesn't matter
+                send("", PROBE_FLUSH_TIMEOUT);
+                if (send("AT", WAKE_TIMEOUT).ok()) {
+                    if (attempt > 1) {
+                        LOGTD(CELLULAR, "%s answered after %d attempts", getName(), attempt);
+                    }
+                    return rate;
+                }
+            }
+            Task::delay(backoff);
+            backoff = std::min(backoff * 2, WAKE_MAX_BACKOFF);
+        }
+        LOGTW(CELLULAR, "%s did not answer after %d attempts at either %d or %d baud", getName(), WAKE_ATTEMPTS, FAST_BAUD_RATE, DEFAULT_BAUD_RATE);
+        return std::nullopt;
+    }
+
+    /**
+     * @brief Moves the module and the UART from DEFAULT_BAUD_RATE to FAST_BAUD_RATE, and back if
+     * the module doesn't answer at the fast rate.
+     */
+    void switchBaudRateLocked() {
+        auto set = "AT+IPR=" + std::to_string(FAST_BAUD_RATE);
+        LOGTI(CELLULAR, "%s is answering at %d baud, switching it to %d", getName(), DEFAULT_BAUD_RATE, FAST_BAUD_RATE);
+        // The OK still comes at the old rate; the module switches straight after
+        auto response = send(set, DEFAULT_TIMEOUT);
+        if (!response.ok()) {
+            LOGTW(CELLULAR, "%s failed: %s %s; staying at %d baud", set.c_str(), toString(response.result), response.error.c_str(), DEFAULT_BAUD_RATE);
+            return;
+        }
+        setHostBaudRate(FAST_BAUD_RATE);
+        for (int attempt = 1; attempt <= BAUD_CONFIRM_ATTEMPTS; attempt++) {
+            if (send("AT", WAKE_TIMEOUT).ok()) {
+                return;
+            }
+        }
+        LOGTW(CELLULAR, "%s did not answer at %d baud, going back to %d", getName(), FAST_BAUD_RATE, DEFAULT_BAUD_RATE);
+        setHostBaudRate(DEFAULT_BAUD_RATE);
+        if (send("AT", WAKE_TIMEOUT).ok()) {
+            // It never switched
+            return;
+        }
+        // It switched, but the link garbles the fast rate: ask it back, in case enough gets through
+        setHostBaudRate(FAST_BAUD_RATE);
+        send("AT+IPR=" + std::to_string(DEFAULT_BAUD_RATE), DEFAULT_TIMEOUT);
+        setHostBaudRate(DEFAULT_BAUD_RATE);
+    }
+
+    void setHostBaudRate(int rate) {
+        // Whatever is still going out would be garbled by the switch
+        uart_wait_tx_done(port, pdMS_TO_TICKS(100));
+        ESP_ERROR_CHECK_WITHOUT_ABORT(uart_set_baudrate(port, static_cast<uint32_t>(rate)));
+    }
+
     AtResponse send(const std::string& command, milliseconds timeout, std::string_view awaitAfterOk = {}) {
         std::optional<AtResponse> response;
         commandInFlight = true;
@@ -656,10 +753,19 @@ private:
     // The NB-IoT bands used in Europe, in search order: B20 (800 MHz) first, B8 (900 MHz) second
     static constexpr std::array BANDS { 20, 8 };
 
+    // The module's default, and the most it takes (AT+IPR; hardware design guide, "Main UART
+    // Interface"). The UART's divisor from the 40 MHz crystal is 86.8125 for 460800, 0.01% off
+    static constexpr int DEFAULT_BAUD_RATE = 115200;
+    static constexpr int FAST_BAUD_RATE = 460800;
+    static constexpr int BAUD_CONFIRM_ATTEMPTS = 3;
+    static constexpr milliseconds PROBE_FLUSH_TIMEOUT = 100ms;
+
     static constexpr int WAKE_ATTEMPTS = 10;
     static constexpr milliseconds WAKE_TIMEOUT = 300ms;
     static constexpr milliseconds WAKE_INITIAL_BACKOFF = 100ms;
     static constexpr milliseconds WAKE_MAX_BACKOFF = 1s;
+
+    const uart_port_t port;
 
     // Keeps the ESP32 out of light sleep while a command is in flight
     PowerManagementLock noLightSleep { "cellular", ESP_PM_NO_LIGHT_SLEEP };
