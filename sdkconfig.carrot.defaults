@@ -19,6 +19,16 @@ CONFIG_RTC_CLK_SRC_EXT_CRYS=y
 CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
 
 #
+# UART
+#
+
+# Flash erases and writes disable the cache, and with it every interrupt whose handler lives in
+# flash. The UART's 128-byte hardware FIFO holds under 3 ms of modem data at 460800 baud, while a
+# sector erase takes tens of milliseconds, so during an OTA download, which writes flash constantly,
+# the FIFO overflows unless the UART ISR runs from IRAM.
+CONFIG_UART_ISR_IN_IRAM=y
+
+#
 # Wi-Fi
 #
 
