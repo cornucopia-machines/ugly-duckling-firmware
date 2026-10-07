@@ -79,9 +79,11 @@ public:
         StateSource& networkReady,
         const State& rtcInSync,
         std::string ntpServer,
-        TimeHandler onNetworkTime)
+        TimeHandler onNetworkTime,
+        bool allowModuleSleep)
         : pins(pins)
         , edrxCycle(toEdrxCycle(config->edrxCycle.get()))
+        , allowModuleSleep(allowModuleSleep)
         , networkConnecting(networkConnecting)
         , networkReady(networkReady)
         , rtcInSync(rtcInSync)
@@ -168,7 +170,7 @@ private:
         }
         LOGTI(CELLULAR, "%s is answering", module->getName());
 
-        if (!module->configure()) {
+        if (!module->configure(allowModuleSleep)) {
             LOGTW(CELLULAR, "Some %s settings could not be applied", module->getName());
         }
         if (!module->configurePowerSaving(edrxCycle)) {
@@ -504,6 +506,8 @@ private:
     const CellularModemPins pins;
     // nullopt for eDRX off
     const std::optional<milliseconds> edrxCycle;
+    // False for a boot that downloads a firmware update (see CellularModuleDriver::configure())
+    const bool allowModuleSleep;
     StateSource& networkConnecting;
     StateSource& networkReady;
     const State& rtcInSync;

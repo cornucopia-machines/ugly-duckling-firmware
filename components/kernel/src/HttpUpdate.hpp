@@ -1,9 +1,11 @@
 #pragma once
 #include <Log.hpp>
 #include <NvsStore.hpp>
+#include <PowerManager.hpp>
 #include <RamCertBundle.hpp>
 #include <Restart.hpp>
 #include <State.hpp>
+#include <Task.hpp>
 #include <Watchdog.hpp>
 #include <config/ConfigState.hpp>
 #include <mqtt/TlsTransport.hpp>
@@ -114,6 +116,14 @@ private:
         // rejection on the next boot so the server stops retrying.
         nvs->set(UPDATE_FAILED_KEY, url);
 
+        // Full speed and no light sleep until the restart: over the modem, the data has to be read
+        // out of its 2 KB receive buffer as fast as it arrives, or it's lost, and at the lowest
+        // CPU frequency, decrypting and decoding it is slower. Nothing else runs during the update
+        PowerManagementLock cpuFrequencyMax("update:cpu", ESP_PM_CPU_FREQ_MAX);
+        PowerManagementLockGuard fullSpeed(cpuFrequencyMax);
+        PowerManagementLock noLightSleep("update:awake", ESP_PM_NO_LIGHT_SLEEP);
+        PowerManagementLockGuard awake(noLightSleep);
+
         bool overModem = network.modemTransport != nullptr;
 
         LOGTD(UPDATE, "Waiting for network...");
@@ -176,17 +186,54 @@ private:
     }
 
     /**
+     * @brief Downloads and installs the image, picking up where it left off when the download
+     * breaks.
+     *
+     * Over the modem, received data is lost whenever its 2 KB buffer overflows, and the TLS
+     * record it belonged to fails to verify (docs/specs/NB-IoT.md, "`QISEND` / `QIRD` size
+     * limits"). Records that fail never reach the image, so everything written so far is good,
+     * and a fresh connection asks for the rest with a Range request. If the server ignores the
+     * Range, esp_https_ota starts over from the beginning. Gives up after a few attempts in a
+     * row that didn't get any further.
+     */
+    esp_err_t runOta(esp_https_ota_config_t otaConfig) {
+        LOGTI(UPDATE, "Attempting OTA update from URL %s",
+            otaConfig.http_config->url);
+
+        size_t written = 0;
+        int attemptsWithoutProgress = 0;
+        while (true) {
+            size_t writtenBefore = written;
+            esp_err_t err = attemptOta(otaConfig, written);
+            if (err != ESP_ERR_HTTPS_OTA_IN_PROGRESS) {
+                return err;
+            }
+            attemptsWithoutProgress = written > writtenBefore ? 0 : attemptsWithoutProgress + 1;
+            if (attemptsWithoutProgress >= MAX_ATTEMPTS_WITHOUT_PROGRESS) {
+                LOGTE(UPDATE, "Download broke off %d times without getting further, giving up",
+                    attemptsWithoutProgress);
+                return ESP_FAIL;
+            }
+            Task::delay(RETRY_DELAY);
+            otaConfig.ota_resumption = true;
+            otaConfig.ota_image_bytes_written = written;
+            LOGTI(UPDATE, "Download broke off, resuming after %.02f KB", static_cast<double>(written) / 1024.0);
+        }
+    }
+
+    /**
      * @brief Equivalent of esp_https_ota(), but only holds the RAM copy of the CA bundle while
      * connecting.
      *
      * The bundle is only needed for the TLS handshake(s) in esp_https_ota_begin(), which also
      * follows redirects; freeing it before the download gives its RAM back while WiFi buffers
      * the incoming image.
+     *
+     * @param written how much of the image is in flash, updated when the download breaks off
+     * @return ESP_ERR_HTTPS_OTA_IN_PROGRESS when the download broke off and can be resumed
      */
-    static esp_err_t runOta(const esp_https_ota_config_t& otaConfig) {
-        LOGTI(UPDATE, "Attempting OTA update from URL %s",
-            otaConfig.http_config->url);
-
+    esp_err_t attemptOta(const esp_https_ota_config_t& otaConfig, size_t& written) {
+        statusCode = 0;
         esp_https_ota_handle_t handle = nullptr;
         esp_err_t err;
         {
@@ -194,7 +241,12 @@ private:
             err = esp_https_ota_begin(&otaConfig, &handle);
         }
         if (err != ESP_OK) {
-            return err;
+            LOGTE(UPDATE, "Could not start the download (%s, HTTP status %d)", esp_err_to_name(err), statusCode);
+            // Connecting, the TLS handshake and the request can break off over NB-IoT like the
+            // download itself, before any response; a server that answered with an error
+            // (a wrong URL, say) won't do better the next time
+            bool retry = written > 0 || statusCode == 0;
+            return retry ? ESP_ERR_HTTPS_OTA_IN_PROGRESS : err;
         }
         if (handle == nullptr) {
             return ESP_FAIL;
@@ -206,8 +258,14 @@ private:
         }
 
         if (err != ESP_OK) {
+            // How much made it to flash; -1 if the download hadn't started writing
+            int length = esp_https_ota_get_image_len_read(handle);
+            if (length > 0) {
+                written = static_cast<size_t>(length);
+            }
             esp_https_ota_abort(handle);
-            return err;
+            LOGTW(UPDATE, "Download failed (%s)", esp_err_to_name(err));
+            return ESP_ERR_HTTPS_OTA_IN_PROGRESS;
         }
         return esp_https_ota_finish(handle);
     }
@@ -236,7 +294,8 @@ private:
                 LOGTV(UPDATE, "HTTP headers complete");
                 break;
             case HTTP_EVENT_ON_STATUS_CODE:
-                LOGTV(UPDATE, "HTTP status code: %d", *reinterpret_cast<int*>(event->data));
+                statusCode = *reinterpret_cast<int*>(event->data);
+                LOGTV(UPDATE, "HTTP status code: %d", statusCode);
                 break;
             case HTTP_EVENT_ON_DATA: {
                 LOGTV(UPDATE, "HTTP data: %d bytes", event->data_len);
@@ -267,6 +326,8 @@ private:
     const std::shared_ptr<Watchdog> watchdog;
     const std::string firmwareVersion;
     size_t downloaded = 0;
+    // Of the current attempt's response; 0 until one arrives
+    int statusCode = 0;
 
     static constexpr const size_t DOWNLOAD_NOTIFICATION_BATCH = 128 * 1024;
 
@@ -275,6 +336,9 @@ private:
     static constexpr std::chrono::milliseconds MODEM_NETWORK_READY_TIMEOUT = std::chrono::minutes(5);
     // The same as MQTT's network timeout over the modem
     static constexpr std::chrono::milliseconds MODEM_HTTP_TIMEOUT = std::chrono::seconds(30);
+    // A download that breaks off is resumed, unless this many attempts in a row got no further
+    static constexpr int MAX_ATTEMPTS_WITHOUT_PROGRESS = 3;
+    static constexpr std::chrono::milliseconds RETRY_DELAY = std::chrono::seconds(2);
 };
 
 }    // namespace cornucopia::ugly_duckling::kernel

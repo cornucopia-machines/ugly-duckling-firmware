@@ -132,8 +132,9 @@ static void startDevice() {
 
     // Skip BLE while a firmware update is pending: the OTA's TLS handshake needs the RAM on
     // ESP32-C6, and the device reboots after the update attempt either way
+    bool updatePending = HttpUpdater::isUpdatePending(legacyConfigNvs);
     std::shared_ptr<BleDriver> ble;
-    if (HttpUpdater::isUpdatePending(legacyConfigNvs)) {
+    if (updatePending) {
         LOGI("Firmware update pending, not starting BLE");
         ble = std::make_shared<BleDriver>();
     } else {
@@ -175,7 +176,7 @@ static void startDevice() {
         LOGD("No battery configured");
     }
 
-    auto connectivity = initConnectivity(states, networkConfig, ble, deviceDefinition->getCellularModemPins());
+    auto connectivity = initConnectivity(states, networkConfig, ble, deviceDefinition->getCellularModemPins(), updatePending);
 
 #ifdef UD_DEBUG_CONSOLE
     new DebugConsole(batteryManager,

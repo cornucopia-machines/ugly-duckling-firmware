@@ -48,4 +48,5 @@ ConnectivityDrivers initConnectivity(
     const std::shared_ptr<ModuleStates>& states,
     const std::shared_ptr<NetworkConfig>& networkConfig,
     const std::shared_ptr<BleDriver>& ble,
-    const std::optional<cellular::CellularModemPins>& modemPins);
+    const std::optional<cellular::CellularModemPins>& modemPins,
+    bool updatePending);

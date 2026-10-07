@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <charconv>
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -197,9 +198,18 @@ inline const char* toString(AtResult result) {
  * @param awaitAfterOk for commands whose actual outcome follows the OK on a line of its own, such
  * as "SEND OK" after AT+QISEND or "+QIOPEN: 0,0" after AT+QIOPEN: the prefix of that line. The
  * response is then only complete once such a line has arrived; it ends up among the lines.
+ * @param consumed set to how much of the buffer the response took up, once it's complete. What
+ * follows arrived after the final result code, such as a URC, and isn't part of the response.
  */
-inline std::optional<AtResponse> parseAtResponse(std::string_view buffer, std::string_view command, std::string_view awaitAfterOk = {}) {
+inline std::optional<AtResponse> parseAtResponse(std::string_view buffer, std::string_view command, std::string_view awaitAfterOk = {}, size_t* consumed = nullptr) {
     AtResponse response { .result = AtResult::Timeout, .lines = {}, .error = {} };
+    const auto* start = buffer.data();    // NOLINT(bugprone-suspicious-stringview-data-usage)
+    auto complete = [&]() {
+        if (consumed != nullptr) {
+            *consumed = static_cast<size_t>(buffer.data() - start);
+        }
+        return response;
+    };
     bool gotOk = false;
     while (true) {
         auto newline = buffer.find('\n');
@@ -223,21 +233,21 @@ inline std::optional<AtResponse> parseAtResponse(std::string_view buffer, std::s
         if (gotOk) {
             response.lines.emplace_back(line);
             if (line.starts_with(awaitAfterOk)) {
-                return response;
+                return complete();
             }
             continue;
         }
         if (line == "OK") {
             response.result = AtResult::Ok;
             if (awaitAfterOk.empty()) {
-                return response;
+                return complete();
             }
             gotOk = true;
             continue;
         }
         if (line == "ERROR") {
             response.result = AtResult::Error;
-            return response;
+            return complete();
         }
         static constexpr std::string_view CME_ERROR = "+CME ERROR:";
         if (line.starts_with(CME_ERROR)) {
@@ -247,7 +257,7 @@ inline std::optional<AtResponse> parseAtResponse(std::string_view buffer, std::s
             }
             response.result = AtResult::CmeError;
             response.error = line;
-            return response;
+            return complete();
         }
         response.lines.emplace_back(line);
     }

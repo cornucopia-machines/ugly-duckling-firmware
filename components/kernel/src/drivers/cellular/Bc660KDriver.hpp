@@ -95,7 +95,7 @@ public:
         return wakeLocked();
     }
 
-    bool configure() override {
+    bool configure(bool allowSleep) override {
         // First, since it may restart the module, which loses the settings below
         bool success = ensureRxdWakeup();
 
@@ -105,11 +105,6 @@ public:
             "ATE0",
             // A readable "+CME ERROR: <text>" instead of a bare ERROR
             "AT+CMEE=2",
-            // Let the module light sleep between paging occasions; it wakes on the network's
-            // schedule and on UART activity from us (the first command after that is lost, see
-            // wakeLocked()). Not deep sleep: that only happens in PSM, which is off. Not saved to
-            // NVRAM, so it has to be sent after every module restart
-            "AT+QSCLK=2",
             // Only URC mode 3 carries the EMM reject cause, which is what tells "no coverage"
             // apart from "subscription refused"
             "AT+CEREG=3",
@@ -120,13 +115,28 @@ public:
             "AT+CSCON=1",
         };
 
-        for (const char* setting : SETTINGS) {
+        // Let the module light sleep between paging occasions; it wakes on the network's schedule
+        // and on UART activity from us (the first command after that is lost, see wakeLocked()).
+        // Not deep sleep: that only happens in PSM, which is off. Not saved to NVRAM, so it has to
+        // be sent after every module restart. The AT manual recommends turning sleep off for data
+        // communication (AT+QSCLK, note 3): with it on, received data was announced late during
+        // downloads, and the receive buffer overflowed (docs/specs/NB-IoT.md)
+        const char* sleep = allowSleep ? "AT+QSCLK=2" : "AT+QSCLK=0";
+        if (!allowSleep) {
+            LOGTI(CELLULAR, "Keeping the modem out of sleep for this boot");
+        }
+
+        auto apply = [&](const char* setting) {
             auto response = command(setting, DEFAULT_TIMEOUT);
             if (!response.ok()) {
                 LOGTW(CELLULAR, "%s failed: %s %s", setting, toString(response.result), response.error.c_str());
                 success = false;
             }
+        };
+        for (const char* setting : SETTINGS) {
+            apply(setting);
         }
+        apply(sleep);
 
         // These two are saved to NVRAM and slow to apply, so only write them when they differ
         success = ensureFullFunctionality() && success;
@@ -164,6 +174,10 @@ public:
         logResponse("AT+CPIN?");
         logResponse("AT+CIMI");
         logResponse("AT+QCCID");
+        // 3GPP release and UE category: Cat NB2 (release 14) allows about five times the downlink
+        // of Cat NB1, if the network supports it
+        logResponse(R"(AT+QCFG="relversion")");
+        logResponse(R"(AT+QCFG="NBcategory")");
     }
 
     std::optional<ServingCell> logRadioStatus() override {
@@ -315,7 +329,7 @@ public:
             }
             // Without the remaining length, a full read is the only sign there may be more
             bool more = data->remaining ? *data->remaining > 0 : data->length == length;
-            return SocketReceive { .length = data->length, .more = more };
+            return SocketReceive { .length = data->length, .more = more, .remaining = data->remaining };
         }
         LOGTW(CELLULAR, "%s: no data line in the response", read.c_str());
         return std::nullopt;
@@ -360,12 +374,30 @@ private:
         // The UART driver only keeps the ESP32 awake while transmitting; in light sleep the
         // response would be lost, as waking on UART edges loses the first bytes
         PowerManagementLockGuard awake(noLightSleep);
+        auto requestedAt = steady_clock::now();
         std::scoped_lock lock(commandMutex);
-        // The module can be asleep before any command, and the first AT only wakes it
+        // While a socket is busy, a command holding the module for long keeps AT+QIRD from
+        // emptying its 2 KB receive buffer, and once that's full, received data is lost
+        auto waited = steady_clock::now() - requestedAt;
+        if (waited >= SLOW_COMMAND) {
+            LOGTD(CELLULAR, "%s waited %lld ms for %s", command.c_str(),
+                static_cast<long long>(duration_cast<milliseconds>(waited).count()), lastCommand.c_str());
+        }
+        lastCommand = command;
+        // The module can be asleep before any command, and the first AT only wakes it. Skipping
+        // that when the module had answered just before didn't work out: right after registering,
+        // it ignored a command sent less than a second after its last answer
         if (!wakeLocked()) {
             return AtResponse { .result = AtResult::Timeout, .lines = {}, .error = {} };
         }
-        return send(command, timeout, awaitAfterOk);
+        auto startedAt = steady_clock::now();
+        auto response = send(command, timeout, awaitAfterOk);
+        auto took = steady_clock::now() - startedAt;
+        if (took >= SLOW_COMMAND) {
+            LOGTD(CELLULAR, "%s took %lld ms", command.c_str(),
+                static_cast<long long>(duration_cast<milliseconds>(took).count()));
+        }
+        return response;
     }
 
     /**
@@ -490,15 +522,19 @@ private:
         // command, including URCs processUrcData() has already handled; skip those, or they
         // would be handled again as URCs that arrived during this command
         size_t alreadyHandled = urcBytesHandled;
+        // What arrived after the final result code in the same read
+        std::string trailing;
         dte->command(
             command + "\r",
             [&](uint8_t* data, size_t len) {
                 std::string_view buffer(reinterpret_cast<const char*>(data), len);
                 buffer.remove_prefix(std::min(alreadyHandled, buffer.size()));
-                response = parseAtResponse(buffer, command, awaitAfterOk);
+                size_t consumed = 0;
+                response = parseAtResponse(buffer, command, awaitAfterOk, &consumed);
                 if (!response) {
                     return esp_modem::command_result::TIMEOUT;
                 }
+                trailing = buffer.substr(consumed);
                 return response->ok() ? esp_modem::command_result::OK : esp_modem::command_result::FAIL;
             },
             static_cast<uint32_t>(timeout.count()));
@@ -509,7 +545,32 @@ private:
             return AtResponse { .result = AtResult::Timeout, .lines = {}, .error = {} };
         }
         dispatchUrcsInResponse(*response, command);
+        dispatchTrailingData(trailing);
         return std::move(*response);
+    }
+
+    /**
+     * @brief Handles what arrived after a command's final result code in the same read.
+     *
+     * esp_modem empties its buffer when the command completes, so these bytes would otherwise be
+     * lost. Typically it's a +QIURC: "recv" announcing data right after an AT+QIRD emptied the
+     * module's buffer; missing it left the data waiting until the buffer overflowed. A line cut
+     * off at the end of the read can't be told apart, so it goes to the URC handler as is: as an
+     * unrecognized line, it makes the socket check for data anyway.
+     */
+    void dispatchTrailingData(std::string_view data) {
+        std::scoped_lock lock(urcHandlerMutex);
+        while (!data.empty()) {
+            auto newline = data.find('\n');
+            std::string_view line = data.substr(0, newline);
+            data.remove_prefix(newline == std::string_view::npos ? data.size() : newline + 1);
+            while (!line.empty() && (line.back() == '\r' || line.back() == '\n')) {
+                line.remove_suffix(1);
+            }
+            if (!line.empty()) {
+                dispatchUrc(line);
+            }
+        }
     }
 
     /**
@@ -764,6 +825,8 @@ private:
     static constexpr milliseconds WAKE_TIMEOUT = 300ms;
     static constexpr milliseconds WAKE_INITIAL_BACKOFF = 100ms;
     static constexpr milliseconds WAKE_MAX_BACKOFF = 1s;
+    // At about 2 KB/s, a command that holds the module this long lets its receive buffer fill
+    static constexpr milliseconds SLOW_COMMAND = 1s;
 
     const uart_port_t port;
 
@@ -774,6 +837,9 @@ private:
     std::mutex commandMutex;
     std::atomic<bool> commandInFlight { false };
     std::atomic<size_t> urcBytesHandled { 0 };
+    // The last command sent, for the log when another one had to wait for it; only touched with
+    // commandMutex held
+    std::string lastCommand;
 
     std::mutex urcHandlerMutex;
     UrcHandler urcHandler;

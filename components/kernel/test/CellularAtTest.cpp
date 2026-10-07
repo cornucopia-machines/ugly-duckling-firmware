@@ -8,7 +8,9 @@
 
 #include <array>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
+#include <string_view>
 
 using namespace cornucopia::ugly_duckling::kernel::drivers::cellular;
 using namespace std::chrono_literals;
@@ -56,6 +58,25 @@ TEST_CASE("parseAtResponse reports +CME ERROR with its text") {
     REQUIRE(response.has_value());
     REQUIRE(response->result == AtResult::CmeError);
     REQUIRE(response->error == "SIM not inserted");
+}
+
+TEST_CASE("parseAtResponse reports where the response ends, before a URC in the same read") {
+    std::string_view buffer = "\r\n+QIRD: 512,0,\"00\"\r\n\r\nOK\r\n\r\n+QIURC: \"recv\",0,512\r\n";
+    size_t consumed = 0;
+
+    auto response = parseAtResponse(buffer, "AT+QIRD=0,512", {}, &consumed);
+
+    REQUIRE(response.has_value());
+    REQUIRE(response->lines == std::vector<std::string> { "+QIRD: 512,0,\"00\"" });
+    REQUIRE(buffer.substr(consumed) == "\r\n+QIURC: \"recv\",0,512\r\n");
+}
+
+TEST_CASE("parseAtResponse consumes all of a response with nothing after it") {
+    std::string_view buffer = "\r\nOK\r\n";
+    size_t consumed = 0;
+
+    REQUIRE(parseAtResponse(buffer, "AT", {}, &consumed).has_value());
+    REQUIRE(consumed == buffer.size());
 }
 
 TEST_CASE("parseAtResponse with awaitAfterOk waits for the line after OK") {

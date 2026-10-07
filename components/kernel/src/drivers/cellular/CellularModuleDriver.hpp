@@ -31,6 +31,8 @@ struct SocketReceive {
     size_t length;
     // Whether the module still holds more data after this read
     bool more;
+    // How much data the module still holds, if it says
+    std::optional<size_t> remaining;
 };
 
 /**
@@ -63,8 +65,12 @@ public:
      * @brief Applies the settings the module does not keep across its own restarts.
      *
      * Called once the module answers after boot; safe to repeat.
+     *
+     * @param allowSleep whether the module may sleep between commands; false for a boot that
+     * downloads a firmware update, since the module doesn't announce received data promptly
+     * while sleep is enabled, and its receive buffer overflows
      */
-    virtual bool configure() = 0;
+    virtual bool configure(bool allowSleep) = 0;
 
     /**
      * @brief Keeps the module reachable while it sleeps: PSM off, and eDRX with the given cycle,
