@@ -117,8 +117,9 @@ public:
     }
 
     bool configure(bool allowSleep) override {
-        // First, since it may restart the module, which loses the settings below
+        // First, since they may restart the module, which loses the settings below
         bool success = ensureRxdWakeup();
+        success = ensureReleaseVersion() && success;
 
         // None of these is ever wrong to repeat, so there's no point checking first
         static constexpr std::array SETTINGS {
@@ -718,6 +719,35 @@ private:
         auto response = command(RXD_WAKEUP.set, DEFAULT_TIMEOUT);
         if (!response.ok()) {
             LOGTW(CELLULAR, "%s failed: %s %s", RXD_WAKEUP.set, toString(response.result), response.error.c_str());
+            return false;
+        }
+        // Answers OK, then resets straight away
+        command("AT+QRST=1", DEFAULT_TIMEOUT);
+        // Booting takes a moment; waking retries until it answers
+        return wake();
+    }
+
+    bool ensureReleaseVersion() {
+        // Release 14 makes the module Cat NB2 (NBcategory follows it to 2): 2536-bit downlink
+        // transport blocks instead of 680, and two HARQ processes, if the network supports it.
+        // Saved to NVRAM, only accepted at minimum functionality, and only takes effect after a
+        // restart. ensureFullFunctionality() brings CFUN back to 1 afterwards
+        static constexpr PersistedSetting RELEASE_VERSION {
+            .query = R"(AT+QCFG="relversion")", .expected = R"(+QCFG: "relversion",14)", .set = R"(AT+QCFG="relversion",14)"
+        };
+        auto current = checkSetting(RELEASE_VERSION);
+        if (!current) {
+            return true;
+        }
+        LOGTI(CELLULAR, "Setting %s (was: %s), and restarting %s for it to take effect", RELEASE_VERSION.set, current->c_str(), getName());
+        auto response = command("AT+CFUN=0", CFUN_TIMEOUT);
+        if (!response.ok()) {
+            LOGTW(CELLULAR, "AT+CFUN=0 failed: %s %s", toString(response.result), response.error.c_str());
+            return false;
+        }
+        response = command(RELEASE_VERSION.set, DEFAULT_TIMEOUT);
+        if (!response.ok()) {
+            LOGTW(CELLULAR, "%s failed: %s %s", RELEASE_VERSION.set, toString(response.result), response.error.c_str());
             return false;
         }
         // Answers OK, then resets straight away
