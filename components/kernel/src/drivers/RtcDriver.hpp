@@ -44,21 +44,16 @@ public:
         Property<std::string> host { this, "host", "" };
     };
 
-    RtcDriver(State& networkReady, const std::shared_ptr<Config>& ntpConfig, StateSource& rtcInSync)
-        : configuredServer(ntpConfig->host.get())
-        , rtcInSync(rtcInSync) {
+    /**
+     * @brief With SNTP: the time is synced once the network is up.
+     */
+    static std::shared_ptr<RtcDriver> withSntp(State& networkReady, const std::shared_ptr<Config>& ntpConfig, StateSource& rtcInSync) {
+        std::shared_ptr<RtcDriver> driver(new RtcDriver(ntpConfig, rtcInSync));
 
-        // Do this before anything else: lwIP only keeps the NTP server offered in a DHCP lease if
-        // DHCP server mode is already enabled by the time that lease is processed, and WiFiDriver
-        // is already associating from its own task by the time we get here. The client itself is
-        // only started once we actually have a network.
-        initSntp();
-
-        if (isTimeSet()) {
-            markInSync("retained across reboot");
-        }
-
-        Task::run("ntp-sync", 3072, [this, &networkReady](Task& _task) {
+        // The task holds on to the driver for as long as it runs, i.e. for the lifetime of the
+        // device: nothing else is guaranteed to keep it alive, and lwIP keeps pointing at
+        // configuredServer
+        Task::run("ntp-sync", 3072, [driver, &networkReady](Task& _task) {
             networkReady.awaitSet();
             ESP_ERROR_CHECK(esp_netif_sntp_start());
             LOGTI(RTC, "Started SNTP client; servers: %s", describeServers().c_str());
@@ -69,7 +64,7 @@ public:
                 // resolved server address around between attempts. Tearing the client down and
                 // recreating it per attempt -- as we used to -- threw all of that away, and left
                 // the device unable to ever acquire time again until it was power-cycled.
-                auto ret = esp_netif_sntp_sync_wait(ticks(this->rtcInSync.isSet() ? SYNCED_POLL_INTERVAL : UNSYNCED_POLL_INTERVAL).count());
+                auto ret = esp_netif_sntp_sync_wait(ticks(driver->rtcInSync.isSet() ? SYNCED_POLL_INTERVAL : UNSYNCED_POLL_INTERVAL).count());
                 switch (ret) {
                     case ESP_OK:
                     case ESP_ERR_NOT_FINISHED:
@@ -78,14 +73,14 @@ public:
                         // return code -- a sync notification can also arrive for a response that
                         // left the clock somewhere near the boot epoch.
                         if (isTimeSet()) {
-                            markInSync(ret == ESP_OK ? "NTP" : "NTP (smooth sync in progress)");
+                            driver->markInSync(ret == ESP_OK ? "NTP" : "NTP (smooth sync in progress)");
                         } else {
                             LOGTW(RTC, "NTP sync notification (0x%x) left the clock unset at %lld, ignoring",
                                 ret, static_cast<long long>(time(nullptr)));
                         }
                         break;
                     case ESP_ERR_TIMEOUT:
-                        logNoSync();
+                        driver->logNoSync();
                         break;
                     default:
                         LOGTW(RTC, "Waiting for NTP sync failed with %s (0x%x)", esp_err_to_name(ret), ret);
@@ -93,6 +88,7 @@ public:
                 }
             }
         });
+        return driver;
     }
 
     /**
@@ -134,6 +130,21 @@ public:
     static constexpr const char* DEFAULT_NTP_SERVER = "pool.ntp.org";
 
 private:
+    RtcDriver(const std::shared_ptr<Config>& ntpConfig, StateSource& rtcInSync)
+        : configuredServer(ntpConfig->host.get())
+        , rtcInSync(rtcInSync) {
+
+        // Do this before anything else: lwIP only keeps the NTP server offered in a DHCP lease if
+        // DHCP server mode is already enabled by the time that lease is processed, and WiFiDriver
+        // is already associating from its own task by the time we get here. The client itself is
+        // only started once we actually have a network.
+        initSntp();
+
+        if (isTimeSet()) {
+            markInSync("retained across reboot");
+        }
+    }
+
     // 2022-01-01 00:00:00 UTC: no time at or below this can be a real wall-clock time.
     static constexpr time_t EARLIEST_PLAUSIBLE_TIME = 1640995200;
 

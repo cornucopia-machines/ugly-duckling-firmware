@@ -30,7 +30,7 @@ static void initWiFi(ConnectivityDrivers& drivers, const std::shared_ptr<ModuleS
     drivers.wifi = wifi;
 
     // Init real time clock, straight away: the SNTP setup has to beat the first DHCP lease
-    drivers.rtc = std::make_shared<RtcDriver>(wifi->getNetworkReady(), networkConfig->ntp.get(), states->rtcInSync);
+    drivers.rtc = RtcDriver::withSntp(wifi->getNetworkReady(), networkConfig->ntp.get(), states->rtcInSync);
 
     ble->setOnWifiScanRequested([wifi, ble]() {
         wifi->startWifiScan([ble](const std::vector<WifiApRecord>& records) {
