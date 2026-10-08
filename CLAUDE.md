@@ -56,6 +56,16 @@ error if the sdkconfig in the specified directory was generated for a different
 target. `sdkconfig` is generated inside the build directory (e.g.
 `build-carrot/sdkconfig`), not in the project root.
 
+**Never run a bare `ninja` on a `build-*` directory**, not even `ninja -t …` queries. Go through
+`idf.py`, which uses the ninja ESP-IDF installs (`CMAKE_MAKE_PROGRAM` in `build-*/CMakeCache.txt`).
+Another ninja on `PATH` (e.g. Homebrew's, which comes before IDF's even after activation) is a
+different version and rewrites the build's `.ninja_log`. Once, `build-carrot` lost the recorded
+header dependencies of `main.cpp.obj`. After a header change `main.cpp` wasn't recompiled, and the
+firmware crashed on boot because two compilation units disagreed on a class's layout. To check
+that every object still has its dependencies, run IDF's ninja on the build directory with
+`-t deps`: an object listed with `#deps 0` won't be rebuilt when a header changes. If a crash
+after a header change makes no sense, first delete the build directory and rebuild from scratch.
+
 **An existing `build-*/sdkconfig` takes precedence over `sdkconfig*.defaults`.** The defaults files
 only seed a config that does not exist yet, so editing them does *not* change a symbol that is
 already present in a generated `sdkconfig` — not even after `idf.py reconfigure`. To pick up a
