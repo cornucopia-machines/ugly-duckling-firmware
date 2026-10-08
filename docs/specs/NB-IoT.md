@@ -91,9 +91,12 @@ driver, lwIP's WiFi netif or their buffers, so it should need less internal RAM,
 The BC660K can take socket data as hex instead of raw bytes (`AT+QICFG="dataformat",1,1`). Then
 `AT+QISEND=0,<len>,"<hex>"` and `+QIRD: <len>,<remaining>,"<hex>"` are ordinary text lines, so
 sends and reads go through the same command path, response parser and URC handling as every
-other command, and binary data never reaches the line parser. The cost is twice the bytes on the
-UART and 1024 bytes per `QISEND` instead of 2048. Neither matters: 115200 baud is about 8× what
-NB-IoT delivers, and the bytes over the air are the same.
+other command, and binary data never reaches the line parser. Data pushed in direct push mode
+(update downloads, see "OTA over the modem, without MQTT") comes as hex too, in
+`+QIURC: "recv",0,<len>,"<hex>"`. The cost is twice the bytes on the UART and 1024 bytes per
+`QISEND` instead of 2048. Neither matters for throughput: even 115200 baud is about 8× what
+NB-IoT delivers, and the bytes over the air are the same. It did matter for how fast the module's
+receive buffer can be emptied, which is why the UART runs at 460800 (see "UART baud rate").
 
 ### Leave room for other chipsets
 
@@ -183,10 +186,33 @@ serial console. The outcome reaches the server after the reboot, in BOOT and SYN
 Waiting for the network allows 5 minutes instead of 15 s, since registering can take that long,
 and HTTP reads wait up to 30 s, like MQTT's over the modem.
 
-A download that breaks off is resumed in the same boot with a Range request, which matters over
-the modem: its receive buffer overflows now and then, and the TLS record that lost data fails
-(see "`QISEND` / `QIRD` size limits"). Across a reboot it still starts over, and every update
-costs about 2 MB of the 1NCE budget. See stage 5 for what comes next.
+On the update boot the link is set up for the download rather than for saving power: the module
+stays out of sleep (`AT+QSCLK=0`), the ESP32 stays out of light sleep at full CPU speed, and the
+socket is opened in **direct push mode** (`AT+QIOPEN` access mode 1): the module sends every
+received segment straight away as `+QIURC: "recv",0,<len>,"<hex>"`, instead of keeping it in its
+2168-byte buffer for `AT+QIRD`. In buffer access mode that buffer overflowed during downloads, even
+with polling every 50 ms, plausibly because every flash erase and write stops everything on the
+ESP32 but IRAM code for tens of milliseconds, the reads included; and the module drops data it has
+no room for instead of holding it back with TCP flow control. Pushed data instead waits in the UART
+driver's 16 KB buffer, which the UART interrupt (in IRAM) keeps filling, then in a 16 KB queue in
+`AtSocketTransport`. Normal boots stay in buffer access mode, which keeps data in the module while
+the ESP32 sleeps.
+
+While the push socket is open, AT commands from outside the socket code (the network monitor's
+registration checks) are held back: a response arriving in the middle of a pushed URC couldn't be
+pulled apart from it. So the image is fetched in **ranges** over one keep-alive connection
+(`esp_https_ota`'s partial download, `CONFIG_ESP_HTTPS_OTA_ENABLE_PARTIAL_DOWNLOAD`): 64 KB over the
+modem, about 30 s each. Before the request for the next range goes out, the server has nothing
+more to send, so the driver lets the held-back commands run then, for up to 5 s. WiFi takes the
+same path with 256 KB ranges, so bench updates over WiFi exercise it too. In this mode
+`esp_https_ota` first asks for the image size with a `HEAD` request on a connection of its own
+(one extra TLS handshake, about 5 s over the modem), and the progress log gives the size and a
+percentage.
+
+A download that breaks off is resumed in the same boot with a Range request, from what made it
+to flash: a TLS record that lost data fails its MAC check and never reaches the image (see
+"`QISEND` / `QIRD` size limits"). Across a reboot it still starts over, and every update costs
+about 2 MB of the 1NCE budget. See stage 5 for what comes next.
 
 ### Sleeping: eDRX, not PSM
 
@@ -241,7 +267,7 @@ because every URC has a query for the same state:
 
 | URC | Re-read with |
 | --- | ------------ |
-| `+QIURC: "recv"` | `AT+QIRD`: the data waits in the module's buffer (buffer access mode) |
+| `+QIURC: "recv"` | `AT+QIRD`: the data waits in the module's buffer (buffer access mode; update boots push data instead, but don't light sleep) |
 | `+QIURC: "closed"` | `AT+QIRD` fails |
 | `+CEREG` | `AT+CEREG?` |
 | `+IP` | `AT+CGPADDR` |
@@ -315,7 +341,7 @@ Goal: on boot, the console shows replies to a few AT commands.
 - [x] Read, and only write when they differ (both persist in NVRAM and are slow): `AT+CFUN=1` (at 0 the SIM isn't even powered) and `AT+QBAND=2,20,8` (EU bands; without a list the module scans every band). Both were steps in the bench bring-up sequence that the first driver lacked
 - [x] Poll registration (every 30 s while searching, 5 min once registered) and log it with decoded signal and serving cell; on registering, log `+COPS`, `+CGATT` and `+CGDCONT`. `+CEREG` URCs only report changes, so a modem that keeps searching was silent
 - [x] Shared quote-aware field tokenizer (`splitAtFields` / `AtField`) for `+XXX:` information lines, with decoders for `+CEREG`, `+CSQ` and `+QENG: 0`
-- [x] URCs that arrive in pieces are handled exactly once: esp_modem only empties its receive buffer after a command, so the driver tracks how much of it it has already handled
+- [x] URCs that arrive in pieces are handled exactly once: esp_modem only empties its receive buffer after a command, so the driver tracks how much of it it has already handled. Since stage 5's push mode, URCs are taken chunk by chunk and dropped from esp_modem's buffer as they arrive, with a line cut off at the end of a chunk kept aside until the rest comes (`AtLineAssembler`); a pushed URC is about 3 KB, more than that buffer
 - [x] Log `ATI` (includes the firmware revision, so no separate `AT+CGMR`), `AT+CIMI`, `AT+QCCID`, `AT+CSQ`, `AT+CEREG?`, `AT+QENG=0`; log `+CEREG` URCs decoded, other URCs raw
 - [x] Hold a no-light-sleep PM lock while the modem is up: the UART driver only keeps the chip awake while transmitting, so replies and URCs would be lost in light sleep (stage 4 replaces this)
 - [x] Unit-test the response parsers in `test/unit-tests/` (final result codes, echo, `+CME ERROR`, both `+CEREG` shapes, field tokenizing, `+CSQ`, `+QENG: 0` searching and camped)
@@ -451,20 +477,20 @@ only (see "OTA over the modem, without MQTT").
 - [x] Drain the module's buffer: after a read that returned data, read again until one comes back `+QIRD: 0`, even when the remaining length already said 0. Going by the BG96, the module announces new data only once a read has found its buffer empty, so stopping at the last byte left the next data unannounced until the buffer filled. Costs one empty `QIRD` per burst; the polling above stays as a fallback until the bench shows announcements arrive promptly
 - [x] Keep the module out of sleep (`AT+QSCLK=0` instead of `=2`) on a boot that downloads an update, as the AT manual recommends for data communication (`AT+QSCLK`, note 3: "Before data communication, it is recommended to execute AT+QSCLK=0"). It didn't make the module announce data any sooner (`not announced since` as before), and its buffer still overflowed: more than 2.6 KB arrived between two reads 250 ms apart. Polling back to back (`ACTIVE_POLL_INTERVAL` 0) didn't prevent that either; 250 ms is kept
 - [x] First complete update over NB-IoT, at ECL 0 (RSRP -92 dBm, SINR 9 dB): 2.1 MB in about 17 minutes, with 3 resumes. Each break followed a `+QIURC: "recv",0,"buff full"` within about a second, while `2168 bytes waiting` without that URC didn't lose data. So the URC, not a full buffer, marks the loss. At ECL 1 with SINR 1–2 dB, downloads still broke off too often to finish
-- [ ] Poll every 50 ms instead of 250 ms while data flows: at 460800 baud, every `bytes waiting` line still said `last read 249 ms ago`, i.e. more than 2 KB arrived between two polls, and the download ran at the same speed (the network sets it). To check on the bench: whether `last read` drops to ~50 ms, and whether `buff full` goes away
+- [x] Poll every 50 ms instead of 250 ms while data flows: at 460800 baud, every `bytes waiting` line still said `last read 249 ms ago`, i.e. more than 2 KB arrived between two polls, and the download ran at the same speed (the network sets it). It didn't make `buff full` go away (see below); still the polling rate on normal boots
 - [x] Log per connection, when it closes, how many of the bytes received were found after an announcement, by active polling, or by the safety poll (the reads draining a burst count towards whatever found it), plus the `buff full` URCs and UART errors. Data only polling found would otherwise have waited for `buff full`, so this tells whether polling is still needed. The `bytes waiting` line is verbose now: the buffer reached 2168 bytes all the time, often within 50 ms of the last read, without losing data
-- [ ] UART overflows at 460800: one download broke off on an `AT+QIRD` that came back `OK` without its data line. esp_modem flushes the UART's buffers on a FIFO or ring buffer overflow, which takes the rest of the response with it, and logs it under `uart_terminal`, which we turn down to ERROR (for its light-sleep wakeup warnings); so these are now counted and logged as `UART error from the modem`. At 460800 the 128-byte hardware FIFO fills in under 3 ms. The UART ISR now runs from IRAM (`CONFIG_UART_ISR_IN_IRAM`): flash erases and writes, constant during an OTA download, disable every interrupt handled from flash, and a sector erase takes tens of milliseconds. If errors still show up: a larger `rx_buffer_size` or a higher UART task priority
+- [ ] UART overflows at 460800: one download broke off on an `AT+QIRD` that came back `OK` without its data line. esp_modem flushes the UART's buffers on a FIFO or ring buffer overflow, which takes the rest of the response with it, and logs it under `uart_terminal`, which we turn down to ERROR (for its light-sleep wakeup warnings); so these are now counted and logged as `UART error from the modem`. At 460800 the 128-byte hardware FIFO fills in under 3 ms. The UART ISR now runs from IRAM (`CONFIG_UART_ISR_IN_IRAM`): flash erases and writes, constant during an OTA download, disable every interrupt handled from flash, and a sector erase takes tens of milliseconds. If errors still show up: a larger `rx_buffer_size` or a higher UART task priority. Update boots now have a 16 KB `rx_buffer_size` for push mode, and its downloads so far reported 0 UART errors
 - [x] Keep `QIRD` data whose remaining length is negative: with 1.26 MB downloaded, the module answered `+QIRD: 512,-512,"<data>"`, all 512 bytes there, and the parser rejected the line for its remaining length, which broke the TLS stream (logged as `no data line`, with 0 UART errors). A negative remaining length now counts as unknown, so the read after it checks for more
 - [x] Count a poll that finds an announcement pending as found after the announcement: the first run with the per-connection counts reported 975 announcements and all 1.3 MB found by active polling, because a poll due at 50 ms ran before the pending signal was looked at
-- [ ] `buff full` with polling every 50 ms: 23 s into a resumed download, the module reported its buffer full, and the MAC check failed a second later. If data really arrives in clumps of about 2.7 KB within 50 ms, more than the 2168-byte buffer holds, no polling rate prevents it: emptying the buffer takes about five 512-byte `QIRD`s of 20–25 ms each at 460800. Raw data (below) halves the time per read
-- [ ] Direct push mode for update downloads (`AT+QIOPEN` access mode 1): the module sends every received segment straight away as `+QIURC: "recv",0,<length>,"<hex>"`, instead of keeping it in its 2168-byte buffer. That buffer overflowed even with polling every 50 ms, plausibly because flash erases and writes stop everything on the ESP32 except IRAM code, the reads included, for tens of milliseconds at a time. Pushed data waits in the UART driver's buffer instead (16 KB on update boots), which the UART interrupt keeps filling from IRAM, then in a 16 KB queue in the transport. There is no flow control, so a gap (queue full, or a URC that doesn't decode) breaks the connection on the next read rather than in TLS. To make this work with esp_modem, which only empties its line buffer when a command returns, URCs are now taken chunk by chunk and dropped from that buffer as they arrive, with a line cut off at the end of a chunk kept aside until the rest arrives; a pushed URC is about 3 KB, more than the buffer. While a push connection is open, commands from outside the socket code (the network monitor) are held back, since a response arriving in the middle of a pushed URC couldn't be pulled apart from it. They get through between ranges: the image is fetched in ranges over one connection (`CONFIG_ESP_HTTPS_OTA_ENABLE_PARTIAL_DOWNLOAD`; 64 KB over the modem, 256 KB over WiFi, which takes the same path so bench updates exercise it), and before sending the next request, when the server has nothing more to send, the driver lets the held-back commands run (for up to 5 s). The ESP32 stays out of light sleep for the connection, as waking on UART edges loses the first bytes. To check on the bench: the per-connection `at most … bytes queued`, and whether downloads finish without breaking off
-- [ ] Receive socket data as raw bytes instead of hex (`AT+QICFG="dataformat",1,0`, sending stays hex): about half the UART time per `QIRD`, so the buffer has more room before it overflows. The `QIRD` response then carries the bytes between quotes, `+QIRD: <n>,<remaining>,"<data>"`, so it has to be parsed by length, not by line; and whether the module passes every byte value through unchanged has to be checked on the bench
+- [x] `buff full` with polling every 50 ms: 23 s into a resumed download, the module reported its buffer full, and the MAC check failed a second later. If data really arrives in clumps of about 2.7 KB within 50 ms, more than the 2168-byte buffer holds, no polling rate prevents it: emptying the buffer takes about five 512-byte `QIRD`s of 20–25 ms each at 460800. Raw data (below) halves the time per read. Update boots avoid the module's buffer altogether now (push mode, next item)
+- [x] Direct push mode for update downloads (`AT+QIOPEN` access mode 1), with the image fetched in 64 KB ranges so that held-back commands get through in between; see "OTA over the modem, without MQTT" for how it works. Takes three changes on our side: URCs are split into lines chunk by chunk, since a pushed URC is about 3 KB, more than esp_modem's buffer (`dte_buffer_size` 8 KB on update boots); the transport queues pushed data (16 KB) and fails the read on a gap (queue full, a length mismatch or bad hex), since there is no flow control to fall back on; and commands from outside the socket code wait for the pause before the next range. The per-connection log adds the chunks pushed, the most bytes queued at once, and whether anything was lost. First runs at ECL 0 went past 1 MB at about 2.2 KB/s without breaking off, with nothing lost and 0 UART errors. To check on the bench: complete updates, at ECL 1 and 2 too
+- [ ] Not needed while push mode holds up: receive socket data as raw bytes instead of hex (`AT+QICFG="dataformat",1,0`, sending stays hex): about half the UART time per `QIRD`, so the buffer has more room before it overflows. The `QIRD` response then carries the bytes between quotes, `+QIRD: <n>,<remaining>,"<data>"`, so it has to be parsed by length, not by line; and whether the module passes every byte value through unchanged has to be checked on the bench
 - [x] The UART at 460800 baud (`AT+IPR`), about four times less time per `QIRD` ([#690](https://github.com/cornucopia-machines/ugly-duckling-firmware/issues/690), [#694](https://github.com/cornucopia-machines/ugly-duckling-firmware/pull/694)); see "UART baud rate". Its effect on downloads is still to be measured
-- [ ] Cat NB2 (release 14), once reading keeps up ([#691](https://github.com/cornucopia-machines/ugly-duckling-firmware/issues/691)). The driver now sets `relversion` 14 (at `CFUN=0`, then restarts the module), and the module reports `NBcategory` 2 after it. A download at ECL 0 (RSRP -93 dBm, SINR 7 dB) still ran at about 1.8 KB/s, the same as Cat NB1: either Telekom 21630 doesn't serve NB2 on this cell, or the rate is set by TCP (data arrives in clumps of about 2.7 KB, which looks like a receive window waiting for its round trip) rather than by the radio
+- [x] Cat NB2 (release 14), once reading keeps up ([#691](https://github.com/cornucopia-machines/ugly-duckling-firmware/issues/691)). The driver now sets `relversion` 14 (at `CFUN=0`, then restarts the module), and the module reports `NBcategory` 2 after it. A download at ECL 0 (RSRP -93 dBm, SINR 7 dB) still ran at about 1.8 KB/s, the same as Cat NB1: either Telekom 21630 doesn't serve NB2 on this cell, or the rate is set by TCP (data arrives in clumps of about 2.7 KB, which looks like a receive window waiting for its round trip) rather than by the radio
 - [x] `HttpUpdater` waits on a `networkReady` state and takes an optional modem transport, instead of `WiFiDriver`; longer timeouts on cellular, where registration can take minutes
 - [x] On the update boot over cellular, don't start MQTT: the modem driver has one socket (`CONNECT_ID = 0`) and the download needs it. No MQTT logs during the update; the outcome is reported in BOOT on the next boot, as over WiFi
 - [x] Remove the stage 3 rejection: `firmwareUpdatesSupported`, `HttpUpdater::discardPendingUpdate()`, registering `http-update` on WiFi only
-- [ ] Bench: a full image at ECL 0 and ECL 2, time and bytes (cross-check with the 1NCE portal); whether the modem's 2 KB receive buffer holds up under a sustained download
+- [ ] Bench: a full image at ECL 0 and ECL 2, time and bytes (cross-check with the 1NCE portal)
 - [ ] Ship end-to-end, including rollback
 - [ ] Separately: modem firmware updates (Quectel DFOTA), if we need them
 
@@ -501,8 +527,8 @@ To check on the bench:
   minutes, 3–16 s after the last read each time. The URCs weren't lost, the module sends them
   late (see the polling above). The handshake broke off twice before the third connection got
   through, and resuming took over each time
-- [ ] With polling while data flows: whether the buffer still fills up, and the time for the
-  whole image
+- [x] With polling while data flows: the buffer still filled up, and `buff full` still broke
+  downloads off, at 250 ms and at 50 ms (see above); hence push mode for downloads
 - [ ] ECL 2
 
 Not resumable across a reboot, and about 2 MB per update. Both are fixed by the next step, outside this spec: the server
@@ -552,7 +578,9 @@ From the *BC660K-GL TCP/IP Application Note* v1.2 (`datasheets/.text/`):
   same read, was dropped, and the data waited until the module announced the buffer full. That
   is fixed (see stage 5), but the buffer can still overflow if the network delivers faster than
   we read, so anything large over the modem has to survive losing data: a retry, a resumed
-  download, or chunks small enough to fit the buffer.
+  download, or chunks small enough to fit the buffer. Update downloads sidestep the buffer
+  with direct push mode (see "OTA over the modem, without MQTT"); MQTT messages, much smaller,
+  still go through it.
 - `AT+QICFG="showlength",1` adds the remaining-length field to `QIRD` responses and the
   `recv` URC, so the transport knows how much more to read.
 

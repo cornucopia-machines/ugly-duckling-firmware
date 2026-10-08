@@ -53,8 +53,8 @@ graph BT
 Key services:
 
 - **BLE** (`BleDriver`) — starts NimBLE unconditionally at boot; advertises the device and hosts the standard Device Information Service (DIS, UUID 0x180A). Future roles: provisioning and local-only (WiFi-free) operation.
-- **WiFi** — manages the station connection; publishes the `NetworkConnected` event.
-- **MQTT** — connects to the broker once the network is up; publishes `MQTTConnected`.
+- **Network link** — WiFi (`WiFiDriver`) or NB-IoT (`CellularDriver`), chosen at boot from network-config; either one sets the `NetworkConnected` state. See [Connectivity.md](Connectivity.md).
+- **MQTT** — connects to the broker once the network is up, over whichever link is in use; publishes `MQTTConnected`.
 - **NTP** — synchronizes the RTC after the network comes up. See [Time acquisition](#time-acquisition).
 - **TelemetryManager** — collects telemetry from registered providers and publishes it once MQTT and the RTC are both ready.
 - **PowerManager** / **BatteryManager** — optional battery monitoring and sleep management.
