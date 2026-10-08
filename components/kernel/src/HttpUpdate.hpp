@@ -232,12 +232,12 @@ private:
     }
 
     /**
-     * @brief Equivalent of esp_https_ota(), but only holds the RAM copy of the CA bundle while
-     * connecting.
+     * @brief Equivalent of esp_https_ota(), with the CA bundle in RAM (RamCertBundle) for the
+     * whole attempt.
      *
-     * The bundle is only needed for the TLS handshake(s) in esp_https_ota_begin(), which also
-     * follows redirects; freeing it before the download gives its RAM back while WiFi buffers
-     * the incoming image.
+     * TLS handshakes happen in esp_https_ota_begin(), which also follows redirects, but also in
+     * esp_https_ota_perform(): fetching ranges, it opens a new connection for the next range
+     * whenever the server doesn't keep the last one alive.
      *
      * @param written how much of the image is in flash, updated when the download breaks off
      * @return ESP_ERR_HTTPS_OTA_IN_PROGRESS when the download broke off and can be resumed
@@ -248,12 +248,9 @@ private:
         // again; count from where this attempt picks up
         downloaded = written;
         imageSize = 0;
+        RamCertBundle ramCertBundle;
         esp_https_ota_handle_t handle = nullptr;
-        esp_err_t err;
-        {
-            RamCertBundle ramCertBundle;
-            err = esp_https_ota_begin(&otaConfig, &handle);
-        }
+        esp_err_t err = esp_https_ota_begin(&otaConfig, &handle);
         if (err != ESP_OK) {
             LOGTE(UPDATE, "Could not start the download (%s, HTTP status %d)", esp_err_to_name(err), statusCode);
             // Connecting, the TLS handshake and the request can break off over NB-IoT like the

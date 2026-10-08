@@ -29,7 +29,8 @@ namespace cornucopia::ugly_duckling::kernel {
  * access"), which is not in the v6.1 tag. TODO: remove once we are on IDF v6.1.1.
  *
  * The HTTP updater is the only user of the bundle, so the copy only needs to live while an OTA
- * connects. Falls back to the flash-resident bundle if the copy cannot be made.
+ * attempt runs: fetching ranges, it can connect again in the middle of the download. Falls back
+ * to the flash-resident bundle if the copy cannot be made.
  */
 class RamCertBundle {
 public:
