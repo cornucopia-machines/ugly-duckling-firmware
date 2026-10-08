@@ -71,6 +71,10 @@ public:
         return text.empty() && !quoted;
     }
 
+    bool isQuoted() const {
+        return quoted;
+    }
+
     std::optional<int> asInt() const {
         return quoted ? std::nullopt : parseNumber(text, 10);
     }
@@ -262,5 +266,83 @@ inline std::optional<AtResponse> parseAtResponse(std::string_view buffer, std::s
         response.lines.emplace_back(line);
     }
 }
+
+/**
+ * @brief Splits what the module sends outside of commands into lines, as it arrives in chunks.
+ *
+ * A line cut off at the end of a chunk is kept here until the rest arrives. In direct push mode a
+ * single URC carries up to a TCP segment of data as hex, far more than one UART read.
+ */
+class AtLineAssembler {
+public:
+    explicit AtLineAssembler(size_t maxLine)
+        : maxLine(maxLine) {
+    }
+
+    /**
+     * @brief Calls handle with every line completed by data, without its line ending; empty
+     * lines are skipped.
+     *
+     * A line longer than maxLine is handed over cut off at that length, and the rest of it is
+     * dropped: the module never sends one, so it can only be garbled.
+     */
+    template <typename Handler>
+    void feed(std::string_view data, Handler handle) {
+        while (!data.empty()) {
+            auto newline = data.find('\n');
+            auto segment = data.substr(0, newline);
+            data.remove_prefix(newline == std::string_view::npos ? data.size() : newline + 1);
+            if (!discarding) {
+                auto room = maxLine - pending.size();
+                pending.append(segment.substr(0, room));
+                if (segment.size() > room) {
+                    overlong++;
+                    emit(handle);
+                    discarding = true;
+                }
+            }
+            if (newline == std::string_view::npos) {
+                return;
+            }
+            if (!discarding) {
+                emit(handle);
+            }
+            discarding = false;
+        }
+    }
+
+    /**
+     * @brief Whether a line has been started but not finished yet.
+     */
+    bool hasPending() const {
+        return !pending.empty() || discarding;
+    }
+
+    /**
+     * @brief How many lines were longer than maxLine.
+     */
+    uint32_t getOverlongCount() const {
+        return overlong;
+    }
+
+private:
+    template <typename Handler>
+    void emit(Handler& handle) {
+        std::string_view line = pending;
+        while (!line.empty() && line.back() == '\r') {
+            line.remove_suffix(1);
+        }
+        if (!line.empty()) {
+            handle(line);
+        }
+        pending.clear();
+    }
+
+    const size_t maxLine;
+    std::string pending;
+    // Dropping the rest of an overlong line, until its line ending
+    bool discarding = false;
+    uint32_t overlong = 0;
+};
 
 }    // namespace cornucopia::ugly_duckling::kernel::drivers::cellular

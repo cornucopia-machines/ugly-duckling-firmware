@@ -114,6 +114,8 @@ enum class SocketEventType : uint8_t {
     DataAvailable,
     // The module's 2 KB receive buffer is full: read it before the peer is throttled
     BufferFull,
+    // Data received in direct push mode, carried by the URC itself (SocketEvent::hex)
+    DataPushed,
     // The peer, or the network, closed the connection
     Closed,
 };
@@ -121,12 +123,16 @@ enum class SocketEventType : uint8_t {
 struct SocketEvent {
     SocketEventType type;
     int connectId;
+    // DataPushed only: the data as hex digits, pointing into the parsed line
+    std::string_view hex;
+    // DataPushed only: the length the module gives for the data, if it does
+    std::optional<size_t> length;
 };
 
 /**
- * @brief Parses the socket URCs of buffer access mode:
- * +QIURC: "recv",<connectID>[,<current_recv_length>], +QIURC: "recv",<connectID>,"buff full"
- * and +QIURC: "closed",<connectID>.
+ * @brief Parses the socket URCs of buffer access mode, +QIURC: "recv",<connectID>[,<length>]
+ * and +QIURC: "recv",<connectID>,"buff full"; of direct push mode,
+ * +QIURC: "recv",<connectID>[,<length>],"<data>"; and +QIURC: "closed",<connectID>.
  */
 inline std::optional<SocketEvent> parseQiurc(std::string_view line) {
     auto fields = parseAtFields(line, "+QIURC:");
@@ -139,11 +145,29 @@ inline std::optional<SocketEvent> parseQiurc(std::string_view line) {
         return std::nullopt;
     }
     if (*type == "recv") {
-        bool full = fields->size() > 2 && (*fields)[2].asString() == "buff full";
-        return SocketEvent { .type = full ? SocketEventType::BufferFull : SocketEventType::DataAvailable, .connectId = *connectId };
+        // The data, or "buff full", is the only quoted field after the connection ID, and always
+        // the last one; a length on its own is a plain number
+        auto last = fields->size() > 2 && fields->back().isQuoted() ? fields->back().asString() : std::nullopt;
+        if (!last) {
+            return SocketEvent { .type = SocketEventType::DataAvailable, .connectId = *connectId, .hex = {}, .length = std::nullopt };
+        }
+        if (*last == "buff full") {
+            return SocketEvent { .type = SocketEventType::BufferFull, .connectId = *connectId, .hex = {}, .length = std::nullopt };
+        }
+        std::optional<size_t> length;
+        if (fields->size() == 4) {
+            auto value = (*fields)[2].asInt();
+            if (!value || *value < 0) {
+                return std::nullopt;
+            }
+            length = static_cast<size_t>(*value);
+        } else if (fields->size() != 3) {
+            return std::nullopt;
+        }
+        return SocketEvent { .type = SocketEventType::DataPushed, .connectId = *connectId, .hex = *last, .length = length };
     }
     if (*type == "closed") {
-        return SocketEvent { .type = SocketEventType::Closed, .connectId = *connectId };
+        return SocketEvent { .type = SocketEventType::Closed, .connectId = *connectId, .hex = {}, .length = std::nullopt };
     }
     return std::nullopt;
 }

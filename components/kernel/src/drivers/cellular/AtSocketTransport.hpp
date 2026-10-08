@@ -16,9 +16,11 @@
 #include <cstdint>
 #include <cstring>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <stdexcept>
 #include <utility>
+#include <vector>
 
 using namespace std::chrono;
 using namespace std::chrono_literals;
@@ -37,6 +39,9 @@ namespace cornucopia::ugly_duckling::kernel::drivers::cellular {
  * (see receive()). While data is flowing, the module is also polled every ACTIVE_POLL_INTERVAL, since its URCs come too late then (see
  * shouldReceive()); otherwise, because a URC can be lost, a read also goes to the module every
  * SAFETY_POLL_INTERVAL even without one.
+ *
+ * Unless the module pushes received data (CellularModuleDriver::pushesSocketData()): then it is
+ * queued here as it arrives, and reads take it from the queue.
  */
 class AtSocketTransport {
 public:
@@ -62,8 +67,11 @@ public:
      * Must happen before the network is reported ready, which is what lets esp-mqtt connect.
      */
     void attach(const std::shared_ptr<CellularModuleDriver>& module) {
-        module->onSocketEvent([this](SocketEventType type) {
-            onSocketEvent(type);
+        if (module->pushesSocketData()) {
+            pushed.resize(PUSH_QUEUE_SIZE);
+        }
+        module->onSocketEvent([this](const SocketEvent& event) {
+            onSocketEvent(event);
         });
         this->module = module;
     }
@@ -147,8 +155,19 @@ private:
         burstTrigger = ReceiveReason::Announced;
         bufferFullAtConnect = bufferFullNotices.load();
         uartErrorsAtConnect = module->getUartErrorCount();
+        {
+            std::scoped_lock lock(pushMutex);
+            pushedStart = 0;
+            pushedLength = 0;
+            pushedPeak = 0;
+            pushedChunks = 0;
+            pushBroken = false;
+            // Data can arrive as soon as the connection is up, before openSocket() returns
+            acceptingPushes = true;
+        }
         connectedAt = steady_clock::now();
         if (!module->openSocket(host, port)) {
+            stopAcceptingPushes();
             return -1;
         }
         connected = true;
@@ -185,6 +204,18 @@ private:
         auto deadline = steady_clock::now() + timeout;
         while (true) {
             auto left = duration_cast<milliseconds>(deadline - steady_clock::now());
+            if (!pushed.empty()) {
+                if (takePushed()) {
+                    return 1;
+                }
+                if (pushBroken || closedByPeer) {
+                    return -1;
+                }
+                if (left <= 0ms || xSemaphoreTake(dataSignal, pdMS_TO_TICKS(left.count())) != pdTRUE) {
+                    return 0;
+                }
+                continue;
+            }
             auto reason = shouldReceive(std::max(left, 0ms));
             if (reason == ReceiveReason::None) {
                 return 0;
@@ -299,6 +330,70 @@ private:
         return true;
     }
 
+    /**
+     * @brief Moves pushed data from the queue into receiveBuffer.
+     *
+     * @return whether there was any
+     */
+    bool takePushed() {
+        std::scoped_lock lock(pushMutex);
+        size_t count = std::min(pushedLength, receiveBuffer.size());
+        if (count == 0) {
+            return false;
+        }
+        for (size_t i = 0; i < count; i++) {
+            receiveBuffer[i] = pushed[(pushedStart + i) % pushed.size()];
+        }
+        pushedStart = (pushedStart + count) % pushed.size();
+        pushedLength -= count;
+        bufferStart = 0;
+        bufferEnd = count;
+        bytesReceived += count;
+        trafficReceived += count;
+        lastActivity = steady_clock::now();
+        return true;
+    }
+
+    /**
+     * @brief Queues data the module pushed. Runs on the UART's receive task.
+     *
+     * Data that doesn't decode, or doesn't fit, leaves a gap in the stream; the connection is
+     * then broken, and the next read says so, instead of TLS finding out later.
+     */
+    void queuePushed(const SocketEvent& event) {
+        std::scoped_lock lock(pushMutex);
+        if (!acceptingPushes || pushBroken) {
+            return;
+        }
+        size_t length = event.hex.size() / 2;
+        if ((event.length && *event.length != length) || pushedLength + length > pushed.size()) {
+            LOGTW(CELLULAR, "Lost %zu pushed bytes (%zu queued): %s", length, pushedLength,
+                pushedLength + length > pushed.size() ? "the queue is full" : "length mismatch");
+            pushBroken = true;
+            return;
+        }
+        std::array<uint8_t, 64> chunk {};
+        for (size_t offset = 0; offset < length; offset += chunk.size()) {
+            size_t count = std::min(chunk.size(), length - offset);
+            if (!fromHex(event.hex.substr(offset * 2, count * 2), chunk.data())) {
+                LOGTW(CELLULAR, "Lost %zu pushed bytes: not hex", length);
+                pushBroken = true;
+                return;
+            }
+            for (size_t i = 0; i < count; i++) {
+                pushed[(pushedStart + pushedLength + i) % pushed.size()] = chunk[i];
+            }
+            pushedLength += count;
+        }
+        pushedPeak = std::max(pushedPeak, pushedLength);
+        pushedChunks++;
+    }
+
+    void stopAcceptingPushes() {
+        std::scoped_lock lock(pushMutex);
+        acceptingPushes = false;
+    }
+
     int write(const uint8_t* data, size_t length) {
         auto module = this->module;
         if (!connected || module == nullptr) {
@@ -325,7 +420,17 @@ private:
             return 0;
         }
         connected = false;
+        stopAcceptingPushes();
         module->closeSocket();
+        if (!pushed.empty()) {
+            std::scoped_lock lock(pushMutex);
+            LOGTI(CELLULAR, "Connection closed after %lld s, %zu bytes sent, %zu bytes received, pushed in %" PRIu32 " chunks, "
+                            "at most %zu bytes queued, %s, %" PRIu32 " UART errors",
+                static_cast<long long>(duration_cast<seconds>(steady_clock::now() - connectedAt).count()),
+                bytesSent, bytesReceived, pushedChunks, pushedPeak, pushBroken ? "data lost" : "nothing lost",
+                module->getUartErrorCount() - uartErrorsAtConnect);
+            return 0;
+        }
         // Which reads found the data tells whether polling is still needed: data only a poll
         // found would otherwise have waited for the module to announce its buffer full
         LOGTI(CELLULAR, "Connection closed after %lld s, %zu bytes sent, %zu bytes received "
@@ -373,8 +478,8 @@ private:
     }
 
     // Runs on the UART's receive task, so only flags things for the next read
-    void onSocketEvent(SocketEventType type) {
-        switch (type) {
+    void onSocketEvent(const SocketEvent& event) {
+        switch (event.type) {
             case SocketEventType::DataAvailable:
                 announcements++;
                 lastAnnouncedAt = steady_clock::now();
@@ -384,6 +489,9 @@ private:
                 bufferFullNotices++;
                 announcements++;
                 lastAnnouncedAt = steady_clock::now();
+                break;
+            case SocketEventType::DataPushed:
+                queuePushed(event);
                 break;
             case SocketEventType::Closed:
                 LOGTI(CELLULAR, "Connection closed by the peer or the network");
@@ -407,6 +515,9 @@ private:
     static constexpr milliseconds ACTIVE_WINDOW = 5s;
     // Half the module's receive buffer (2168 bytes on the BC660K)
     static constexpr size_t RECEIVE_BUFFER_WARNING = 1024;
+    // Pushed data waiting to be read: the reader is the one writing flash, so it falls behind for
+    // as long as an erase takes
+    static constexpr size_t PUSH_QUEUE_SIZE = 16384;
 
     esp_transport_handle_t handle;
     const SemaphoreHandle_t dataSignal;
@@ -438,6 +549,18 @@ private:
     std::atomic<uint32_t> bufferFullNotices { 0 };
     uint32_t bufferFullAtConnect = 0;
     uint32_t uartErrorsAtConnect = 0;
+
+    // Pushed data, as a ring buffer; empty unless the module pushes data. pushedStart and the
+    // rest are guarded by pushMutex
+    std::vector<uint8_t> pushed;
+    std::mutex pushMutex;
+    size_t pushedStart = 0;
+    size_t pushedLength = 0;
+    size_t pushedPeak = 0;
+    uint32_t pushedChunks = 0;
+    bool acceptingPushes = false;
+    // Also read without the lock, by pollRead()
+    std::atomic<bool> pushBroken { false };
 
     std::array<uint8_t, 512> receiveBuffer {};
     size_t bufferStart = 0;

@@ -67,8 +67,10 @@ static void initCellular(ConnectivityDrivers& drivers, const std::shared_ptr<Mod
         states->rtcInSync,
         ntpServer.empty() ? std::string(RtcDriver::DEFAULT_NTP_SERVER) : ntpServer,
         [rtc](time_t utcTime, const char* source) { rtc->setTime(utcTime, source); },
-        // The download needs the modem awake; the device reboots after it either way
-        !updatePending);
+        // The download needs the modem awake, and its data pushed; the device reboots after it
+        // either way
+        !updatePending,
+        updatePending);
     drivers.cellular = cellular;
     drivers.modemTransport = cellular->getTransport();
 }

@@ -10,7 +10,10 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <initializer_list>
+#include <string>
 #include <string_view>
+#include <vector>
 
 using namespace cornucopia::ugly_duckling::kernel::drivers::cellular;
 using namespace std::chrono_literals;
@@ -361,6 +364,64 @@ TEST_CASE("parseQiurc recognizes the socket URCs") {
 
     REQUIRE_FALSE(parseQiurc("+QIURC: \"incoming\",1,0").has_value());
     REQUIRE_FALSE(parseQiurc("+CEREG: 1").has_value());
+}
+
+TEST_CASE("parseQiurc reads data pushed in direct push mode") {
+    auto pushed = parseQiurc("+QIURC: \"recv\",0,3,\"16030A\"");
+    REQUIRE(pushed.has_value());
+    REQUIRE(pushed->type == SocketEventType::DataPushed);
+    REQUIRE(pushed->connectId == 0);
+    REQUIRE(pushed->length == 3);
+    REQUIRE(pushed->hex == "16030A");
+
+    auto withoutLength = parseQiurc("+QIURC: \"recv\",0,\"3132\"");
+    REQUIRE(withoutLength.has_value());
+    REQUIRE(withoutLength->type == SocketEventType::DataPushed);
+    REQUIRE_FALSE(withoutLength->length.has_value());
+    REQUIRE(withoutLength->hex == "3132");
+
+    REQUIRE_FALSE(parseQiurc("+QIURC: \"recv\",0,-3,\"16030A\"").has_value());
+}
+
+namespace {
+
+std::vector<std::string> feedLines(AtLineAssembler& assembler, std::initializer_list<std::string_view> chunks) {
+    std::vector<std::string> lines;
+    for (auto chunk : chunks) {
+        assembler.feed(chunk, [&](std::string_view line) {
+            lines.emplace_back(line);
+        });
+    }
+    return lines;
+}
+
+}    // namespace
+
+TEST_CASE("AtLineAssembler joins lines split across chunks") {
+    AtLineAssembler assembler(64);
+
+    auto lines = feedLines(assembler, { "\r\n+QIURC: \"recv\",0,2,\"31", "32\"\r\n\r\n+CSCON: 0\r", "\n" });
+
+    REQUIRE(lines == std::vector<std::string> { "+QIURC: \"recv\",0,2,\"3132\"", "+CSCON: 0" });
+    REQUIRE_FALSE(assembler.hasPending());
+}
+
+TEST_CASE("AtLineAssembler keeps an unfinished line pending") {
+    AtLineAssembler assembler(64);
+
+    auto lines = feedLines(assembler, { "\r\n+CEREG: 1\r\n+QIURC" });
+
+    REQUIRE(lines == std::vector<std::string> { "+CEREG: 1" });
+    REQUIRE(assembler.hasPending());
+}
+
+TEST_CASE("AtLineAssembler cuts off an overlong line and drops the rest of it") {
+    AtLineAssembler assembler(8);
+
+    auto lines = feedLines(assembler, { "0123456789", "ABC\r\nnext\r\n" });
+
+    REQUIRE(lines == std::vector<std::string> { "01234567", "next" });
+    REQUIRE(assembler.getOverlongCount() == 1);
 }
 
 TEST_CASE("parseModemTimestamp reads UTC timestamps") {

@@ -80,10 +80,12 @@ public:
         const State& rtcInSync,
         std::string ntpServer,
         TimeHandler onNetworkTime,
-        bool allowModuleSleep)
+        bool allowModuleSleep,
+        bool pushSocketData)
         : pins(pins)
         , edrxCycle(toEdrxCycle(config->edrxCycle.get()))
         , allowModuleSleep(allowModuleSleep)
+        , pushSocketData(pushSocketData)
         , networkConnecting(networkConnecting)
         , networkReady(networkReady)
         , rtcInSync(rtcInSync)
@@ -154,12 +156,12 @@ private:
         LOGTI(CELLULAR, "Starting modem on UART%d (TX GPIO %d, RX GPIO %d)",
             static_cast<int>(MODEM_UART), static_cast<int>(pins.tx->getGpio()), static_cast<int>(pins.rx->getGpio()));
 
-        auto dte = createDte(pins);
+        auto dte = createDte(pins, pushSocketData);
         enableUartWakeup();
         // esp_modem's UART terminal warns about every UART_WAKEUP event, which it doesn't handle.
         // Published, each warning is an uplink whose acknowledgement wakes us again
         esp_log_level_set("uart_terminal", ESP_LOG_ERROR);
-        module = std::make_shared<Bc660KDriver>(dte, MODEM_UART);
+        module = std::make_shared<Bc660KDriver>(dte, MODEM_UART, pushSocketData);
         module->onUrc([this](std::string_view line) {
             handleUrc(line);
         });
@@ -394,7 +396,7 @@ private:
         }
     }
 
-    static std::shared_ptr<esp_modem::DTE> createDte(const CellularModemPins& pins) {
+    static std::shared_ptr<esp_modem::DTE> createDte(const CellularModemPins& pins, bool pushSocketData) {
         esp_modem_dte_config_t config = ESP_MODEM_DTE_DEFAULT_CONFIG();
         config.uart_config.port_num = MODEM_UART;
         config.uart_config.tx_io_num = pins.tx->getGpio();
@@ -410,8 +412,14 @@ private:
         // what IDF recommends for peripherals while the CPU frequency scales. It doesn't stay on
         // in light sleep: waking on RX edges needs no clock
         config.uart_config.source_clk = UART_SCLK_XTAL;
-        // Room for a full AT+QIRD response: 512 bytes of data as 1024 hex digits, plus framing
-        config.dte_buffer_size = 2048;
+        // Room for a full AT+QIRD response: 512 bytes of data as 1024 hex digits, plus framing.
+        // With pushed data, also for a pushed segment (about 3 KB as hex) arriving during a command
+        config.dte_buffer_size = pushSocketData ? 8192 : 2048;
+        if (pushSocketData) {
+            // Pushed data waits here while flash writes hold up everything but the UART interrupt:
+            // several seconds' worth at NB-IoT rates, as hex
+            config.uart_config.rx_buffer_size = 16384;
+        }
         auto dte = esp_modem::create_uart_dte(&config);
         if (dte == nullptr) {
             throw std::runtime_error("could not create UART terminal");
@@ -508,6 +516,7 @@ private:
     const std::optional<milliseconds> edrxCycle;
     // False for a boot that downloads a firmware update (see CellularModuleDriver::configure())
     const bool allowModuleSleep;
+    const bool pushSocketData;
     StateSource& networkConnecting;
     StateSource& networkReady;
     const State& rtcInSync;

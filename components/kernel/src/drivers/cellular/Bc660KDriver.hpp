@@ -67,10 +67,12 @@ class Bc660KDriver final : public CellularModuleDriver, public esp_modem::Generi
 public:
     /**
      * @param port the UART the DTE runs on, set up at DEFAULT_BAUD_RATE; start() changes its rate
+     * @param pushSocketData whether to open sockets in direct push mode, see pushesSocketData()
      */
-    Bc660KDriver(const std::shared_ptr<esp_modem::DTE>& dte, uart_port_t port)
+    Bc660KDriver(const std::shared_ptr<esp_modem::DTE>& dte, uart_port_t port, bool pushSocketData)
         : GenericModule(dte, std::make_unique<esp_modem::PdpContext>(""))
-        , port(port) {
+        , port(port)
+        , pushSocketData(pushSocketData) {
         dte->set_urc_cb([this](uint8_t* data, size_t len) {
             return processUrcData(std::string_view(reinterpret_cast<const char*>(data), len));
         });
@@ -179,6 +181,7 @@ public:
     }
 
     AtResponse command(const std::string& command, milliseconds timeout) override {
+        waitWhilePushing(command);
         return this->command(command, timeout, std::string_view {});
     }
 
@@ -285,11 +288,18 @@ public:
         // A connection left over from before (a reconnect after an error) would keep the ID busy
         closeSocket();
         auto open = "AT+QIOPEN=0," + std::to_string(CONNECT_ID) + R"(,"TCP",")" + host + "\"," + std::to_string(port)
-            // Local port assigned automatically, buffer access mode
-            + ",0,0";
+            // Local port assigned automatically; direct push mode (1) or buffer access mode (0)
+            + ",0," + (pushSocketData ? "1" : "0");
+        if (pushSocketData) {
+            // Pushed data arrives whenever the network delivers it, and waking from light sleep
+            // on UART edges loses the first bytes
+            awakeWhilePushing.emplace(noLightSleep);
+            pushSocketOpen = true;
+        }
         auto response = command(open, QIOPEN_TIMEOUT, "+QIOPEN:");
         if (!response.ok() || response.lines.empty()) {
             LOGTW(CELLULAR, "Could not connect to %s:%d: %s %s", host.c_str(), port, toString(response.result), response.error.c_str());
+            closeSocket();
             return false;
         }
         auto result = parseQiopen(response.lines.back(), CONNECT_ID);
@@ -306,6 +316,12 @@ public:
     void closeSocket() override {
         // Answers ERROR when the connection is already closed, which is fine
         command("AT+QICLOSE=" + std::to_string(CONNECT_ID), QICLOSE_TIMEOUT, "CLOSE OK");
+        pushSocketOpen = false;
+        awakeWhilePushing.reset();
+    }
+
+    bool pushesSocketData() const override {
+        return pushSocketData;
     }
 
     bool send(const uint8_t* data, size_t length) override {
@@ -394,6 +410,24 @@ private:
         // camps on a cell, so on the first boot after the change it applies from the next attach
         PersistedSetting { .query = "AT+CTZR?", .expected = "+CTZR: 3", .set = "AT+CTZR=3" },
     };
+
+    /**
+     * @brief Holds back a command from outside the socket code while a socket pushes data.
+     *
+     * Pushed data can arrive at any moment, and a command's response would interleave with it:
+     * a URC cut off by the command's response can't be put back together. Socket commands go
+     * through anyway, at points where the peer waits for us (sending a request, closing).
+     * Only used for downloading updates, after which the device restarts.
+     */
+    void waitWhilePushing(const std::string& command) {
+        if (!pushSocketOpen) {
+            return;
+        }
+        LOGTD(CELLULAR, "%s waits until the connection pushing data closes", command.c_str());
+        while (pushSocketOpen) {
+            Task::delay(PUSH_WAIT_POLL);
+        }
+    }
 
     /**
      * @param awaitAfterOk see parseAtResponse()
@@ -543,81 +577,99 @@ private:
         ESP_ERROR_CHECK_WITHOUT_ABORT(uart_set_baudrate(port, static_cast<uint32_t>(rate)));
     }
 
+    /**
+     * How the bytes from the module are split between commands and URCs, given how esp_modem
+     * buffers them: it hands every callback its whole buffer so far, and empties that buffer only
+     * when a command returns. A callback answering TIMEOUT keeps the latest chunk in the buffer,
+     * anything else drops it.
+     *
+     * - Outside of commands, processUrcData() takes every chunk as it comes and drops it from the
+     *   buffer, so the buffer doesn't fill up between commands; urcLines keeps a line cut off at
+     *   the end of a chunk. In direct push mode one URC is a whole TCP segment as hex, more than
+     *   esp_modem's buffer holds.
+     * - While a command waits for its response, chunks stay in the buffer for its callback to
+     *   parse. Once the response is complete, the callback hands what came with it to the URC
+     *   handler: URCs that arrived during the command, and whatever followed the final result
+     *   code; esp_modem would drop the latter. Later chunks, until the command returns, go to
+     *   processUrcData() again, in order.
+     *
+     * urcBufferPrefix is what the buffer is known to start with, to tell the new part of a chunk
+     * apart from what has been handled already, and to tell when esp_modem has emptied it. The
+     * chunk that completes a response is dropped from the buffer too (esp_modem treats it as
+     * consumed), so while a command is in flight the buffer holds what the previous chunk left.
+     */
     AtResponse send(const std::string& command, milliseconds timeout, std::string_view awaitAfterOk = {}) {
         std::optional<AtResponse> response;
-        commandInFlight = true;
-        // The buffer handed to the callback still starts with whatever arrived since the last
-        // command, including URCs processUrcData() has already handled; skip those, or they
-        // would be handled again as URCs that arrived during this command
-        size_t alreadyHandled = urcBytesHandled;
-        // What arrived after the final result code in the same read
-        std::string trailing;
+        size_t alreadyHandled;
+        // The rest of a line that started before this command, if one did
+        bool continuesLine;
+        {
+            std::scoped_lock lock(urcHandlerMutex);
+            alreadyHandled = urcBufferPrefix.size();
+            continuesLine = urcLines.hasPending();
+            responseComplete = false;
+            inFlightBuffer.reset();
+            commandInFlight = true;
+        }
         dte->command(
             command + "\r",
             [&](uint8_t* data, size_t len) {
-                std::string_view buffer(reinterpret_cast<const char*>(data), len);
-                buffer.remove_prefix(std::min(alreadyHandled, buffer.size()));
+                std::string_view whole(reinterpret_cast<const char*>(data), len);
+                auto buffer = whole.substr(std::min(alreadyHandled, whole.size()));
+                std::string_view continuation;
+                if (continuesLine) {
+                    auto newline = buffer.find('\n');
+                    if (newline == std::string_view::npos) {
+                        return esp_modem::command_result::TIMEOUT;
+                    }
+                    continuation = buffer.substr(0, newline + 1);
+                    buffer.remove_prefix(newline + 1);
+                }
                 size_t consumed = 0;
                 response = parseAtResponse(buffer, command, awaitAfterOk, &consumed);
                 if (!response) {
                     return esp_modem::command_result::TIMEOUT;
                 }
-                trailing = buffer.substr(consumed);
+                std::scoped_lock lock(urcHandlerMutex);
+                feedUrcData(continuation);
+                dispatchUrcsInResponse(*response, command);
+                feedUrcData(buffer.substr(consumed));
+                responseComplete = true;
                 return response->ok() ? esp_modem::command_result::OK : esp_modem::command_result::FAIL;
             },
             static_cast<uint32_t>(timeout.count()));
-        // esp_modem empties its receive buffer when a command completes
-        urcBytesHandled = 0;
-        commandInFlight = false;
+        {
+            std::scoped_lock lock(urcHandlerMutex);
+            commandInFlight = false;
+            // esp_modem has emptied its buffer by now, and after the response nothing was added
+            // to it. Without a response, whatever arrived after the buffer was emptied stays in
+            // it, unread
+            if (responseComplete) {
+                urcBufferPrefix.clear();
+            } else if (inFlightBuffer) {
+                urcBufferPrefix = std::move(*inFlightBuffer);
+            }
+            inFlightBuffer.reset();
+        }
         if (!response) {
             return AtResponse { .result = AtResult::Timeout, .lines = {}, .error = {} };
         }
-        dispatchUrcsInResponse(*response, command);
-        dispatchTrailingData(trailing);
         return std::move(*response);
     }
 
     /**
-     * @brief Handles what arrived after a command's final result code in the same read.
-     *
-     * esp_modem empties its buffer when the command completes, so these bytes would otherwise be
-     * lost. Typically it's a +QIURC: "recv" announcing data right after an AT+QIRD emptied the
-     * module's buffer; missing it left the data waiting until the buffer overflowed. A line cut
-     * off at the end of the read can't be told apart, so it goes to the URC handler as is: as an
-     * unrecognized line, it makes the socket check for data anyway.
-     */
-    void dispatchTrailingData(std::string_view data) {
-        std::scoped_lock lock(urcHandlerMutex);
-        while (!data.empty()) {
-            auto newline = data.find('\n');
-            std::string_view line = data.substr(0, newline);
-            data.remove_prefix(newline == std::string_view::npos ? data.size() : newline + 1);
-            while (!line.empty() && (line.back() == '\r' || line.back() == '\n')) {
-                line.remove_suffix(1);
-            }
-            if (!line.empty()) {
-                dispatchUrc(line);
-            }
-        }
-    }
-
-    /**
      * @brief Hands URCs that arrived while the command was in flight to the URC handler, instead
-     * of leaving them among the command's response lines where nothing would look at them.
+     * of leaving them among the command's response lines where nothing would look at them. Call
+     * with urcHandlerMutex held.
      */
     void dispatchUrcsInResponse(AtResponse& response, std::string_view command) {
         auto urcs = std::ranges::stable_partition(response.lines, [&](const std::string& line) {
             return !isUrc(line, command);
         });
-        if (urcs.empty()) {
-            return;
-        }
-        std::vector<std::string> lines(std::make_move_iterator(urcs.begin()), std::make_move_iterator(urcs.end()));
-        response.lines.erase(urcs.begin(), urcs.end());
-        std::scoped_lock lock(urcHandlerMutex);
-        for (const auto& line : lines) {
+        for (const auto& line : urcs) {
             dispatchUrc(line);
         }
+        response.lines.erase(urcs.begin(), urcs.end());
     }
 
     static bool isUrc(std::string_view line, std::string_view command) {
@@ -640,7 +692,7 @@ private:
     void dispatchUrc(std::string_view line) {
         if (auto event = parseQiurc(line)) {
             if (event->connectId == CONNECT_ID && socketEventHandler) {
-                socketEventHandler(event->type);
+                socketEventHandler(*event);
             }
             return;
         }
@@ -650,41 +702,43 @@ private:
     }
 
     /**
-     * @brief Splits data arriving outside of a command into URC lines.
-     *
-     * esp_modem hands this callback everything it has received since its buffer was last
-     * emptied, which only happens when a command completes. So the data can start with lines
-     * handled on an earlier call; urcBytesHandled tracks where the new ones begin. Always
-     * answers TIMEOUT, which keeps the data in the buffer: "consuming" it here would only drop
-     * the latest chunk and leave the rest, so offsets would no longer line up.
-     *
-     * While a command is in flight the same data belongs to the command, so leave it alone.
+     * @brief Splits data from the module into URC lines. Call with urcHandlerMutex held.
+     */
+    void feedUrcData(std::string_view data) {
+        auto overlong = urcLines.getOverlongCount();
+        urcLines.feed(data, [this](std::string_view line) {
+            dispatchUrc(line);
+        });
+        if (urcLines.getOverlongCount() != overlong) {
+            LOGTW(CELLULAR, "Dropped the rest of a line from the modem longer than %zu bytes", MAX_URC_LINE);
+        }
+    }
+
+    /**
+     * @brief Takes the data that arrives outside of a command's response (see send()).
      */
     esp_modem::command_result processUrcData(std::string_view data) {
-        if (commandInFlight) {
-            return esp_modem::command_result::TIMEOUT;
-        }
-        data.remove_prefix(std::min<size_t>(urcBytesHandled, data.size()));
-        auto lastNewline = data.rfind('\n');
-        if (lastNewline == std::string_view::npos) {
-            return esp_modem::command_result::TIMEOUT;
-        }
-        auto complete = data.substr(0, lastNewline + 1);
-        urcBytesHandled += complete.size();
-
         std::scoped_lock lock(urcHandlerMutex);
-        while (!complete.empty()) {
-            auto newline = complete.find('\n');
-            std::string_view line = complete.substr(0, newline);
-            complete.remove_prefix(newline + 1);
-            while (!line.empty() && (line.back() == '\r' || line.back() == '\n')) {
-                line.remove_suffix(1);
+        if (commandInFlight && !responseComplete) {
+            // Stays in the buffer for the command's callback, unless this chunk completes the
+            // response; in that case the buffer still holds what the previous chunk left
+            if (inFlightBuffer) {
+                urcBufferPrefix = std::move(*inFlightBuffer);
             }
-            if (!line.empty()) {
-                dispatchUrc(line);
+            inFlightBuffer.emplace(data);
+            return esp_modem::command_result::TIMEOUT;
+        }
+        if (!urcBufferPrefix.empty()) {
+            if (data.starts_with(urcBufferPrefix)) {
+                data.remove_prefix(urcBufferPrefix.size());
+            } else {
+                // esp_modem has emptied its buffer since
+                urcBufferPrefix.clear();
             }
         }
-        return esp_modem::command_result::TIMEOUT;
+        feedUrcData(data);
+        // Drops the chunk from the buffer, which keeps starting with urcBufferPrefix
+        return esp_modem::command_result::OK;
     }
 
     bool ensureFullFunctionality() {
@@ -884,6 +938,7 @@ private:
     static constexpr milliseconds WAKE_MAX_BACKOFF = 1s;
     // At about 2 KB/s, a command that holds the module this long lets its receive buffer fill
     static constexpr milliseconds SLOW_COMMAND = 1s;
+    static constexpr milliseconds PUSH_WAIT_POLL = 1s;
 
     const uart_port_t port;
     std::atomic<uint32_t> uartErrors { 0 };
@@ -893,15 +948,28 @@ private:
 
     // Keeps the wake sequence and the command that follows it together
     std::mutex commandMutex;
-    std::atomic<bool> commandInFlight { false };
-    std::atomic<size_t> urcBytesHandled { 0 };
+    const bool pushSocketData;
+    // While a socket in direct push mode is open
+    std::atomic<bool> pushSocketOpen { false };
+    std::optional<PowerManagementLockGuard> awakeWhilePushing;
     // The last command sent, for the log when another one had to wait for it; only touched with
     // commandMutex held
     std::string lastCommand;
 
+    // Guards the URC handlers, and the state below that splits the bytes from the module between
+    // commands and URCs (see send())
     std::mutex urcHandlerMutex;
     UrcHandler urcHandler;
     SocketEventHandler socketEventHandler;
+    bool commandInFlight = false;
+    // Whether the command in flight has its whole response
+    bool responseComplete = false;
+    std::string urcBufferPrefix;
+    // The buffer as of the latest chunk of the command in flight
+    std::optional<std::string> inFlightBuffer;
+    // A pushed URC carries up to a TCP segment as hex, about 3 KB
+    static constexpr size_t MAX_URC_LINE = 4096;
+    AtLineAssembler urcLines { MAX_URC_LINE };
 };
 
 }    // namespace cornucopia::ugly_duckling::kernel::drivers::cellular
