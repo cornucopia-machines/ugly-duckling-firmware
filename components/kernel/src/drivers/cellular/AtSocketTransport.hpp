@@ -205,6 +205,7 @@ private:
         while (true) {
             auto left = duration_cast<milliseconds>(deadline - steady_clock::now());
             if (!pushed.empty()) {
+                checkPushedAfterUartErrors();
                 if (takePushed()) {
                     return 1;
                 }
@@ -387,6 +388,25 @@ private:
         }
         pushedPeak = std::max(pushedPeak, pushedLength);
         pushedChunks++;
+    }
+
+    /**
+     * @brief Counts pushed data as lost once the UART has had an error since connecting.
+     *
+     * On an overflow, esp_modem flushes the UART's buffers, which can take part of a pushed URC
+     * with it: what's left no longer parses as one, and goes to the URC handler as an
+     * unrecognized line, so queuePushed() never sees the gap.
+     */
+    void checkPushedAfterUartErrors() {
+        auto errors = module->getUartErrorCount() - uartErrorsAtConnect;
+        if (errors == 0 || pushBroken) {
+            return;
+        }
+        std::scoped_lock lock(pushMutex);
+        if (!pushBroken) {
+            LOGTW(CELLULAR, "Pushed data may be lost: %" PRIu32 " UART errors since connecting", errors);
+            pushBroken = true;
+        }
     }
 
     void stopAcceptingPushes() {
