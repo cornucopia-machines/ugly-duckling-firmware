@@ -533,17 +533,30 @@ private:
 
     /**
      * @return nullopt if the setting is right, otherwise the first line of what the module
-     * answered, for the log
+     * answered, for the log, or UNREADABLE_SETTING if the query failed or answered nothing
      */
     std::optional<std::string> checkSetting(const PersistedSetting& setting) {
         auto response = command(setting.query, DEFAULT_TIMEOUT);
-        if (response.ok() && !response.lines.empty()) {
-            std::string_view line = response.lines.front();
-            if (line == setting.expected || (line.starts_with(setting.expected) && line[setting.expected.size()] == ',')) {
-                return std::nullopt;
-            }
+        if (!response.ok() || response.lines.empty()) {
+            return std::string(UNREADABLE_SETTING);
         }
-        return response.lines.empty() ? "?" : response.lines.front();
+        std::string_view line = response.lines.front();
+        if (line == setting.expected || (line.starts_with(setting.expected) && line[setting.expected.size()] == ',')) {
+            return std::nullopt;
+        }
+        return response.lines.front();
+    }
+
+    /**
+     * @brief For a setting that takes a module restart: whether it can't be read back, in which
+     * case writing it would restart the module on every boot without ever seeing it applied.
+     */
+    static bool isUnreadable(const PersistedSetting& setting, const std::string& current) {
+        if (current != UNREADABLE_SETTING) {
+            return false;
+        }
+        LOGTW(CELLULAR, "Could not read %s, leaving it as it is", setting.query);
+        return true;
     }
 
     bool ensureSetting(const PersistedSetting& setting) {
@@ -867,6 +880,9 @@ private:
         if (!current) {
             return true;
         }
+        if (isUnreadable(RXD_WAKEUP, *current)) {
+            return false;
+        }
         LOGTI(CELLULAR, "Setting %s (was: %s), and restarting %s for it to take effect", RXD_WAKEUP.set, current->c_str(), getName());
         auto response = command(RXD_WAKEUP.set, DEFAULT_TIMEOUT);
         if (!response.ok()) {
@@ -890,6 +906,9 @@ private:
         auto current = checkSetting(RELEASE_VERSION);
         if (!current) {
             return true;
+        }
+        if (isUnreadable(RELEASE_VERSION, *current)) {
+            return false;
         }
         LOGTI(CELLULAR, "Setting %s (was: %s), and restarting %s for it to take effect", RELEASE_VERSION.set, current->c_str(), getName());
         auto response = command("AT+CFUN=0", CFUN_TIMEOUT);
@@ -1001,6 +1020,8 @@ private:
 
     // Most commands answer well within this; the AT manual gives 300 ms to 5 s maximums
     static constexpr milliseconds DEFAULT_TIMEOUT = 5s;
+    // What checkSetting() reports when the module doesn't answer the query
+    static constexpr std::string_view UNREADABLE_SETTING = "?";
     // Maximum response times from the AT manual
     static constexpr milliseconds QENG_TIMEOUT = 15s;
     static constexpr milliseconds CFUN_TIMEOUT = 25s;
