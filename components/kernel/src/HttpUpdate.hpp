@@ -88,11 +88,13 @@ public:
     /**
      * @brief Whether an update will be attempted during this boot.
      *
-     * Lets startup skip optional subsystems (BLE) to leave RAM for the OTA: the device reboots
-     * after the attempt either way, so they come back on the next boot.
+     * Lets startup skip optional subsystems (BLE) to leave RAM for the OTA, and set up the modem
+     * for a download: the device reboots after the attempt either way, so they come back on the
+     * next boot. Matches performPendingHttpUpdateIfNecessary(), which reports a previous failure
+     * first, without updating; otherwise this boot would run normally with download settings.
      */
     static bool isUpdatePending(const std::shared_ptr<NvsStore>& nvs) {
-        return nvs->contains(UPDATE_KEY);
+        return nvs->contains(UPDATE_KEY) && !nvs->contains(UPDATE_FAILED_KEY);
     }
 
     static constexpr const char* UPDATE_KEY = "pending-update";
