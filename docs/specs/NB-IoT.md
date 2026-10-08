@@ -14,6 +14,7 @@ Tracking issues:
 - [cornucopia-app#492](https://github.com/cornucopia-machines/cornucopia-app/issues/492) — end-state transport (CoAP over DTLS 1.2 + CID)
 - [cornucopia-app#507](https://github.com/cornucopia-machines/cornucopia-app/issues/507) — device time acquisition (NITZ)
 - [cornucopia-app#533](https://github.com/cornucopia-machines/cornucopia-app/issues/533) — choose WiFi or cellular when (re-)provisioning a device
+- [cornucopia-app#535](https://github.com/cornucopia-machines/cornucopia-app/issues/535) — firmware over MQTT in chunks, towards delta OTA ([#674](https://github.com/cornucopia-machines/ugly-duckling-firmware/issues/674))
 - Hardware design: [`ugly-duckling-hardware/docs/specs/nb-iot.md`](https://github.com/cornucopia-machines/ugly-duckling-hardware/blob/main/docs/specs/nb-iot.md)
 
 ## Terms
@@ -90,9 +91,12 @@ driver, lwIP's WiFi netif or their buffers, so it should need less internal RAM,
 The BC660K can take socket data as hex instead of raw bytes (`AT+QICFG="dataformat",1,1`). Then
 `AT+QISEND=0,<len>,"<hex>"` and `+QIRD: <len>,<remaining>,"<hex>"` are ordinary text lines, so
 sends and reads go through the same command path, response parser and URC handling as every
-other command, and binary data never reaches the line parser. The cost is twice the bytes on the
-UART and 1024 bytes per `QISEND` instead of 2048. Neither matters: 115200 baud is about 8× what
-NB-IoT delivers, and the bytes over the air are the same.
+other command, and binary data never reaches the line parser. Data pushed in direct push mode
+(update downloads, see "OTA over the modem, without MQTT") comes as hex too, in
+`+QIURC: "recv",0,<len>,"<hex>"`. The cost is twice the bytes on the UART and 1024 bytes per
+`QISEND` instead of 2048. Neither matters for throughput: even 115200 baud is about 8× what
+NB-IoT delivers, and the bytes over the air are the same. It did matter for how fast the module's
+receive buffer can be emptied, which is why the UART runs at 460800 (see "UART baud rate").
 
 ### Leave room for other chipsets
 
@@ -101,7 +105,7 @@ CellularDriver              ← owns the UART, power/wake, registration, network
   └─ CellularModuleDriver   ← chipset-specific AT: init sequence, sockets, URC parsing, NTP
        └─ Bc660KDriver      ← esp_modem GenericModule subclass; Quectel QI*/QENG/QSCLK commands
 AtSocketTransport           ← esp_transport for esp-mqtt, talks only to CellularModuleDriver's socket API
-TlsTransport                ← mbedTLS over any esp_transport; MqttDriver wraps AtSocketTransport in it
+TlsTransport                ← mbedTLS over any esp_transport; MqttDriver and HttpUpdater wrap AtSocketTransport in it
 ```
 
 Supporting another modem then means adding another `CellularModuleDriver`, the same way the
@@ -162,17 +166,55 @@ last telemetry message. The server ignores fields it doesn't
 know, so this needs no server change up front; server-side handling follows once the shape has
 settled.
 
-### OTA is off over NB-IoT until stage 5
+### OTA over the modem, without MQTT
 
-`HttpUpdater` downloads with `esp_http_client` over lwIP and waits on `WiFiDriver` directly, so it
-can't work over the modem. On the cellular link:
+Firmware updates use the same `HttpUpdater` on both links: the `firmware` entry in UPDATE (or the
+`update` command) stores the URL and reboots, and the next boot downloads the image with
+`esp_https_ota`, then reboots again either way. The BC660K has no HTTP AT commands
+(`AT+QFOTADL` only updates the modem itself), so on the cellular link the HTTP client runs over
+the modem's socket transport instead of lwIP: IDF's `CONFIG_ESP_HTTP_CLIENT_ENABLE_CUSTOM_TRANSPORT`
+lets `esp_http_client` take a transport of ours, which it uses for every connect, redirects
+included. That transport is `AtSocketTransport`, with `TlsTransport` on top for HTTPS, verifying
+the image host against the CA bundle (the same one the WiFi path uses) rather than the pinned MQTT
+server certificate: `TlsTransport` takes `std::nullopt` for its credentials then. The HTTP client
+and HTTPS OTA post their progress to IDF's default event loop, which used to be created by
+`WiFiDriver`; `startDevice()` now creates it on every link.
 
-- the `update` handler answers a `firmware` entry with `RejectionCode::Unimplemented`, so the
-  server stops retrying instead of the device rebooting into an update attempt that is bound to
-  fail;
-- the `http-update` command isn't registered;
-- an update scheduled over WiFi in the same UPDATE as a switch to the cellular link is dropped
-  at boot and rejected with `Unimplemented` too.
+The modem driver has a single socket, so on the cellular link the update boot downloads before
+MQTT is started, and doesn't start it at all: there are no MQTT logs during the update, only the
+serial console. The outcome reaches the server after the reboot, in BOOT and SYNC, as over WiFi.
+Waiting for the network allows 5 minutes instead of 15 s, since registering can take that long,
+and HTTP reads wait up to 30 s, like MQTT's over the modem.
+
+On the update boot the link is set up for the download rather than for saving power: the module
+stays out of sleep (`AT+QSCLK=0`), the ESP32 stays out of light sleep at full CPU speed, and the
+socket is opened in **direct push mode** (`AT+QIOPEN` access mode 1): the module sends every
+received segment straight away as `+QIURC: "recv",0,<len>,"<hex>"`, instead of keeping it in its
+2168-byte buffer for `AT+QIRD`. In buffer access mode that buffer overflowed during downloads, even
+with polling every 50 ms, plausibly because every flash erase and write stops everything on the
+ESP32 but IRAM code for tens of milliseconds, the reads included; and the module drops data it has
+no room for instead of holding it back with TCP flow control. Pushed data instead waits in the UART
+driver's 16 KB buffer, which the UART interrupt (in IRAM) keeps filling, then in a 16 KB queue in
+`AtSocketTransport`. Normal boots stay in buffer access mode, which keeps data in the module while
+the ESP32 sleeps.
+
+While the push socket is open, AT commands from outside the socket code (the network monitor's
+registration checks) are held back: a response arriving in the middle of a pushed URC couldn't be
+pulled apart from it. So the image is fetched in **ranges** over one keep-alive connection
+(`esp_https_ota`'s partial download, `CONFIG_ESP_HTTPS_OTA_ENABLE_PARTIAL_DOWNLOAD`): 64 KB over the
+modem, about 30 s each. Before the request for the next range goes out, the server has nothing
+more to send, so the driver lets the held-back commands run then, for up to 5 s. WiFi takes the
+same path with 256 KB ranges, so bench updates over WiFi exercise it too. In this mode
+`esp_https_ota` first asks for the image size with a `HEAD` request on a connection of its own
+(an extra TLS handshake on every attempt, about 5 s over the modem), and the progress log gives
+the size and a percentage. Commands only get through if the server has sent something since our
+last send: the request right after a TLS 1.3 handshake may cross session tickets the server
+sends on its own.
+
+A download that breaks off is resumed in the same boot with a Range request, from what made it
+to flash: a TLS record that lost data fails its MAC check and never reaches the image (see
+"`QISEND` / `QIRD` size limits"). Across a reboot it still starts over, and every update costs
+about 2 MB of the 1NCE budget. See stage 5 for what comes next.
 
 ### Sleeping: eDRX, not PSM
 
@@ -227,7 +269,7 @@ because every URC has a query for the same state:
 
 | URC | Re-read with |
 | --- | ------------ |
-| `+QIURC: "recv"` | `AT+QIRD`: the data waits in the module's buffer (buffer access mode) |
+| `+QIURC: "recv"` | `AT+QIRD`: the data waits in the module's buffer (buffer access mode; update boots push data instead, but don't light sleep) |
 | `+QIURC: "closed"` | `AT+QIRD` fails |
 | `+CEREG` | `AT+CEREG?` |
 | `+IP` | `AT+CGPADDR` |
@@ -301,7 +343,7 @@ Goal: on boot, the console shows replies to a few AT commands.
 - [x] Read, and only write when they differ (both persist in NVRAM and are slow): `AT+CFUN=1` (at 0 the SIM isn't even powered) and `AT+QBAND=2,20,8` (EU bands; without a list the module scans every band). Both were steps in the bench bring-up sequence that the first driver lacked
 - [x] Poll registration (every 30 s while searching, 5 min once registered) and log it with decoded signal and serving cell; on registering, log `+COPS`, `+CGATT` and `+CGDCONT`. `+CEREG` URCs only report changes, so a modem that keeps searching was silent
 - [x] Shared quote-aware field tokenizer (`splitAtFields` / `AtField`) for `+XXX:` information lines, with decoders for `+CEREG`, `+CSQ` and `+QENG: 0`
-- [x] URCs that arrive in pieces are handled exactly once: esp_modem only empties its receive buffer after a command, so the driver tracks how much of it it has already handled
+- [x] URCs that arrive in pieces are handled exactly once: esp_modem only empties its receive buffer after a command, so the driver tracks how much of it it has already handled. Since stage 5's push mode, URCs are taken chunk by chunk and dropped from esp_modem's buffer as they arrive, with a line cut off at the end of a chunk kept aside until the rest comes (`AtLineAssembler`): nothing else empties that buffer outside commands, and a stream of pushed URCs, about 3 KB each, would fill it within a few
 - [x] Log `ATI` (includes the firmware revision, so no separate `AT+CGMR`), `AT+CIMI`, `AT+QCCID`, `AT+CSQ`, `AT+CEREG?`, `AT+QENG=0`; log `+CEREG` URCs decoded, other URCs raw
 - [x] Hold a no-light-sleep PM lock while the modem is up: the UART driver only keeps the chip awake while transmitting, so replies and URCs would be lost in light sleep (stage 4 replaces this)
 - [x] Unit-test the response parsers in `test/unit-tests/` (final result codes, echo, `+CME ERROR`, both `+CEREG` shapes, field tokenizing, `+CSQ`, `+QENG: 0` searching and camped)
@@ -311,6 +353,7 @@ Goal: on boot, the console shows replies to a few AT commands.
 Follow-ups, not needed for stage 3:
 
 - [ ] MK14: open-drain `RESET_N` on GPIO4, pulsed once after boot (once there is an MK14 device definition)
+- [ ] Wait long enough for the module to boot: on MK13 its `RESET_N` is tied to the ESP32's `RESET#`, so the reset button (or a brownout) restarts the module too, and the 10 wake attempts ran out before it answered ("is the daughter board connected?"); it answered a few seconds later
 - [ ] Make the band list configurable before devices go outside Europe
 - [ ] Bench aid: AT passthrough from the console (type an AT command, see the reply), debug builds only. Needs console input over USB Serial/JTAG, which nothing reads today
 
@@ -328,7 +371,7 @@ Goal: BOOT, SYNC (config/update request) and TELEMETRY reach the existing broker
 - [x] mbedTLS over the AT transport (`TlsTransport`); same server cert, optional client cert, verification required. Logs how long the handshake took
 - [x] `MqttDriver`: pass the custom transport in cellular builds; keepalive 10 min (pings every 5 min, about 58 KB/day) until the NAT timeout is measured, network timeout 30 s, 8 KB task stack for TLS on top of the AT layer
 - [x] The transport stack follows the URI's scheme, since esp-mqtt ignores it once given a transport: TLS for `mqtts`/`wss`, IDF's WebSocket transport on top for `ws`/`wss`. WebSocket costs a few hundred bytes of HTTP upgrade per connection and 2–6 bytes per packet, so plain `mqtts` is the better choice for NB-IoT once the broker is reachable that way
-- [x] OTA off: reject `firmware` entries with `Unimplemented`, don't register `http-update`
+- [x] OTA off: reject `firmware` entries with `Unimplemented`, don't register `http-update` (until stage 5)
 - [x] Time: `RtcDriver` takes time from the modem instead of SNTP. NITZ first, as `+CTZEU` (`AT+CTZR=3`), which carries UTC, so there's no offset to get wrong. `AT+QNTP` 30 s after the network is up if no NITZ came, then daily. (`AT+CTZU` is a BG96 command the BC660K doesn't have, and `+CCLK` would mean guessing whether the module reports local time)
 - [x] Telemetry: link-quality fields from `AT+QENG=0`, and bytes sent and received over the modem (see "Link quality in telemetry")
 - [x] `DebugConsole`: in cellular builds, show the cellular link in place of `WIFI: off` (registration state, IP address, RSRP/ECL). It refreshes every 250 ms, so it reads what `CellularDriver` last saw (`getStatus()`, updated on every registration check) rather than sending AT commands itself
@@ -353,7 +396,7 @@ Goal: commands and UPDATE messages sent from the server arrive with predictable 
 the modem sleeps between paging windows.
 
 - [x] `cellular` section in device-config (see "Sleeping: eDRX, not PSM"); moved to network-config with `links`
-- [x] `links` in network-config chooses WiFi or NB-IoT at boot, in place of `-DUD_CONNECTIVITY`; every Carrot build has both links, the cellular code gated on `UD_PLATFORM_CARROT` (see "Choosing WiFi or NB-IoT"). Links that can't be honored fall back to WiFi with an error; a firmware update pending from before a switch to cellular is dropped and rejected
+- [x] `links` in network-config chooses WiFi or NB-IoT at boot, in place of `-DUD_CONNECTIVITY`; every Carrot build has both links, the cellular code gated on `UD_PLATFORM_CARROT` (see "Choosing WiFi or NB-IoT"). Links that can't be honored fall back to WiFi with an error; a firmware update pending from before a switch to cellular was dropped and rejected (until stage 5, which downloads it over the modem)
 - [ ] Confirm a link change only once MQTT has connected over the new link; revert to the confirmed config otherwise. Firmware updates need the same delayed confirmation
 - [ ] cornucopia-app: choose the link when (re-)provisioning a device, issuing a fresh client certificate and key with every change ([cornucopia-app#533](https://github.com/cornucopia-machines/cornucopia-app/issues/533))
 - [x] PSM off (`AT+CPSMS=0`), only written when it differs
@@ -422,10 +465,80 @@ Moved out of stage 4:
 
 ### Stage 5 — OTA over NB-IoT
 
-- [ ] Decide the download path: HTTP(S) over the AT socket transport (esp_http_client has no custom transport hook, so it needs a thin HTTP client or the localhost-listener trick from the esp_modem example) vs the modem's HTTP commands, if the BC660K has them
-- [ ] Resume interrupted downloads (HTTP range requests); a ~1.5 MB image is a large share of the 1NCE data budget, so retries must not start from zero
-- [ ] Ship firmware update over NB-IoT end-to-end, including rollback; remove the stage 3 rejection
+Goal: the existing HTTP update, with a full image, works over the modem, with firmware changes
+only (see "OTA over the modem, without MQTT").
+
+- [x] Turn on `CONFIG_ESP_HTTP_CLIENT_ENABLE_CUSTOM_TRANSPORT`
+- [x] `TlsTransport`: without credentials (`std::nullopt`), verify against the CA bundle (`esp_crt_bundle_attach()`), with no client certificate, for the image host; with credentials, the pinned MQTT server certificate as before
+- [x] Create the default event loop on every link, not only in `WiFiDriver`: without it, every event the HTTP client and HTTPS OTA post fails with `ESP_ERR_INVALID_STATE`, one error log line each
+- [x] Hold the CPU at full speed, out of light sleep, for the whole update, so received data is read and decoded without delay. Also tried: skipping the wake-up `AT` before a command when the module had answered less than 5 s before, to save a round trip per `QIRD`. It didn't make downloads faster (the network sets the rate), and right after registering the module ignored a command sent less than a second after its last answer, so it was dropped again
+- [x] Resume a download that broke off, in the same boot: a fresh connection asks for the rest with a Range request (`esp_https_ota`'s `ota_resumption`, from the bytes already written). A record whose MAC fails never reaches flash, so everything written is good. Gives up after 3 attempts in a row that got no further
+- [x] Handle what arrives after a command's final result code in the same read: esp_modem empties its buffer when the command completes, so a `+QIURC: "recv"` right after an `AT+QIRD`'s `OK` was lost, and nothing read the socket until the module reported its buffer full. `parseAtResponse` reports where the response ends, and the rest goes to the URC handler; a line cut off at the end of the read counts as unrecognized, which makes the socket check for data anyway
+- [x] Retry connecting too, not only a download that broke off, as long as no HTTP response came back: the TLS handshake lost data the same way once (the server's ~3 KB first flight didn't fit the buffer we weren't reading), and once the connection was closed ("by the peer or the network", the module can't tell) 4 s after the request went out. A server that answers with an error status isn't retried
+- [x] Poll the module while data is flowing: every 250 ms (50 ms since the UART runs at 460800, see below) for 5 s after anything was sent or received, on top of the URCs. During downloads the module didn't announce data until its buffer was full: every `bytes waiting` line said `data announced ~120 ms ago` after 3–16 s without a read, and a handshake that received 2742 bytes got 2 announcements. The BG96, with the same `QI*` commands, documents that buffer access mode only announces again once a read has found the buffer empty; polling does that too. Outside that window, URCs and the 2-minute safety poll as before, so an idle MQTT connection doesn't keep the module awake
+- [x] Drain the module's buffer: after a read that returned data, read again until one comes back `+QIRD: 0`, even when the remaining length already said 0. Going by the BG96, the module announces new data only once a read has found its buffer empty, so stopping at the last byte left the next data unannounced until the buffer filled. Costs one empty `QIRD` per burst; the polling above stays as a fallback until the bench shows announcements arrive promptly
+- [x] Keep the module out of sleep (`AT+QSCLK=0` instead of `=2`) on a boot that downloads an update, as the AT manual recommends for data communication (`AT+QSCLK`, note 3: "Before data communication, it is recommended to execute AT+QSCLK=0"). It didn't make the module announce data any sooner (`not announced since` as before), and its buffer still overflowed: more than 2.6 KB arrived between two reads 250 ms apart. Polling back to back (`ACTIVE_POLL_INTERVAL` 0) didn't prevent that either; 250 ms is kept
+- [x] First complete update over NB-IoT, at ECL 0 (RSRP -92 dBm, SINR 9 dB): 2.1 MB in about 17 minutes, with 3 resumes. Each break followed a `+QIURC: "recv",0,"buff full"` within about a second, while `2168 bytes waiting` without that URC didn't lose data. So the URC, not a full buffer, marks the loss. At ECL 1 with SINR 1–2 dB, downloads still broke off too often to finish
+- [x] Poll every 50 ms instead of 250 ms while data flows: at 460800 baud, every `bytes waiting` line still said `last read 249 ms ago`, i.e. more than 2 KB arrived between two polls, and the download ran at the same speed (the network sets it). It didn't make `buff full` go away (see below); still the polling rate on normal boots
+- [x] Log per connection, when it closes, how many of the bytes received were found after an announcement, by active polling, or by the safety poll (the reads draining a burst count towards whatever found it), plus the `buff full` URCs and UART errors. Data only polling found would otherwise have waited for `buff full`, so this tells whether polling is still needed. The `bytes waiting` line is verbose now: the buffer reached 2168 bytes all the time, often within 50 ms of the last read, without losing data
+- [ ] UART overflows at 460800: one download broke off on an `AT+QIRD` that came back `OK` without its data line. esp_modem flushes the UART's buffers on a FIFO or ring buffer overflow, which takes the rest of the response with it, and logs it under `uart_terminal`, which we turn down to ERROR (for its light-sleep wakeup warnings); so these are now counted and logged as `UART error from the modem`. At 460800 the 128-byte hardware FIFO fills in under 3 ms. The UART ISR now runs from IRAM (`CONFIG_UART_ISR_IN_IRAM`): flash erases and writes, constant during an OTA download, disable every interrupt handled from flash, and a sector erase takes tens of milliseconds. If errors still show up: a larger `rx_buffer_size` or a higher UART task priority. Update boots now have a 16 KB `rx_buffer_size` for push mode, and its downloads so far reported 0 UART errors
+- [x] Keep `QIRD` data whose remaining length is negative: with 1.26 MB downloaded, the module answered `+QIRD: 512,-512,"<data>"`, all 512 bytes there, and the parser rejected the line for its remaining length, which broke the TLS stream (logged as `no data line`, with 0 UART errors). A negative remaining length now counts as unknown, so the read after it checks for more
+- [x] Count a poll that finds an announcement pending as found after the announcement: the first run with the per-connection counts reported 975 announcements and all 1.3 MB found by active polling, because a poll due at 50 ms ran before the pending signal was looked at
+- [x] `buff full` with polling every 50 ms: 23 s into a resumed download, the module reported its buffer full, and the MAC check failed a second later. If data really arrives in clumps of about 2.7 KB within 50 ms, more than the 2168-byte buffer holds, no polling rate prevents it: emptying the buffer takes about five 512-byte `QIRD`s of 20–25 ms each at 460800. Raw data (below) halves the time per read. Update boots avoid the module's buffer altogether now (push mode, next item)
+- [x] Direct push mode for update downloads (`AT+QIOPEN` access mode 1), with the image fetched in 64 KB ranges so that held-back commands get through in between; see "OTA over the modem, without MQTT" for how it works. Takes three changes on our side: URCs are split into lines chunk by chunk, since esp_modem only empties its buffer when a command returns, and a stream of pushed URCs (about 3 KB each) would fill it (`dte_buffer_size` is 8 KB on update boots, so the URCs arriving during a command fit); the transport queues pushed data (16 KB) and fails the read on a gap (queue full, a length mismatch, bad hex, or a UART error since connecting), since there is no flow control to fall back on; and commands from outside the socket code wait for a pause before we send, once the server has replied. The per-connection log adds the chunks pushed, the most bytes queued at once, and whether anything was lost. First runs at ECL 0 went past 1 MB at about 2.2 KB/s without breaking off, with nothing lost and 0 UART errors. To check on the bench: complete updates, at ECL 1 and 2 too
+- [ ] Not needed while push mode holds up: receive socket data as raw bytes instead of hex (`AT+QICFG="dataformat",1,0`, sending stays hex): about half the UART time per `QIRD`, so the buffer has more room before it overflows. The `QIRD` response then carries the bytes between quotes, `+QIRD: <n>,<remaining>,"<data>"`, so it has to be parsed by length, not by line; and whether the module passes every byte value through unchanged has to be checked on the bench
+- [x] The UART at 460800 baud (`AT+IPR`), about four times less time per `QIRD` ([#690](https://github.com/cornucopia-machines/ugly-duckling-firmware/issues/690), [#694](https://github.com/cornucopia-machines/ugly-duckling-firmware/pull/694)); see "UART baud rate". Its effect on downloads is still to be measured
+- [x] Cat NB2 (release 14), once reading keeps up ([#691](https://github.com/cornucopia-machines/ugly-duckling-firmware/issues/691)). The driver now sets `relversion` 14 (at `CFUN=0`, then restarts the module), and the module reports `NBcategory` 2 after it. A download at ECL 0 (RSRP -93 dBm, SINR 7 dB) still ran at about 1.8 KB/s, the same as Cat NB1: either Telekom 21630 doesn't serve NB2 on this cell, or the rate is set by TCP (data arrives in clumps of about 2.7 KB, which looks like a receive window waiting for its round trip) rather than by the radio
+- [x] `HttpUpdater` waits on a `networkReady` state and takes an optional modem transport, instead of `WiFiDriver`; longer timeouts on cellular, where registration can take minutes
+- [x] On the update boot over cellular, don't start MQTT: the modem driver has one socket (`CONNECT_ID = 0`) and the download needs it. No MQTT logs during the update; the outcome is reported in BOOT on the next boot, as over WiFi
+- [x] Remove the stage 3 rejection: `firmwareUpdatesSupported`, `HttpUpdater::discardPendingUpdate()`, registering `http-update` on WiFi only
+- [ ] Bench: a full image at ECL 0 and ECL 2, time and bytes (cross-check with the 1NCE portal)
+- [ ] Ship end-to-end, including rollback
 - [ ] Separately: modem firmware updates (Quectel DFOTA), if we need them
+
+To check on the bench:
+
+- [x] The download works over the modem (MK13, 1NCE, RSRP −99 dBm, ECL 1): TLS handshake with
+  `firmware.cornucopia-machines.eu` in about 5.2 s (275 bytes sent, 3 KB received), then a steady
+  2 KB/s or so (`Downloaded 129.00 KB` 64 s after connecting), so roughly 17 minutes for a 2 MB
+  image. Every `QIRD` took two round trips (the wake-up `AT`, then the read) for 512 bytes,
+  which looked like the limit at first
+- [x] The first full attempt failed after 769 KB, 414 s in: `Modem receive buffer full`, then
+  `Verification of the message MAC failed` 7 s later, and the update was rejected (see
+  "`QISEND` / `QIRD` size limits")
+- [x] Skipping the wake-up `AT` and holding the CPU at full speed didn't change the rate: about
+  2 KB/s again (RSRP −98 dBm, ECL 0), the same as at ECL 1, so the network sets it, not our reads.
+  It failed the same way after about 1 MB, 531 s in. Both failures came 7–9 minutes into a
+  steady download, which suggested something holding the module for a while: commands that
+  waited over 1 s for another one, or took over 1 s themselves, are now logged at Debug, and so
+  is the receive buffer filling past 1 KB
+- [x] The UE category is Cat NB1 (`relversion` 13, `NBcategory` 1), which fits about 16 kbit/s
+  (680-bit downlink transport blocks, 25.5 kbit/s peak). Cat NB2 (release 14) allows up to
+  127 kbit/s if the network supports it (#691)
+- [x] Nothing holds the module: no command waited or took over 1 s. Instead the receive buffer
+  is regularly full during the download, `2168 bytes waiting` several times a minute from the
+  first seconds on (so the "2 KB" buffer holds 2168 bytes). This run failed after 158 KB, 27 s
+  after `Modem receive buffer full`: data can go missing whenever the buffer sits at the limit,
+  not just when the URC comes
+- [x] The next run failed in the TLS handshake: `QIOPEN` took 8.6 s, then nothing was read until
+  `2168 bytes waiting` 18 s later; the server closed after receiving 2742 bytes of its ~3 KB
+  first flight. Data sitting in the module that long means we didn't know it was there: the
+  `+QIURC: "recv"` had been lost behind an `OK` (see above), not that we read too slowly
+- [x] With the lost URCs handled, the buffer still filled up: `2230 bytes waiting in the modem;
+  last read 5683 ms ago, data announced 119 ms ago`, and five more like it over the next 4
+  minutes, 3–16 s after the last read each time. The URCs weren't lost, the module sends them
+  late (see the polling above). The handshake broke off twice before the third connection got
+  through, and resuming took over each time
+- [x] With polling while data flows: the buffer still filled up, and `buff full` still broke
+  downloads off, at 250 ms and at 50 ms (see above); hence push mode for downloads
+- [ ] ECL 2
+
+Not resumable across a reboot, and about 2 MB per update. Both are fixed by the next step, outside this spec: the server
+sends the image in chunks over the device's MQTT session (no HTTP on the device, logs during the
+download, the same path on WiFi), then delta patches with `esp_delta_ota`. See
+[cornucopia-app#535](https://github.com/cornucopia-machines/cornucopia-app/issues/535) (protocol
+and server) and [#674](https://github.com/cornucopia-machines/ugly-duckling-firmware/issues/674)
+(delta OTA).
 
 ### Stage 6 — Use less data and battery, get lower latency
 
@@ -458,8 +571,18 @@ From the *BC660K-GL TCP/IP Application Note* v1.2 (`datasheets/.text/`):
   hex mode. We use hex mode (see "Socket data as hex"), so 1024.
 - `AT+QIRD=<id>,<read_length>`: **1–512 bytes** per read.
 - The modem buffers at most **2 KB** of received data per socket in buffer access mode. A large
-  UPDATE has to be drained with several `QIRD`s as it arrives. We expect TCP flow control to hold
-  back the rest rather than lose it; to be confirmed on the bench.
+  UPDATE has to be drained with several `QIRD`s as it arrives. **TCP flow control does not hold
+  back the rest:** during an OTA download the module reported `+QIURC: "recv",0,"buff full"`,
+  and seven seconds later TLS failed on a record whose MAC didn't verify, so bytes the module's
+  TCP stack had already acknowledged were dropped (the app note: "no resources can be allocated
+  for incoming data"). What let it fill up was a lost `+QIURC: "recv"`: esp_modem empties its
+  buffer when a command completes, so a URC arriving right after an `AT+QIRD`'s `OK`, in the
+  same read, was dropped, and the data waited until the module announced the buffer full. That
+  is fixed (see stage 5), but the buffer can still overflow if the network delivers faster than
+  we read, so anything large over the modem has to survive losing data: a retry, a resumed
+  download, or chunks small enough to fit the buffer. Update downloads sidestep the buffer
+  with direct push mode (see "OTA over the modem, without MQTT"); MQTT messages, much smaller,
+  still go through it.
 - `AT+QICFG="showlength",1` adds the remaining-length field to `QIRD` responses and the
   `recv` URC, so the transport knows how much more to read.
 

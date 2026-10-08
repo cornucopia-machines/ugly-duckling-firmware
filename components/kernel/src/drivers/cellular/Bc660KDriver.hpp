@@ -18,6 +18,7 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <ctime>
 #include <initializer_list>
 #include <iterator>
@@ -33,6 +34,20 @@ using namespace std::chrono;
 using namespace std::chrono_literals;
 
 namespace cornucopia::ugly_duckling::kernel::drivers::cellular {
+
+inline const char* describe(esp_modem::terminal_error error) {
+    switch (error) {
+        case esp_modem::terminal_error::BUFFER_OVERFLOW:
+            return "receive overflow";
+        case esp_modem::terminal_error::CHECKSUM_ERROR:
+            return "parity error";
+        case esp_modem::terminal_error::UNEXPECTED_CONTROL_FLOW:
+            return "framing error or break";
+        case esp_modem::terminal_error::DEVICE_GONE:
+            return "device gone";
+    }
+    return "unknown";
+}
 
 /**
  * @brief Quectel BC660K-GL NB-IoT module, on the Desert Lark daughter board.
@@ -53,12 +68,25 @@ class Bc660KDriver final : public CellularModuleDriver, public esp_modem::Generi
 public:
     /**
      * @param port the UART the DTE runs on, set up at DEFAULT_BAUD_RATE; start() changes its rate
+     * @param pushSocketData whether to open sockets in direct push mode, see pushesSocketData()
      */
-    Bc660KDriver(const std::shared_ptr<esp_modem::DTE>& dte, uart_port_t port)
+    Bc660KDriver(const std::shared_ptr<esp_modem::DTE>& dte, uart_port_t port, bool pushSocketData)
         : GenericModule(dte, std::make_unique<esp_modem::PdpContext>(""))
-        , port(port) {
+        , port(port)
+        , pushSocketData(pushSocketData) {
         dte->set_urc_cb([this](uint8_t* data, size_t len) {
             return processUrcData(std::string_view(reinterpret_cast<const char*>(data), len));
+        });
+        // On an overflow, esp_modem flushes everything the UART has buffered, which can take the
+        // rest of an AT+QIRD response with it, or part of a pushed URC: what's left of that no
+        // longer parses as one, so only this tells the socket about the gap. esp_modem logs these
+        // under uart_terminal, which is turned down to ERROR to keep out its warnings about
+        // light-sleep wakeups
+        dte->set_error_cb([this](esp_modem::terminal_error error) {
+            uartErrors++;
+            LOGTW(CELLULAR, "UART error from the modem: %s", describe(error));
+            std::scoped_lock lock(urcHandlerMutex);
+            reportDataLost();
         });
     }
 
@@ -95,9 +123,10 @@ public:
         return wakeLocked();
     }
 
-    bool configure() override {
-        // First, since it may restart the module, which loses the settings below
+    bool configure(bool allowSleep) override {
+        // First, since they may restart the module, which loses the settings below
         bool success = ensureRxdWakeup();
+        success = ensureReleaseVersion() && success;
 
         // None of these is ever wrong to repeat, so there's no point checking first
         static constexpr std::array SETTINGS {
@@ -105,11 +134,6 @@ public:
             "ATE0",
             // A readable "+CME ERROR: <text>" instead of a bare ERROR
             "AT+CMEE=2",
-            // Let the module light sleep between paging occasions; it wakes on the network's
-            // schedule and on UART activity from us (the first command after that is lost, see
-            // wakeLocked()). Not deep sleep: that only happens in PSM, which is off. Not saved to
-            // NVRAM, so it has to be sent after every module restart
-            "AT+QSCLK=2",
             // Only URC mode 3 carries the EMM reject cause, which is what tells "no coverage"
             // apart from "subscription refused"
             "AT+CEREG=3",
@@ -120,13 +144,28 @@ public:
             "AT+CSCON=1",
         };
 
-        for (const char* setting : SETTINGS) {
+        // Let the module light sleep between paging occasions; it wakes on the network's schedule
+        // and on UART activity from us (the first command after that is lost, see wakeLocked()).
+        // Not deep sleep: that only happens in PSM, which is off. Not saved to NVRAM, so it has to
+        // be sent after every module restart. The AT manual recommends turning sleep off for data
+        // communication (AT+QSCLK, note 3): with it on, received data was announced late during
+        // downloads, and the receive buffer overflowed (docs/specs/NB-IoT.md)
+        const char* sleep = allowSleep ? "AT+QSCLK=2" : "AT+QSCLK=0";
+        if (!allowSleep) {
+            LOGTI(CELLULAR, "Keeping the modem out of sleep for this boot");
+        }
+
+        auto apply = [&](const char* setting) {
             auto response = command(setting, DEFAULT_TIMEOUT);
             if (!response.ok()) {
                 LOGTW(CELLULAR, "%s failed: %s %s", setting, toString(response.result), response.error.c_str());
                 success = false;
             }
+        };
+        for (const char* setting : SETTINGS) {
+            apply(setting);
         }
+        apply(sleep);
 
         // These two are saved to NVRAM and slow to apply, so only write them when they differ
         success = ensureFullFunctionality() && success;
@@ -147,7 +186,14 @@ public:
     }
 
     AtResponse command(const std::string& command, milliseconds timeout) override {
-        return this->command(command, timeout, std::string_view {});
+        bool inPause = awaitPushPause(command);
+        auto response = this->command(command, timeout, std::string_view {});
+        if (inPause) {
+            std::scoped_lock lock(pushGateMutex);
+            commandsInPause--;
+            pushGate.notify_all();
+        }
+        return response;
     }
 
     void onUrc(UrcHandler handler) override {
@@ -164,6 +210,10 @@ public:
         logResponse("AT+CPIN?");
         logResponse("AT+CIMI");
         logResponse("AT+QCCID");
+        // 3GPP release and UE category: Cat NB2 (release 14) allows about five times the downlink
+        // of Cat NB1, if the network supports it
+        logResponse(R"(AT+QCFG="relversion")");
+        logResponse(R"(AT+QCFG="NBcategory")");
     }
 
     std::optional<ServingCell> logRadioStatus() override {
@@ -249,11 +299,19 @@ public:
         // A connection left over from before (a reconnect after an error) would keep the ID busy
         closeSocket();
         auto open = "AT+QIOPEN=0," + std::to_string(CONNECT_ID) + R"(,"TCP",")" + host + "\"," + std::to_string(port)
-            // Local port assigned automatically, buffer access mode
-            + ",0,0";
+            // Local port assigned automatically; direct push mode (1) or buffer access mode (0)
+            + ",0," + (pushSocketData ? "1" : "0");
+        if (pushSocketData) {
+            // Pushed data arrives whenever the network delivers it, and waking from light sleep
+            // on UART edges loses the first bytes
+            awakeWhilePushing.emplace(noLightSleep);
+            pushedSinceSend = false;
+            setPushSocketOpen(true);
+        }
         auto response = command(open, QIOPEN_TIMEOUT, "+QIOPEN:");
         if (!response.ok() || response.lines.empty()) {
             LOGTW(CELLULAR, "Could not connect to %s:%d: %s %s", host.c_str(), port, toString(response.result), response.error.c_str());
+            closeSocket();
             return false;
         }
         auto result = parseQiopen(response.lines.back(), CONNECT_ID);
@@ -270,9 +328,16 @@ public:
     void closeSocket() override {
         // Answers ERROR when the connection is already closed, which is fine
         command("AT+QICLOSE=" + std::to_string(CONNECT_ID), QICLOSE_TIMEOUT, "CLOSE OK");
+        setPushSocketOpen(false);
+        awakeWhilePushing.reset();
+    }
+
+    bool pushesSocketData() const override {
+        return pushSocketData;
     }
 
     bool send(const uint8_t* data, size_t length) override {
+        letHeldBackCommandsThrough();
         auto sendCommand = "AT+QISEND=" + std::to_string(CONNECT_ID) + "," + std::to_string(length) + ",\"" + toHex(data, length) + "\"";
         for (int attempt = 1; attempt <= SEND_ATTEMPTS; attempt++) {
             auto response = command(sendCommand, QISEND_TIMEOUT, "SEND ");
@@ -315,10 +380,16 @@ public:
             }
             // Without the remaining length, a full read is the only sign there may be more
             bool more = data->remaining ? *data->remaining > 0 : data->length == length;
-            return SocketReceive { .length = data->length, .more = more };
+            return SocketReceive { .length = data->length, .more = more, .remaining = data->remaining };
         }
-        LOGTW(CELLULAR, "%s: no data line in the response", read.c_str());
+        // The data was taken out of the module's buffer either way, so the stream has a gap now
+        LOGTW(CELLULAR, "%s: no data line in the response, %zu lines%s%.40s", read.c_str(), response.lines.size(),
+            response.lines.empty() ? "" : ", the first: ", response.lines.empty() ? "" : response.lines.front().c_str());
         return std::nullopt;
+    }
+
+    uint32_t getUartErrorCount() const override {
+        return uartErrors.load();
     }
 
     size_t getMaxReceiveSize() const override {
@@ -353,6 +424,80 @@ private:
         PersistedSetting { .query = "AT+CTZR?", .expected = "+CTZR: 3", .set = "AT+CTZR=3" },
     };
 
+    void setPushSocketOpen(bool open) {
+        std::scoped_lock lock(pushGateMutex);
+        pushSocketOpen = open;
+        pushGate.notify_all();
+    }
+
+    /**
+     * @brief Holds back a command from outside the socket code while a socket pushes data, until
+     * a pause in it (see letHeldBackCommandsThrough()) or until the socket closes.
+     *
+     * Pushed data can arrive at any moment, and a command's response would interleave with it:
+     * a URC cut off by the command's response can't be put back together. Socket commands go
+     * through anyway, at points where the peer waits for us (sending a request, closing).
+     * Only used for downloading updates, after which the device restarts.
+     *
+     * @return whether the command runs in a pause, and has to be counted off when it's done
+     */
+    bool awaitPushPause(const std::string& command) {
+        std::unique_lock lock(pushGateMutex);
+        if (!pushSocketOpen) {
+            return false;
+        }
+        if (!inPushPause) {
+            LOGTD(CELLULAR, "%s waits for a pause in the data pushed", command.c_str());
+            commandsHeldBack++;
+            pushGate.wait(lock, [this] {
+                return !pushSocketOpen || inPushPause;
+            });
+            commandsHeldBack--;
+            if (!pushSocketOpen) {
+                return false;
+            }
+        }
+        commandsInPause++;
+        pushGate.notify_all();
+        return true;
+    }
+
+    /**
+     * @brief Lets the commands held back by awaitPushPause() through before sending, if the peer
+     * has sent something since our last send.
+     *
+     * In HTTP/1.1 and TLS, we only send once the peer's whole reply has arrived: the response to
+     * the request for the previous range of the update image, or the server's handshake flight.
+     * Then the peer waits for us, nothing is pushed until the send, and commands can run without
+     * data getting in between. Without a reply since our last send, the peer may still be
+     * sending: after the client's Finished, a TLS 1.3 server sends session tickets on its own, as
+     * the next request goes out.
+     */
+    void letHeldBackCommandsThrough() {
+        bool peerReplied = pushedSinceSend.exchange(false);
+        std::unique_lock lock(pushGateMutex);
+        if (!pushSocketOpen || !peerReplied || commandsHeldBack == 0) {
+            return;
+        }
+        inPushPause = true;
+        pushGate.notify_all();
+        auto deadline = steady_clock::now() + MAX_PUSH_PAUSE;
+        auto idle = [this] {
+            return commandsHeldBack == 0 && commandsInPause == 0;
+        };
+        while (pushGate.wait_until(lock, deadline, idle)) {
+            // A task tends to send a few commands in a row; give the next one a moment to come
+            if (!pushGate.wait_for(lock, PUSH_PAUSE_GRACE, [&] { return !idle(); })) {
+                break;
+            }
+        }
+        // Commands let through already finish before the send
+        inPushPause = false;
+        pushGate.wait(lock, [this] {
+            return commandsInPause == 0;
+        });
+    }
+
     /**
      * @param awaitAfterOk see parseAtResponse()
      */
@@ -360,27 +505,58 @@ private:
         // The UART driver only keeps the ESP32 awake while transmitting; in light sleep the
         // response would be lost, as waking on UART edges loses the first bytes
         PowerManagementLockGuard awake(noLightSleep);
+        auto requestedAt = steady_clock::now();
         std::scoped_lock lock(commandMutex);
-        // The module can be asleep before any command, and the first AT only wakes it
+        // While a socket is busy, a command holding the module for long keeps AT+QIRD from
+        // emptying its 2 KB receive buffer, and once that's full, received data is lost
+        auto waited = steady_clock::now() - requestedAt;
+        if (waited >= SLOW_COMMAND) {
+            LOGTD(CELLULAR, "%s waited %lld ms for %s", command.c_str(),
+                static_cast<long long>(duration_cast<milliseconds>(waited).count()), lastCommand.c_str());
+        }
+        lastCommand = command;
+        // The module can be asleep before any command, and the first AT only wakes it. Skipping
+        // that when the module had answered just before didn't work out: right after registering,
+        // it ignored a command sent less than a second after its last answer
         if (!wakeLocked()) {
             return AtResponse { .result = AtResult::Timeout, .lines = {}, .error = {} };
         }
-        return send(command, timeout, awaitAfterOk);
+        auto startedAt = steady_clock::now();
+        auto response = send(command, timeout, awaitAfterOk);
+        auto took = steady_clock::now() - startedAt;
+        if (took >= SLOW_COMMAND) {
+            LOGTD(CELLULAR, "%s took %lld ms", command.c_str(),
+                static_cast<long long>(duration_cast<milliseconds>(took).count()));
+        }
+        return response;
     }
 
     /**
      * @return nullopt if the setting is right, otherwise the first line of what the module
-     * answered, for the log
+     * answered, for the log, or UNREADABLE_SETTING if the query failed or answered nothing
      */
     std::optional<std::string> checkSetting(const PersistedSetting& setting) {
         auto response = command(setting.query, DEFAULT_TIMEOUT);
-        if (response.ok() && !response.lines.empty()) {
-            std::string_view line = response.lines.front();
-            if (line == setting.expected || (line.starts_with(setting.expected) && line[setting.expected.size()] == ',')) {
-                return std::nullopt;
-            }
+        if (!response.ok() || response.lines.empty()) {
+            return std::string(UNREADABLE_SETTING);
         }
-        return response.lines.empty() ? "?" : response.lines.front();
+        std::string_view line = response.lines.front();
+        if (line == setting.expected || (line.starts_with(setting.expected) && line[setting.expected.size()] == ',')) {
+            return std::nullopt;
+        }
+        return response.lines.front();
+    }
+
+    /**
+     * @brief For a setting that takes a module restart: whether it can't be read back, in which
+     * case writing it would restart the module on every boot without ever seeing it applied.
+     */
+    static bool isUnreadable(const PersistedSetting& setting, const std::string& current) {
+        if (current != UNREADABLE_SETTING) {
+            return false;
+        }
+        LOGTW(CELLULAR, "Could not read %s, leaving it as it is", setting.query);
+        return true;
     }
 
     bool ensureSetting(const PersistedSetting& setting) {
@@ -483,52 +659,102 @@ private:
         ESP_ERROR_CHECK_WITHOUT_ABORT(uart_set_baudrate(port, static_cast<uint32_t>(rate)));
     }
 
+    /**
+     * How the bytes from the module are split between commands and URCs, given how esp_modem
+     * buffers them: it hands every callback its whole buffer so far, and empties that buffer only
+     * when a command returns. A callback answering TIMEOUT keeps the latest chunk in the buffer,
+     * anything else drops it.
+     *
+     * - Outside of commands, processUrcData() takes every chunk as it comes and drops it from the
+     *   buffer, so the buffer doesn't fill up between commands; urcLines keeps a line cut off at
+     *   the end of a chunk. In direct push mode one URC is a whole TCP segment as hex, more than
+     *   esp_modem's buffer holds.
+     * - While a command waits for its response, chunks stay in the buffer for its callback to
+     *   parse. Once the response is complete, the callback hands what came with it to the URC
+     *   handler: URCs that arrived during the command, and whatever followed the final result
+     *   code; esp_modem would drop the latter. Later chunks, until the command returns, go to
+     *   processUrcData() again, in order.
+     *
+     * urcBufferPrefix is what the buffer is known to start with, to tell the new part of a chunk
+     * apart from what has been handled already, and to tell when esp_modem has emptied it. The
+     * chunk that completes a response is dropped from the buffer too (esp_modem treats it as
+     * consumed), so while a command is in flight the buffer holds what the previous chunk left.
+     */
     AtResponse send(const std::string& command, milliseconds timeout, std::string_view awaitAfterOk = {}) {
         std::optional<AtResponse> response;
-        commandInFlight = true;
-        // The buffer handed to the callback still starts with whatever arrived since the last
-        // command, including URCs processUrcData() has already handled; skip those, or they
-        // would be handled again as URCs that arrived during this command
-        size_t alreadyHandled = urcBytesHandled;
+        size_t alreadyHandled;
+        // The rest of a line that started before this command, if one did
+        bool continuesLine;
+        {
+            std::scoped_lock lock(urcHandlerMutex);
+            alreadyHandled = urcBufferPrefix.size();
+            continuesLine = urcLines.hasPending();
+            responseComplete = false;
+            inFlightBuffer.reset();
+            commandInFlight = true;
+        }
         dte->command(
             command + "\r",
             [&](uint8_t* data, size_t len) {
-                std::string_view buffer(reinterpret_cast<const char*>(data), len);
-                buffer.remove_prefix(std::min(alreadyHandled, buffer.size()));
-                response = parseAtResponse(buffer, command, awaitAfterOk);
+                std::string_view whole(reinterpret_cast<const char*>(data), len);
+                auto buffer = whole.substr(std::min(alreadyHandled, whole.size()));
+                std::string_view continuation;
+                if (continuesLine) {
+                    auto newline = buffer.find('\n');
+                    if (newline == std::string_view::npos) {
+                        return esp_modem::command_result::TIMEOUT;
+                    }
+                    continuation = buffer.substr(0, newline + 1);
+                    buffer.remove_prefix(newline + 1);
+                }
+                size_t consumed = 0;
+                response = parseAtResponse(buffer, command, awaitAfterOk, &consumed);
                 if (!response) {
                     return esp_modem::command_result::TIMEOUT;
                 }
+                std::scoped_lock lock(urcHandlerMutex);
+                feedUrcData(continuation);
+                dispatchUrcsInResponse(*response, command);
+                feedUrcData(buffer.substr(consumed));
+                responseComplete = true;
                 return response->ok() ? esp_modem::command_result::OK : esp_modem::command_result::FAIL;
             },
             static_cast<uint32_t>(timeout.count()));
-        // esp_modem empties its receive buffer when a command completes
-        urcBytesHandled = 0;
-        commandInFlight = false;
+        {
+            std::scoped_lock lock(urcHandlerMutex);
+            commandInFlight = false;
+            // esp_modem has emptied its buffer by now, and after the response nothing was added
+            // to it. Without a response, whatever arrived after the buffer was emptied stays in
+            // it, unread
+            if (responseComplete) {
+                urcBufferPrefix.clear();
+            } else if (inFlightBuffer) {
+                // The command timed out, but what arrived meanwhile can still hold URCs, data
+                // pushed among them; dropping it would leave a gap nothing notices
+                feedUrcData(std::string_view(*inFlightBuffer).substr(std::min(alreadyHandled, inFlightBuffer->size())));
+                urcBufferPrefix = std::move(*inFlightBuffer);
+            }
+            inFlightBuffer.reset();
+        }
         if (!response) {
             return AtResponse { .result = AtResult::Timeout, .lines = {}, .error = {} };
         }
-        dispatchUrcsInResponse(*response, command);
         return std::move(*response);
     }
 
     /**
      * @brief Hands URCs that arrived while the command was in flight to the URC handler, instead
-     * of leaving them among the command's response lines where nothing would look at them.
+     * of leaving them among the command's response lines where nothing would look at them. Call
+     * with urcHandlerMutex held.
      */
     void dispatchUrcsInResponse(AtResponse& response, std::string_view command) {
         auto urcs = std::ranges::stable_partition(response.lines, [&](const std::string& line) {
             return !isUrc(line, command);
         });
-        if (urcs.empty()) {
-            return;
-        }
-        std::vector<std::string> lines(std::make_move_iterator(urcs.begin()), std::make_move_iterator(urcs.end()));
-        response.lines.erase(urcs.begin(), urcs.end());
-        std::scoped_lock lock(urcHandlerMutex);
-        for (const auto& line : lines) {
+        for (const auto& line : urcs) {
             dispatchUrc(line);
         }
+        response.lines.erase(urcs.begin(), urcs.end());
     }
 
     static bool isUrc(std::string_view line, std::string_view command) {
@@ -549,9 +775,23 @@ private:
      * @brief Handles socket URCs here, passes everything else on. Call with urcHandlerMutex held.
      */
     void dispatchUrc(std::string_view line) {
-        if (auto event = parseQiurc(line)) {
-            if (event->connectId == CONNECT_ID && socketEventHandler) {
-                socketEventHandler(event->type);
+        auto event = parseQiurc(line);
+        // A data URC that doesn't parse was garbled, and its data is lost
+        static constexpr std::string_view RECV_PREFIX = R"(+QIURC: "recv")";
+        if (!event && line.starts_with(RECV_PREFIX)) {
+            // %.*s takes the length, so the view needn't be NUL-terminated
+            LOGTW(CELLULAR, "Malformed data URC from the modem: '%.*s...'", static_cast<int>(std::min<size_t>(line.size(), 40)), line.data());    // NOLINT(bugprone-suspicious-stringview-data-usage)
+            reportDataLost();
+            return;
+        }
+        if (event) {
+            if (event->connectId == CONNECT_ID) {
+                if (event->type == SocketEventType::DataPushed) {
+                    pushedSinceSend = true;
+                }
+                if (socketEventHandler) {
+                    socketEventHandler(*event);
+                }
             }
             return;
         }
@@ -561,41 +801,55 @@ private:
     }
 
     /**
-     * @brief Splits data arriving outside of a command into URC lines.
-     *
-     * esp_modem hands this callback everything it has received since its buffer was last
-     * emptied, which only happens when a command completes. So the data can start with lines
-     * handled on an earlier call; urcBytesHandled tracks where the new ones begin. Always
-     * answers TIMEOUT, which keeps the data in the buffer: "consuming" it here would only drop
-     * the latest chunk and leave the rest, so offsets would no longer line up.
-     *
-     * While a command is in flight the same data belongs to the command, so leave it alone.
+     * @brief Splits data from the module into URC lines. Call with urcHandlerMutex held.
+     */
+    void feedUrcData(std::string_view data) {
+        auto overlong = urcLines.getOverlongCount();
+        urcLines.feed(data, [this](std::string_view line) {
+            dispatchUrc(line);
+        });
+        if (urcLines.getOverlongCount() != overlong) {
+            LOGTW(CELLULAR, "Dropped the rest of a line from the modem longer than %zu bytes", MAX_URC_LINE);
+            // It may have been pushed data
+            reportDataLost();
+        }
+    }
+
+    /**
+     * @brief Tells the socket that data from the module may have been lost: in direct push mode,
+     * nothing else would notice the gap. Call with urcHandlerMutex held.
+     */
+    void reportDataLost() {
+        if (socketEventHandler) {
+            socketEventHandler(SocketEvent { .type = SocketEventType::DataLost, .connectId = CONNECT_ID, .hex = {}, .length = std::nullopt });
+        }
+    }
+
+    /**
+     * @brief Takes the data that arrives outside of a command's response (see send()).
      */
     esp_modem::command_result processUrcData(std::string_view data) {
-        if (commandInFlight) {
-            return esp_modem::command_result::TIMEOUT;
-        }
-        data.remove_prefix(std::min<size_t>(urcBytesHandled, data.size()));
-        auto lastNewline = data.rfind('\n');
-        if (lastNewline == std::string_view::npos) {
-            return esp_modem::command_result::TIMEOUT;
-        }
-        auto complete = data.substr(0, lastNewline + 1);
-        urcBytesHandled += complete.size();
-
         std::scoped_lock lock(urcHandlerMutex);
-        while (!complete.empty()) {
-            auto newline = complete.find('\n');
-            std::string_view line = complete.substr(0, newline);
-            complete.remove_prefix(newline + 1);
-            while (!line.empty() && (line.back() == '\r' || line.back() == '\n')) {
-                line.remove_suffix(1);
+        if (commandInFlight && !responseComplete) {
+            // Stays in the buffer for the command's callback, unless this chunk completes the
+            // response; in that case the buffer still holds what the previous chunk left
+            if (inFlightBuffer) {
+                urcBufferPrefix = std::move(*inFlightBuffer);
             }
-            if (!line.empty()) {
-                dispatchUrc(line);
+            inFlightBuffer.emplace(data);
+            return esp_modem::command_result::TIMEOUT;
+        }
+        if (!urcBufferPrefix.empty()) {
+            if (data.starts_with(urcBufferPrefix)) {
+                data.remove_prefix(urcBufferPrefix.size());
+            } else {
+                // esp_modem has emptied its buffer since
+                urcBufferPrefix.clear();
             }
         }
-        return esp_modem::command_result::TIMEOUT;
+        feedUrcData(data);
+        // Drops the chunk from the buffer, which keeps starting with urcBufferPrefix
+        return esp_modem::command_result::OK;
     }
 
     bool ensureFullFunctionality() {
@@ -626,10 +880,45 @@ private:
         if (!current) {
             return true;
         }
+        if (isUnreadable(RXD_WAKEUP, *current)) {
+            return false;
+        }
         LOGTI(CELLULAR, "Setting %s (was: %s), and restarting %s for it to take effect", RXD_WAKEUP.set, current->c_str(), getName());
         auto response = command(RXD_WAKEUP.set, DEFAULT_TIMEOUT);
         if (!response.ok()) {
             LOGTW(CELLULAR, "%s failed: %s %s", RXD_WAKEUP.set, toString(response.result), response.error.c_str());
+            return false;
+        }
+        // Answers OK, then resets straight away
+        command("AT+QRST=1", DEFAULT_TIMEOUT);
+        // Booting takes a moment; waking retries until it answers
+        return wake();
+    }
+
+    bool ensureReleaseVersion() {
+        // Release 14 makes the module Cat NB2 (NBcategory follows it to 2): 2536-bit downlink
+        // transport blocks instead of 680, and two HARQ processes, if the network supports it.
+        // Saved to NVRAM, only accepted at minimum functionality, and only takes effect after a
+        // restart. ensureFullFunctionality() brings CFUN back to 1 afterwards
+        static constexpr PersistedSetting RELEASE_VERSION {
+            .query = R"(AT+QCFG="relversion")", .expected = R"(+QCFG: "relversion",14)", .set = R"(AT+QCFG="relversion",14)"
+        };
+        auto current = checkSetting(RELEASE_VERSION);
+        if (!current) {
+            return true;
+        }
+        if (isUnreadable(RELEASE_VERSION, *current)) {
+            return false;
+        }
+        LOGTI(CELLULAR, "Setting %s (was: %s), and restarting %s for it to take effect", RELEASE_VERSION.set, current->c_str(), getName());
+        auto response = command("AT+CFUN=0", CFUN_TIMEOUT);
+        if (!response.ok()) {
+            LOGTW(CELLULAR, "AT+CFUN=0 failed: %s %s", toString(response.result), response.error.c_str());
+            return false;
+        }
+        response = command(RELEASE_VERSION.set, DEFAULT_TIMEOUT);
+        if (!response.ok()) {
+            LOGTW(CELLULAR, "%s failed: %s %s", RELEASE_VERSION.set, toString(response.result), response.error.c_str());
             return false;
         }
         // Answers OK, then resets straight away
@@ -731,6 +1020,8 @@ private:
 
     // Most commands answer well within this; the AT manual gives 300 ms to 5 s maximums
     static constexpr milliseconds DEFAULT_TIMEOUT = 5s;
+    // What checkSetting() reports when the module doesn't answer the query
+    static constexpr std::string_view UNREADABLE_SETTING = "?";
     // Maximum response times from the AT manual
     static constexpr milliseconds QENG_TIMEOUT = 15s;
     static constexpr milliseconds CFUN_TIMEOUT = 25s;
@@ -764,20 +1055,51 @@ private:
     static constexpr milliseconds WAKE_TIMEOUT = 300ms;
     static constexpr milliseconds WAKE_INITIAL_BACKOFF = 100ms;
     static constexpr milliseconds WAKE_MAX_BACKOFF = 1s;
+    // At about 2 KB/s, a command that holds the module this long lets its receive buffer fill
+    static constexpr milliseconds SLOW_COMMAND = 1s;
+    // How long a pause in pushed data may hold up the next request, a range of the update image
+    static constexpr milliseconds MAX_PUSH_PAUSE = 5s;
+    static constexpr milliseconds PUSH_PAUSE_GRACE = 500ms;
 
     const uart_port_t port;
+    std::atomic<uint32_t> uartErrors { 0 };
 
     // Keeps the ESP32 out of light sleep while a command is in flight
     PowerManagementLock noLightSleep { "cellular", ESP_PM_NO_LIGHT_SLEEP };
 
     // Keeps the wake sequence and the command that follows it together
     std::mutex commandMutex;
-    std::atomic<bool> commandInFlight { false };
-    std::atomic<size_t> urcBytesHandled { 0 };
+    const bool pushSocketData;
+    std::optional<PowerManagementLockGuard> awakeWhilePushing;
+    // Guards the state below, which holds back commands while a socket pushes data (see
+    // awaitPushPause())
+    std::mutex pushGateMutex;
+    std::condition_variable pushGate;
+    // While a socket in direct push mode is open
+    bool pushSocketOpen = false;
+    bool inPushPause = false;
+    int commandsHeldBack = 0;
+    int commandsInPause = 0;
+    // Whether data was pushed since the last send (see letHeldBackCommandsThrough())
+    std::atomic<bool> pushedSinceSend { false };
+    // The last command sent, for the log when another one had to wait for it; only touched with
+    // commandMutex held
+    std::string lastCommand;
 
+    // Guards the URC handlers, and the state below that splits the bytes from the module between
+    // commands and URCs (see send())
     std::mutex urcHandlerMutex;
     UrcHandler urcHandler;
     SocketEventHandler socketEventHandler;
+    bool commandInFlight = false;
+    // Whether the command in flight has its whole response
+    bool responseComplete = false;
+    std::string urcBufferPrefix;
+    // The buffer as of the latest chunk of the command in flight
+    std::optional<std::string> inFlightBuffer;
+    // A pushed URC carries up to a TCP segment as hex, about 3 KB
+    static constexpr size_t MAX_URC_LINE = 4096;
+    AtLineAssembler urcLines { MAX_URC_LINE };
 };
 
 }    // namespace cornucopia::ugly_duckling::kernel::drivers::cellular

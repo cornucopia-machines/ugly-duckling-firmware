@@ -8,7 +8,12 @@
 
 #include <array>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
+#include <initializer_list>
+#include <string>
+#include <string_view>
+#include <vector>
 
 using namespace cornucopia::ugly_duckling::kernel::drivers::cellular;
 using namespace std::chrono_literals;
@@ -56,6 +61,25 @@ TEST_CASE("parseAtResponse reports +CME ERROR with its text") {
     REQUIRE(response.has_value());
     REQUIRE(response->result == AtResult::CmeError);
     REQUIRE(response->error == "SIM not inserted");
+}
+
+TEST_CASE("parseAtResponse reports where the response ends, before a URC in the same read") {
+    std::string_view buffer = "\r\n+QIRD: 512,0,\"00\"\r\n\r\nOK\r\n\r\n+QIURC: \"recv\",0,512\r\n";
+    size_t consumed = 0;
+
+    auto response = parseAtResponse(buffer, "AT+QIRD=0,512", {}, &consumed);
+
+    REQUIRE(response.has_value());
+    REQUIRE(response->lines == std::vector<std::string> { "+QIRD: 512,0,\"00\"" });
+    REQUIRE(buffer.substr(consumed) == "\r\n+QIURC: \"recv\",0,512\r\n");
+}
+
+TEST_CASE("parseAtResponse consumes all of a response with nothing after it") {
+    std::string_view buffer = "\r\nOK\r\n";
+    size_t consumed = 0;
+
+    REQUIRE(parseAtResponse(buffer, "AT", {}, &consumed).has_value());
+    REQUIRE(consumed == buffer.size());
 }
 
 TEST_CASE("parseAtResponse with awaitAfterOk waits for the line after OK") {
@@ -296,6 +320,15 @@ TEST_CASE("parseQird reads data without the remaining length") {
     REQUIRE(read->hex == "3132");
 }
 
+TEST_CASE("parseQird keeps data whose remaining length is negative") {
+    auto read = parseQird("+QIRD: 2,-2,\"3132\"");
+
+    REQUIRE(read.has_value());
+    REQUIRE(read->length == 2);
+    REQUIRE_FALSE(read->remaining.has_value());
+    REQUIRE(read->hex == "3132");
+}
+
 TEST_CASE("parseQird reads an empty buffer") {
     auto read = parseQird("+QIRD: 0");
 
@@ -331,6 +364,64 @@ TEST_CASE("parseQiurc recognizes the socket URCs") {
 
     REQUIRE_FALSE(parseQiurc("+QIURC: \"incoming\",1,0").has_value());
     REQUIRE_FALSE(parseQiurc("+CEREG: 1").has_value());
+}
+
+TEST_CASE("parseQiurc reads data pushed in direct push mode") {
+    auto pushed = parseQiurc("+QIURC: \"recv\",0,3,\"16030A\"");
+    REQUIRE(pushed.has_value());
+    REQUIRE(pushed->type == SocketEventType::DataPushed);
+    REQUIRE(pushed->connectId == 0);
+    REQUIRE(pushed->length == 3);
+    REQUIRE(pushed->hex == "16030A");
+
+    auto withoutLength = parseQiurc("+QIURC: \"recv\",0,\"3132\"");
+    REQUIRE(withoutLength.has_value());
+    REQUIRE(withoutLength->type == SocketEventType::DataPushed);
+    REQUIRE_FALSE(withoutLength->length.has_value());
+    REQUIRE(withoutLength->hex == "3132");
+
+    REQUIRE_FALSE(parseQiurc("+QIURC: \"recv\",0,-3,\"16030A\"").has_value());
+}
+
+namespace {
+
+std::vector<std::string> feedLines(AtLineAssembler& assembler, std::initializer_list<std::string_view> chunks) {
+    std::vector<std::string> lines;
+    for (auto chunk : chunks) {
+        assembler.feed(chunk, [&](std::string_view line) {
+            lines.emplace_back(line);
+        });
+    }
+    return lines;
+}
+
+}    // namespace
+
+TEST_CASE("AtLineAssembler joins lines split across chunks") {
+    AtLineAssembler assembler(64);
+
+    auto lines = feedLines(assembler, { "\r\n+QIURC: \"recv\",0,2,\"31", "32\"\r\n\r\n+CSCON: 0\r", "\n" });
+
+    REQUIRE(lines == std::vector<std::string> { "+QIURC: \"recv\",0,2,\"3132\"", "+CSCON: 0" });
+    REQUIRE_FALSE(assembler.hasPending());
+}
+
+TEST_CASE("AtLineAssembler keeps an unfinished line pending") {
+    AtLineAssembler assembler(64);
+
+    auto lines = feedLines(assembler, { "\r\n+CEREG: 1\r\n+QIURC" });
+
+    REQUIRE(lines == std::vector<std::string> { "+CEREG: 1" });
+    REQUIRE(assembler.hasPending());
+}
+
+TEST_CASE("AtLineAssembler cuts off an overlong line and drops the rest of it") {
+    AtLineAssembler assembler(8);
+
+    auto lines = feedLines(assembler, { "0123456789", "ABC\r\nnext\r\n" });
+
+    REQUIRE(lines == std::vector<std::string> { "01234567", "next" });
+    REQUIRE(assembler.getOverlongCount() == 1);
 }
 
 TEST_CASE("parseModemTimestamp reads UTC timestamps") {

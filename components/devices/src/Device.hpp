@@ -9,6 +9,7 @@
 #define TOSTRING(x) STRINGIFY(x)
 
 #include <esp_app_desc.h>
+#include <esp_event.h>
 
 #include <chrono>
 #include <concepts>
@@ -71,6 +72,11 @@ static void startDevice() {
     // Install GPIO ISR service
     ESP_ERROR_CHECK(gpio_install_isr_service(0));
 
+    // The default event loop, on every link: WiFi needs it, and the HTTP client and HTTPS OTA
+    // post their events to it on the cellular link too, failing with ESP_ERR_INVALID_STATE
+    // without it
+    ESP_ERROR_CHECK(esp_event_loop_create_default());
+
 #ifdef CONFIG_HEAP_TRACING
     ESP_ERROR_CHECK(heap_trace_init_standalone(trace_record, NUM_RECORDS));
 #endif
@@ -126,8 +132,9 @@ static void startDevice() {
 
     // Skip BLE while a firmware update is pending: the OTA's TLS handshake needs the RAM on
     // ESP32-C6, and the device reboots after the update attempt either way
+    bool updatePending = HttpUpdater::isUpdatePending(legacyConfigNvs);
     std::shared_ptr<BleDriver> ble;
-    if (HttpUpdater::isUpdatePending(legacyConfigNvs)) {
+    if (updatePending) {
         LOGI("Firmware update pending, not starting BLE");
         ble = std::make_shared<BleDriver>();
     } else {
@@ -169,7 +176,7 @@ static void startDevice() {
         LOGD("No battery configured");
     }
 
-    auto connectivity = initConnectivity(states, networkConfig, ble, deviceDefinition->getCellularModemPins());
+    auto connectivity = initConnectivity(states, networkConfig, ble, deviceDefinition->getCellularModemPins(), updatePending);
 
 #ifdef UD_DEBUG_CONSOLE
     new DebugConsole(batteryManager,
@@ -180,10 +187,21 @@ static void startDevice() {
         ble);
 #endif
 
+    // Over the modem, a pending firmware update runs before MQTT is even started: the modem has a
+    // single socket, and the download needs it (docs/specs/NB-IoT.md, stage 5). So there are no
+    // MQTT logs during the update; its outcome is reported in BOOT and SYNC after the reboot. If
+    // an update is pending, this doesn't return
+    std::optional<RejectionCode> firmwareDownloadRejection;
+    if (connectivity.link == NetworkLink::Cellular) {
+        firmwareDownloadRejection = HttpUpdater::performPendingHttpUpdateIfNecessary(legacyConfigNvs,
+            { .ready = states->networkReady, .modemTransport = connectivity.modemTransport },
+            watchdog, firmwareVersion);
+    }
+
     // Init MQTT connection
     // TODO(legacy-v1-topics): remove fallback and the macAddress parameter
     auto clientId = "ugly-duckling-" + (networkConfig->id.get().empty() ? macAddress : networkConfig->id.get());
-    auto mqttRoot = initMqtt(states, clientId, networkConfig, states->mqttReady, connectivity.mqttTransport);
+    auto mqttRoot = initMqtt(states, clientId, networkConfig, states->mqttReady, connectivity.modemTransport);
     MqttLog::init(boot.deviceConfig->publishLogs.get(), bootCount, logRecords, mqttRoot);
     registerBasicCommands(mqttRoot);
     registerNvsCommands(mqttRoot);
@@ -209,17 +227,12 @@ static void startDevice() {
     // by the first SYNC this boot publishes.
     auto pendingFirmwareRejection = std::make_shared<std::optional<RejectionCode>>();
 
-    // No OTA over the modem yet (docs/specs/NB-IoT.md, stage 5): the downloader needs lwIP. The
-    // update handler rejects firmware entries instead of scheduling one
-    bool firmwareUpdatesSupported = connectivity.link == NetworkLink::WiFi;
-    std::optional<RejectionCode> firmwareDownloadRejection;
-    if (firmwareUpdatesSupported) {
+    registerHttpUpdateCommand(mqttRoot, legacyConfigNvs);
+    if (connectivity.link == NetworkLink::WiFi) {
         // Handle any pending HTTP update (reboots after the attempt, whether it succeeds or not)
-        registerHttpUpdateCommand(mqttRoot, legacyConfigNvs);
-        firmwareDownloadRejection = HttpUpdater::performPendingHttpUpdateIfNecessary(legacyConfigNvs, connectivity.wifi, states->mqttReady, watchdog, firmwareVersion);
-    } else {
-        // Scheduled over WiFi together with a switch to another link
-        firmwareDownloadRejection = HttpUpdater::discardPendingUpdate(legacyConfigNvs);
+        firmwareDownloadRejection = HttpUpdater::performPendingHttpUpdateIfNecessary(legacyConfigNvs,
+            { .ready = states->networkReady, .mqttReady = &states->mqttReady },
+            watchdog, firmwareVersion);
     }
 
     // Detect whether the bootloader rolled back from a failed OTA partition. This and a failed
@@ -247,7 +260,7 @@ static void startDevice() {
         deviceDefinition, boot.deviceConfig, boot.configNvs, shutdownManager,
         boot.deviceManifestEntry);
 
-    registerUpdateHandler(mqttRoot, boot.deviceManifestEntry.fingerprint, boot.networkManifestEntry.fingerprint, runtime.functionRegistry, boot.configStateStore, syncTriggerQueue, legacyConfigNvs, firmwareVersion, firmwareUpdatesSupported, pendingFirmwareRejection);
+    registerUpdateHandler(mqttRoot, boot.deviceManifestEntry.fingerprint, boot.networkManifestEntry.fingerprint, runtime.functionRegistry, boot.configStateStore, syncTriggerQueue, legacyConfigNvs, firmwareVersion, pendingFirmwareRejection);
     initSyncTask(mqttRoot, syncTriggerQueue, states, runtime.functionRegistry, runtime.deviceManifestEntry, boot.networkManifestEntry, pendingConfigRejection, pendingFirmwareRejection, firmwareVersion);
 
     // Booting a `requested` set is strict (docs/Configuration.md, "The confirmed/requested state

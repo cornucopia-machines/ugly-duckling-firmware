@@ -65,6 +65,9 @@ struct SocketRead {
  *
  * +QIRD: <actual_read_length>[,<remaining_length>],"<data>", or just "+QIRD: 0" when there is
  * nothing to read. Rejects a line whose hex doesn't match the length it claims.
+ *
+ * A negative remaining length counts as unknown: during a download the module answered
+ * +QIRD: 512,-512,"<data>" once, with all 512 bytes there, and dropping them broke the stream.
  */
 inline std::optional<SocketRead> parseQird(std::string_view line) {
     auto fields = parseAtFields(line, "+QIRD:");
@@ -75,9 +78,12 @@ inline std::optional<SocketRead> parseQird(std::string_view line) {
     if (!length || *length < 0) {
         return std::nullopt;
     }
+    auto remainingAt = [&](size_t index) -> std::optional<size_t> {
+        auto value = fields->size() > index ? (*fields)[index].asInt() : std::nullopt;
+        return value && *value >= 0 ? std::optional<size_t>(*value) : std::nullopt;
+    };
     if (*length == 0) {
-        auto remaining = fields->size() > 1 ? (*fields)[1].asInt() : std::nullopt;
-        return SocketRead { .length = 0, .remaining = remaining ? std::optional<size_t>(*remaining) : std::nullopt, .hex = {} };
+        return SocketRead { .length = 0, .remaining = remainingAt(1), .hex = {} };
     }
     // The data is always the last field: with showlength the remaining length sits in between
     if (fields->size() < 2 || fields->size() > 3) {
@@ -87,14 +93,7 @@ inline std::optional<SocketRead> parseQird(std::string_view line) {
     if (!hex || hex->size() != static_cast<size_t>(*length) * 2) {
         return std::nullopt;
     }
-    std::optional<size_t> remaining;
-    if (fields->size() == 3) {
-        auto value = (*fields)[1].asInt();
-        if (!value || *value < 0) {
-            return std::nullopt;
-        }
-        remaining = static_cast<size_t>(*value);
-    }
+    auto remaining = fields->size() == 3 ? remainingAt(1) : std::nullopt;
     return SocketRead { .length = static_cast<size_t>(*length), .remaining = remaining, .hex = *hex };
 }
 
@@ -115,19 +114,28 @@ enum class SocketEventType : uint8_t {
     DataAvailable,
     // The module's 2 KB receive buffer is full: read it before the peer is throttled
     BufferFull,
+    // Data received in direct push mode, carried by the URC itself (SocketEvent::hex)
+    DataPushed,
     // The peer, or the network, closed the connection
     Closed,
+    // Not a URC: data from the module was lost (a UART error, or a line that doesn't parse), which
+    // may have been socket data
+    DataLost,
 };
 
 struct SocketEvent {
     SocketEventType type;
     int connectId;
+    // DataPushed only: the data as hex digits, pointing into the parsed line
+    std::string_view hex;
+    // DataPushed only: the length the module gives for the data, if it does
+    std::optional<size_t> length;
 };
 
 /**
- * @brief Parses the socket URCs of buffer access mode:
- * +QIURC: "recv",<connectID>[,<current_recv_length>], +QIURC: "recv",<connectID>,"buff full"
- * and +QIURC: "closed",<connectID>.
+ * @brief Parses the socket URCs of buffer access mode, +QIURC: "recv",<connectID>[,<length>]
+ * and +QIURC: "recv",<connectID>,"buff full"; of direct push mode,
+ * +QIURC: "recv",<connectID>[,<length>],"<data>"; and +QIURC: "closed",<connectID>.
  */
 inline std::optional<SocketEvent> parseQiurc(std::string_view line) {
     auto fields = parseAtFields(line, "+QIURC:");
@@ -140,11 +148,29 @@ inline std::optional<SocketEvent> parseQiurc(std::string_view line) {
         return std::nullopt;
     }
     if (*type == "recv") {
-        bool full = fields->size() > 2 && (*fields)[2].asString() == "buff full";
-        return SocketEvent { .type = full ? SocketEventType::BufferFull : SocketEventType::DataAvailable, .connectId = *connectId };
+        // The data, or "buff full", is the only quoted field after the connection ID, and always
+        // the last one; a length on its own is a plain number
+        auto last = fields->size() > 2 && fields->back().isQuoted() ? fields->back().asString() : std::nullopt;
+        if (!last) {
+            return SocketEvent { .type = SocketEventType::DataAvailable, .connectId = *connectId, .hex = {}, .length = std::nullopt };
+        }
+        if (*last == "buff full") {
+            return SocketEvent { .type = SocketEventType::BufferFull, .connectId = *connectId, .hex = {}, .length = std::nullopt };
+        }
+        std::optional<size_t> length;
+        if (fields->size() == 4) {
+            auto value = (*fields)[2].asInt();
+            if (!value || *value < 0) {
+                return std::nullopt;
+            }
+            length = static_cast<size_t>(*value);
+        } else if (fields->size() != 3) {
+            return std::nullopt;
+        }
+        return SocketEvent { .type = SocketEventType::DataPushed, .connectId = *connectId, .hex = *last, .length = length };
     }
     if (*type == "closed") {
-        return SocketEvent { .type = SocketEventType::Closed, .connectId = *connectId };
+        return SocketEvent { .type = SocketEventType::Closed, .connectId = *connectId, .hex = {}, .length = std::nullopt };
     }
     return std::nullopt;
 }

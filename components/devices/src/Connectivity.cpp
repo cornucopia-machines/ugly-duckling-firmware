@@ -53,7 +53,7 @@ static void initWiFi(ConnectivityDrivers& drivers, const std::shared_ptr<ModuleS
 }
 
 #ifdef UD_PLATFORM_CARROT
-static void initCellular(ConnectivityDrivers& drivers, const std::shared_ptr<ModuleStates>& states, const std::shared_ptr<NetworkConfig>& networkConfig, const cellular::CellularModemPins& modemPins) {
+static void initCellular(ConnectivityDrivers& drivers, const std::shared_ptr<ModuleStates>& states, const std::shared_ptr<NetworkConfig>& networkConfig, const cellular::CellularModemPins& modemPins, bool updatePending) {
     // No lwIP to run SNTP over: the time comes from the modem
     auto rtc = std::make_shared<RtcDriver>(states->rtcInSync);
     drivers.rtc = rtc;
@@ -66,9 +66,13 @@ static void initCellular(ConnectivityDrivers& drivers, const std::shared_ptr<Mod
         states->networkReady,
         states->rtcInSync,
         ntpServer.empty() ? std::string(RtcDriver::DEFAULT_NTP_SERVER) : ntpServer,
-        [rtc](time_t utcTime, const char* source) { rtc->setTime(utcTime, source); });
+        [rtc](time_t utcTime, const char* source) { rtc->setTime(utcTime, source); },
+        // The download needs the modem awake, and its data pushed; the device reboots after it
+        // either way
+        !updatePending,
+        updatePending);
     drivers.cellular = cellular;
-    drivers.mqttTransport = cellular->getTransport();
+    drivers.modemTransport = cellular->getTransport();
 }
 #endif
 
@@ -76,7 +80,8 @@ ConnectivityDrivers initConnectivity(
     const std::shared_ptr<ModuleStates>& states,
     const std::shared_ptr<NetworkConfig>& networkConfig,
     const std::shared_ptr<BleDriver>& ble,
-    [[maybe_unused]] const std::optional<cellular::CellularModemPins>& modemPins) {
+    [[maybe_unused]] const std::optional<cellular::CellularModemPins>& modemPins,
+    [[maybe_unused]] bool updatePending) {
 #ifdef UD_PLATFORM_CARROT
     bool cellularAvailable = modemPins.has_value();
 #else
@@ -98,7 +103,7 @@ ConnectivityDrivers initConnectivity(
 #ifdef UD_PLATFORM_CARROT
             // chooseNetworkLink() only picks cellular when there are modem pins
             if (modemPins) {
-                initCellular(drivers, states, networkConfig, *modemPins);
+                initCellular(drivers, states, networkConfig, *modemPins, updatePending);
             }
 #endif
             break;

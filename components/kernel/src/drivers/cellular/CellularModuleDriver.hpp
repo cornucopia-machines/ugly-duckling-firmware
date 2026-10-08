@@ -22,7 +22,7 @@ namespace cornucopia::ugly_duckling::kernel::drivers::cellular {
 LOGGING_TAG(CELLULAR, "cellular")
 
 using UrcHandler = std::function<void(std::string_view line)>;
-using SocketEventHandler = std::function<void(SocketEventType type)>;
+using SocketEventHandler = std::function<void(const SocketEvent& event)>;
 
 /**
  * @brief What one read from the module's receive buffer returned.
@@ -31,6 +31,8 @@ struct SocketReceive {
     size_t length;
     // Whether the module still holds more data after this read
     bool more;
+    // How much data the module still holds, if it says
+    std::optional<size_t> remaining;
 };
 
 /**
@@ -63,8 +65,12 @@ public:
      * @brief Applies the settings the module does not keep across its own restarts.
      *
      * Called once the module answers after boot; safe to repeat.
+     *
+     * @param allowSleep whether the module may sleep between commands; false for a boot that
+     * downloads a firmware update, since the module doesn't announce received data promptly
+     * while sleep is enabled, and its receive buffer overflows
      */
-    virtual bool configure() = 0;
+    virtual bool configure(bool allowSleep) = 0;
 
     /**
      * @brief Keeps the module reachable while it sleeps: PSM off, and eDRX with the given cycle,
@@ -150,13 +156,27 @@ public:
      *
      * The module supports one connection at a time: the one MQTT runs over. Received data stays
      * in the module until read with receive(); a SocketEventType::DataAvailable event says when
-     * there is some.
+     * there is some. Unless pushesSocketData(): then it arrives in SocketEventType::DataPushed
+     * events instead.
      *
      * @param host an IP address or a hostname, which the module resolves itself
      */
     virtual bool openSocket(const std::string& host, int port) = 0;
 
     virtual void closeSocket() = 0;
+
+    /**
+     * @brief Whether the module hands over received data as soon as it arrives (direct push
+     * mode), instead of keeping it until receive() reads it.
+     *
+     * The module's receive buffer only holds about 2 KB, and while the ESP32 writes flash it
+     * can't read: every flash erase or write stops everything not in IRAM. During update
+     * downloads the buffer overflowed. Pushed data waits in the ESP32's UART buffer instead,
+     * which the UART interrupt keeps filling (CONFIG_UART_ISR_IN_IRAM). There's no flow control,
+     * though, and commands from elsewhere wait for a pause in the data, the next time we send,
+     * so it's only for downloads.
+     */
+    virtual bool pushesSocketData() const = 0;
 
     /**
      * @brief Sends at most getMaxSendSize() bytes.
@@ -175,9 +195,16 @@ public:
     virtual size_t getMaxReceiveSize() const = 0;
 
     /**
-     * @brief Registers the handler for socket events (data waiting, connection closed).
+     * @brief How many times the UART lost or garbled data from the module since boot: overflows
+     * and framing or parity errors.
+     */
+    virtual uint32_t getUartErrorCount() const = 0;
+
+    /**
+     * @brief Registers the handler for socket events (data waiting or pushed, connection closed).
      *
-     * Called from the UART's receive task: the handler must not send commands to the module.
+     * Called from the UART's receive task: the handler must not send commands to the module. The
+     * event's data is only valid during the call.
      */
     virtual void onSocketEvent(SocketEventHandler handler) = 0;
 };

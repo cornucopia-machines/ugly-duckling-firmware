@@ -28,8 +28,9 @@ graph BT
         direction BT
         BLE
         WiFi
-        NetworkConnected(["Network connected"])
-            style NetworkConnected stroke-width:4
+        NBIoT["NB-IoT"]
+        NetworkReady(["Network ready"])
+            style NetworkReady stroke-width:4
         NTP
         RTCInSync(["RTC in sync"])
             style RTCInSync stroke-width:4
@@ -38,11 +39,13 @@ graph BT
             style MQTTConnected stroke-width:4
         TelemetryManager["Telemetry Manager"]
 
-        NetworkConnected --> WiFi
-        MQTT -->|awaits| NetworkConnected
+        NetworkReady -->|one of| WiFi
+        NetworkReady -->|one of| NBIoT
+        MQTT -->|awaits| NetworkReady
         MQTTConnected --> MQTT
-        NTP -->|awaits| NetworkConnected
+        NTP -->|awaits| NetworkReady
         RTCInSync -.->|provided by| NTP
+        RTCInSync -.->|provided by| NBIoT
         RTCInSync -.->|provided by| BLE
         RTCInSync -.->|provided by| PreBoot{{"Wake from sleep"}}
         TelemetryManager -->|awaits| MQTTConnected
@@ -53,9 +56,9 @@ graph BT
 Key services:
 
 - **BLE** (`BleDriver`) — starts NimBLE unconditionally at boot; advertises the device and hosts the standard Device Information Service (DIS, UUID 0x180A). Future roles: provisioning and local-only (WiFi-free) operation.
-- **WiFi** — manages the station connection; publishes the `NetworkConnected` event.
-- **MQTT** — connects to the broker once the network is up; publishes `MQTTConnected`.
-- **NTP** — synchronizes the RTC after the network comes up. See [Time acquisition](#time-acquisition).
+- **Network link** — WiFi (`WiFiDriver`) or NB-IoT (`CellularDriver`), chosen at boot from network-config; either one sets the `networkReady` state (and `networkConnecting` while it gets there). See [Connectivity.md](Connectivity.md).
+- **MQTT** — connects to the broker once the network is up, over whichever link is in use; publishes `MQTTConnected`.
+- **NTP** — synchronizes the RTC after the network comes up, over WiFi; NB-IoT takes the time from the network (NITZ), or NTP through the modem. See [Time acquisition](#time-acquisition).
 - **TelemetryManager** — collects telemetry from registered providers and publishes it once MQTT and the RTC are both ready.
 - **PowerManager** / **BatteryManager** — optional battery monitoring and sleep management.
 - **NVS** / **Configuration** — persistent key-value store for device and network config.
