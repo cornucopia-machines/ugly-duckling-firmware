@@ -14,6 +14,7 @@
 #include <chrono>
 #include <concepts>
 #include <memory>
+#include <optional>
 #include <string>
 
 static const std::string firmwareVersion(esp_app_get_description()->version);
@@ -99,6 +100,12 @@ static void startDevice() {
     auto watchdog = initWatchdog(boot.deviceConfig->watchdogTimeout.get());
 
     auto powerManager = std::make_shared<PowerManager>(boot.deviceConfig->sleepWhenIdle.get());
+#ifdef UD_DEBUG
+    // Stay awake until the device has booted: light sleep powers down the USB Serial/JTAG PHY,
+    // which would cut off the boot log on the USB console
+    std::optional<PowerManagementLockGuard> bootSleepLock;
+    bootSleepLock.emplace(PowerManager::noLightSleep);
+#endif
 
     auto logRecords = std::make_shared<Queue<LogRecord>>("logs",
 #ifdef UD_DEBUG
@@ -332,6 +339,11 @@ static void startDevice() {
         modelWithRevision.c_str(),
         networkConfig->getHostname(macAddress).c_str(),
         duration_cast<seconds>(system_clock::now().time_since_epoch()).count());
+
+#ifdef UD_DEBUG
+    // Released explicitly, as vTaskDelete() below never runs destructors
+    bootSleepLock.reset();
+#endif
 
 #ifdef CONFIG_HEAP_TASK_TRACKING
     Task::loop("task-heaps", 4096, [](Task& task) {
