@@ -301,6 +301,7 @@ public:
             // Pushed data arrives whenever the network delivers it, and waking from light sleep
             // on UART edges loses the first bytes
             awakeWhilePushing.emplace(noLightSleep);
+            pushedSinceSend = false;
             setPushSocketOpen(true);
         }
         auto response = command(open, QIOPEN_TIMEOUT, "+QIOPEN:");
@@ -458,16 +459,20 @@ private:
     }
 
     /**
-     * @brief Lets the commands held back by awaitPushPause() through before sending.
+     * @brief Lets the commands held back by awaitPushPause() through before sending, if the peer
+     * has sent something since our last send.
      *
-     * When we send, the peer waits for us: everything it had to send for the previous request
-     * (a range of the update image) has arrived, and it sends nothing more until this request
-     * reaches it. So nothing is pushed until the send, and commands can run without data getting
-     * in between.
+     * In HTTP/1.1 and TLS, we only send once the peer's whole reply has arrived: the response to
+     * the request for the previous range of the update image, or the server's handshake flight.
+     * Then the peer waits for us, nothing is pushed until the send, and commands can run without
+     * data getting in between. Without a reply since our last send, the peer may still be
+     * sending: after the client's Finished, a TLS 1.3 server sends session tickets on its own, as
+     * the next request goes out.
      */
     void letHeldBackCommandsThrough() {
+        bool peerReplied = pushedSinceSend.exchange(false);
         std::unique_lock lock(pushGateMutex);
-        if (!pushSocketOpen || commandsHeldBack == 0) {
+        if (!pushSocketOpen || !peerReplied || commandsHeldBack == 0) {
             return;
         }
         inPushPause = true;
@@ -751,8 +756,13 @@ private:
      */
     void dispatchUrc(std::string_view line) {
         if (auto event = parseQiurc(line)) {
-            if (event->connectId == CONNECT_ID && socketEventHandler) {
-                socketEventHandler(*event);
+            if (event->connectId == CONNECT_ID) {
+                if (event->type == SocketEventType::DataPushed) {
+                    pushedSinceSend = true;
+                }
+                if (socketEventHandler) {
+                    socketEventHandler(*event);
+                }
             }
             return;
         }
@@ -1021,6 +1031,8 @@ private:
     bool inPushPause = false;
     int commandsHeldBack = 0;
     int commandsInPause = 0;
+    // Whether data was pushed since the last send (see letHeldBackCommandsThrough())
+    std::atomic<bool> pushedSinceSend { false };
     // The last command sent, for the log when another one had to wait for it; only touched with
     // commandMutex held
     std::string lastCommand;
