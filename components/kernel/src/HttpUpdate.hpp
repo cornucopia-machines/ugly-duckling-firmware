@@ -15,6 +15,7 @@
 #include <esp_heap_caps.h>
 #include <esp_http_client.h>
 #include <esp_https_ota.h>
+#include <esp_ota_ops.h>
 #include <esp_transport.h>
 
 #include <algorithm>
@@ -279,10 +280,32 @@ private:
                 written = static_cast<size_t>(length);
             }
             esp_https_ota_abort(handle);
+            if (isImageRejected(err)) {
+                LOGTE(UPDATE, "Image rejected (%s)", esp_err_to_name(err));
+                return err;
+            }
             LOGTW(UPDATE, "Download failed (%s)", esp_err_to_name(err));
             return ESP_ERR_HTTPS_OTA_IN_PROGRESS;
         }
         return esp_https_ota_finish(handle);
+    }
+
+    /**
+     * @brief Whether the image itself was refused, so downloading it again wouldn't help: it's not
+     * a valid image, not for this chip or flash mode, or doesn't fit the partition. A broken
+     * download comes back as ESP_FAIL.
+     */
+    static bool isImageRejected(esp_err_t err) {
+        switch (err) {
+            case ESP_ERR_OTA_VALIDATE_FAILED:
+            case ESP_ERR_OTA_SPI_MODE_MISMATCH:
+            case ESP_ERR_INVALID_SIZE:
+            case ESP_ERR_INVALID_VERSION:
+            case ESP_ERR_NOT_SUPPORTED:
+                return true;
+            default:
+                return false;
+        }
     }
 
     /**

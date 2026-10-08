@@ -385,7 +385,9 @@ exercise it. Progress is logged every 128 KB, against the image size.
 to flash. A TLS record that lost data fails its MAC check and never reaches the image, so
 everything written is good. It gives up after 3 attempts in a row that got no further. An HTTP
 error status is only final before anything has been written: once part of the image is in
-flash, an error on a later range counts as a broken-off download, and is retried like one. Each
+flash, an error on a later range counts as a broken-off download, and is retried like one. An
+image that's refused (not a valid image, not for this chip or flash mode, or too large for the
+partition) isn't downloaded again. Each
 attempt starts with its own `HEAD` request, so over NB-IoT a resume costs two TLS handshakes.
 Across a reboot, a download starts over.
 
