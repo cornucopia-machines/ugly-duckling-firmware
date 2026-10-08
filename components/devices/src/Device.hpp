@@ -102,9 +102,8 @@ static void startDevice() {
     auto powerManager = std::make_shared<PowerManager>(boot.deviceConfig->sleepWhenIdle.get());
 #ifdef UD_DEBUG
     // Stay awake until the device has booted: light sleep powers down the USB Serial/JTAG PHY,
-    // which would cut off the boot log on the USB console
-    std::optional<PowerManagementLockGuard> bootSleepLock;
-    bootSleepLock.emplace(PowerManager::noLightSleep);
+    // which would cut off the boot log on the USB console. Released when we return
+    PowerManagementLockGuard bootSleepLock(PowerManager::noLightSleep);
 #endif
 
     auto logRecords = std::make_shared<Queue<LogRecord>>("logs",
@@ -340,17 +339,10 @@ static void startDevice() {
         networkConfig->getHostname(macAddress).c_str(),
         duration_cast<seconds>(system_clock::now().time_since_epoch()).count());
 
-#ifdef UD_DEBUG
-    // Released explicitly, as vTaskDelete() below never runs destructors
-    bootSleepLock.reset();
-#endif
-
 #ifdef CONFIG_HEAP_TASK_TRACKING
     Task::loop("task-heaps", 4096, [](Task& task) {
         dumpPerTaskHeapInfo();
         Task::delay(ticks(5s));
     });
 #endif
-
-    vTaskDelete(nullptr);
 }
