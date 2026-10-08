@@ -131,10 +131,6 @@ private:
         PowerManagementLockGuard fullSpeed(cpuFrequencyMax);
         PowerManagementLock noLightSleep("update:awake", ESP_PM_NO_LIGHT_SLEEP);
         PowerManagementLockGuard awake(noLightSleep);
-        // For every TLS handshake until the restart, allocated while the heap is still unfragmented:
-        // besides esp_https_ota_begin(), fetching ranges reconnects for the next range whenever the
-        // server doesn't keep the connection alive
-        RamCertBundle ramCertBundle;
 
         bool overModem = network.modemTransport != nullptr;
 
@@ -153,6 +149,12 @@ private:
                 LOGTW(UPDATE, "MQTT not ready, updating without it");
             }
         }
+
+        // For every TLS handshake of the download: besides esp_https_ota_begin(), fetching ranges
+        // reconnects for the next range whenever the server doesn't keep the connection alive.
+        // Once per update rather than per attempt, as a failed attempt fragments the heap; and
+        // only after MQTT's own handshake, which needs the RAM as well
+        RamCertBundle ramCertBundle;
 
         // Over the modem, the HTTP client runs on its socket transport, with TLS on top for HTTPS.
         // Lives until the restart below, as the HTTP client only borrows it
