@@ -129,6 +129,10 @@ private:
         PowerManagementLockGuard fullSpeed(cpuFrequencyMax);
         PowerManagementLock noLightSleep("update:awake", ESP_PM_NO_LIGHT_SLEEP);
         PowerManagementLockGuard awake(noLightSleep);
+        // For every TLS handshake until the restart, allocated while the heap is still unfragmented:
+        // besides esp_https_ota_begin(), fetching ranges reconnects for the next range whenever the
+        // server doesn't keep the connection alive
+        RamCertBundle ramCertBundle;
 
         bool overModem = network.modemTransport != nullptr;
 
@@ -233,12 +237,7 @@ private:
     }
 
     /**
-     * @brief Equivalent of esp_https_ota(), with the CA bundle in RAM (RamCertBundle) for the
-     * whole attempt.
-     *
-     * TLS handshakes happen in esp_https_ota_begin(), which also follows redirects, but also in
-     * esp_https_ota_perform(): fetching ranges, it opens a new connection for the next range
-     * whenever the server doesn't keep the last one alive.
+     * @brief Equivalent of esp_https_ota().
      *
      * @param written how much of the image is in flash, updated when the download breaks off
      * @return ESP_ERR_HTTPS_OTA_IN_PROGRESS when the download broke off and can be resumed
@@ -249,7 +248,6 @@ private:
         // again; count from where this attempt picks up
         downloaded = written;
         imageSize = 0;
-        RamCertBundle ramCertBundle;
         esp_https_ota_handle_t handle = nullptr;
         esp_err_t err = esp_https_ota_begin(&otaConfig, &handle);
         if (err != ESP_OK) {
