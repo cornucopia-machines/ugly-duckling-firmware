@@ -121,9 +121,10 @@ private:
         // rejection on the next boot so the server stops retrying.
         nvs->set(UPDATE_FAILED_KEY, url);
 
-        // Full speed and no light sleep until the restart: over the modem, the data has to be read
-        // out of its 2 KB receive buffer as fast as it arrives, or it's lost, and at the lowest
-        // CPU frequency, decrypting and decoding it is slower. Nothing else runs during the update
+        // Full speed and no light sleep until the restart: over the modem, pushed data has to be
+        // taken from the UART as fast as it arrives, as there's no flow control, and waking from
+        // light sleep on UART edges loses the first bytes; at the lowest CPU frequency, decrypting
+        // and decoding it is slower too. Nothing else runs during the update
         PowerManagementLock cpuFrequencyMax("update:cpu", ESP_PM_CPU_FREQ_MAX);
         PowerManagementLockGuard fullSpeed(cpuFrequencyMax);
         PowerManagementLock noLightSleep("update:awake", ESP_PM_NO_LIGHT_SLEEP);
@@ -199,10 +200,10 @@ private:
      * @brief Downloads and installs the image, picking up where it left off when the download
      * breaks.
      *
-     * Over the modem, received data is lost whenever its 2 KB buffer overflows, and the TLS
-     * record it belonged to fails to verify (docs/specs/NB-IoT.md, "`QISEND` / `QIRD` size
-     * limits"). Records that fail never reach the image, so everything written so far is good,
-     * and a fresh connection asks for the rest with a Range request. If the server ignores the
+     * Over the modem, received data can be lost: pushed data has no flow control, so a full
+     * queue or a UART overflow leaves a gap, and the TLS record it belonged to fails to verify
+     * (docs/Connectivity.md, "Sockets"). Records that fail never reach the image, so everything
+     * written so far is good, and a fresh connection asks for the rest with a Range request. If the server ignores the
      * Range, esp_https_ota starts over from the beginning. Gives up after a few attempts in a
      * row that didn't get any further.
      */

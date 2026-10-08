@@ -36,11 +36,14 @@ graph TB
     end
 
     MQTT --> ESPTLS --> LWIP --> WIFI
-    OTA --> ESPTLS
+    OTA -->|https| ESPTLS
     MQTT --> TLS --> SOCK --> BC --> UART
-    OTA --> TLS
+    OTA -->|https| TLS
     CELL -->|owns| BC
 ```
+
+TLS follows the URL's scheme on both links: an `http://` firmware URL is fetched unencrypted, with
+no certificate check.
 
 | | WiFi | NB-IoT |
 | --- | --- | --- |
@@ -240,8 +243,9 @@ the HTTP client accept it in place of lwIP. The module driver has a single conne
     awake, since it stays awake for 10 s after UART activity.
   - **Direct push mode** (update boots): the module sends every received segment straight away as
     `+QIURC: "recv",0,<len>,"<hex>"`. The transport decodes it into a 16 KB queue, which reads
-    take from. There's no flow control: if the queue fills, or a URC doesn't decode, the next read
-    fails and the connection breaks.
+    take from. There's no flow control: if the queue fills, a URC doesn't decode, or the UART has
+    had an error since connecting (it can cut a pushed URC so that it no longer parses as one),
+    the next read fails and the connection breaks.
 - **Closing**: `AT+QICLOSE`. `+QIURC: "closed"` means the peer or the network closed it; the module
   can't tell which.
 
@@ -252,13 +256,18 @@ esp_modem keeps a line buffer that it only empties when a command returns. So `B
 data arriving outside a command chunk by chunk, and drops each chunk from that buffer once it has
 split it into lines (`AtLineAssembler`). A line cut off at the end of a chunk waits for the rest.
 URCs that arrive in the middle of a command's response, or after its final result code in the
-same read, go to the URC handler too. A pushed URC is about 3 KB, more than esp_modem's buffer
-holds; update boots raise the buffer to 8 KB and the UART driver's receive buffer to 16 KB.
+same read, go to the URC handler too. Outside commands, nothing else would ever empty the
+buffer: a stream of pushed URCs, about 3 KB each, would fill it within a few, and esp_modem then
+stops reading. Update boots raise the buffer from 2 KB to 8 KB, so that the pushed URCs arriving
+while a command waits for its response fit, and the UART driver's receive buffer to 16 KB.
 
 While a push socket is open, AT commands from outside the socket code (the network monitor) are
-held back, since their response could land in the middle of a pushed URC. They run in the pause
-before the next request goes out, when the server has nothing more to send (see
-[Firmware updates](#firmware-updates)).
+held back, since their response could land in the middle of a pushed URC. They run in a pause
+before we send, but only if the peer has sent something since our last send: in HTTP/1.1 and TLS,
+we only send once the peer's whole reply has arrived, and the peer then waits for us. That's the
+case before each range request (see [Firmware updates](#firmware-updates)), but not, for example,
+for the request right after a TLS 1.3 handshake, when the server may still be sending session
+tickets.
 
 The transport logs a summary when each connection closes:
 
@@ -365,7 +374,7 @@ started.
 (`CONFIG_ESP_HTTPS_OTA_ENABLE_PARTIAL_DOWNLOAD`):
 
 1. `esp_https_ota` asks for the image size with a `HEAD` request, on a connection of its own.
-   Over NB-IoT, that's one extra TLS handshake of about 5 s.
+   Over NB-IoT, that's an extra TLS handshake of about 5 s, on every attempt.
 2. It requests one range at a time, on the same connection.
 
 Over NB-IoT, the pause before each request is when the commands held back by push mode run, for
@@ -375,10 +384,14 @@ exercise it. Progress is logged every 128 KB, against the image size.
 **Resuming.** A download that breaks off is resumed in the same boot, after 2 s, from what made it
 to flash. A TLS record that lost data fails its MAC check and never reaches the image, so
 everything written is good. It gives up after 3 attempts in a row that got no further. An HTTP
-error status isn't retried. Across a reboot, a download starts over.
+error status is only final before anything has been written: once part of the image is in
+flash, an error on a later range counts as a broken-off download, and is retried like one. Each
+attempt starts with its own `HEAD` request, so over NB-IoT a resume costs two TLS handshakes.
+Across a reboot, a download starts over.
 
-The CA bundle is copied to internal RAM for the TLS handshakes in `esp_https_ota_begin()`
-(`RamCertBundle`, a workaround for an ESP32-C6 erratum), and freed before the download. The task
+The CA bundle is copied to internal RAM for the whole attempt (`RamCertBundle`, about 16 KB, a
+workaround for an ESP32-C6 erratum until IDF v6.1.1): besides `esp_https_ota_begin()`, a new
+connection for the next range needs it whenever the server doesn't keep the last one alive. The task
 watchdog is fed with every chunk received.
 
 ## Known gaps
