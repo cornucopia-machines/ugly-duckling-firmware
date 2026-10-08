@@ -18,6 +18,7 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <ctime>
 #include <initializer_list>
 #include <iterator>
@@ -181,8 +182,14 @@ public:
     }
 
     AtResponse command(const std::string& command, milliseconds timeout) override {
-        waitWhilePushing(command);
-        return this->command(command, timeout, std::string_view {});
+        bool inPause = awaitPushPause(command);
+        auto response = this->command(command, timeout, std::string_view {});
+        if (inPause) {
+            std::scoped_lock lock(pushGateMutex);
+            commandsInPause--;
+            pushGate.notify_all();
+        }
+        return response;
     }
 
     void onUrc(UrcHandler handler) override {
@@ -294,7 +301,7 @@ public:
             // Pushed data arrives whenever the network delivers it, and waking from light sleep
             // on UART edges loses the first bytes
             awakeWhilePushing.emplace(noLightSleep);
-            pushSocketOpen = true;
+            setPushSocketOpen(true);
         }
         auto response = command(open, QIOPEN_TIMEOUT, "+QIOPEN:");
         if (!response.ok() || response.lines.empty()) {
@@ -316,7 +323,7 @@ public:
     void closeSocket() override {
         // Answers ERROR when the connection is already closed, which is fine
         command("AT+QICLOSE=" + std::to_string(CONNECT_ID), QICLOSE_TIMEOUT, "CLOSE OK");
-        pushSocketOpen = false;
+        setPushSocketOpen(false);
         awakeWhilePushing.reset();
     }
 
@@ -325,6 +332,7 @@ public:
     }
 
     bool send(const uint8_t* data, size_t length) override {
+        letHeldBackCommandsThrough();
         auto sendCommand = "AT+QISEND=" + std::to_string(CONNECT_ID) + "," + std::to_string(length) + ",\"" + toHex(data, length) + "\"";
         for (int attempt = 1; attempt <= SEND_ATTEMPTS; attempt++) {
             auto response = command(sendCommand, QISEND_TIMEOUT, "SEND ");
@@ -411,22 +419,74 @@ private:
         PersistedSetting { .query = "AT+CTZR?", .expected = "+CTZR: 3", .set = "AT+CTZR=3" },
     };
 
+    void setPushSocketOpen(bool open) {
+        std::scoped_lock lock(pushGateMutex);
+        pushSocketOpen = open;
+        pushGate.notify_all();
+    }
+
     /**
-     * @brief Holds back a command from outside the socket code while a socket pushes data.
+     * @brief Holds back a command from outside the socket code while a socket pushes data, until
+     * a pause in it (see letHeldBackCommandsThrough()) or until the socket closes.
      *
      * Pushed data can arrive at any moment, and a command's response would interleave with it:
      * a URC cut off by the command's response can't be put back together. Socket commands go
      * through anyway, at points where the peer waits for us (sending a request, closing).
      * Only used for downloading updates, after which the device restarts.
+     *
+     * @return whether the command runs in a pause, and has to be counted off when it's done
      */
-    void waitWhilePushing(const std::string& command) {
+    bool awaitPushPause(const std::string& command) {
+        std::unique_lock lock(pushGateMutex);
         if (!pushSocketOpen) {
+            return false;
+        }
+        if (!inPushPause) {
+            LOGTD(CELLULAR, "%s waits for a pause in the data pushed", command.c_str());
+            commandsHeldBack++;
+            pushGate.wait(lock, [this] {
+                return !pushSocketOpen || inPushPause;
+            });
+            commandsHeldBack--;
+            if (!pushSocketOpen) {
+                return false;
+            }
+        }
+        commandsInPause++;
+        pushGate.notify_all();
+        return true;
+    }
+
+    /**
+     * @brief Lets the commands held back by awaitPushPause() through before sending.
+     *
+     * When we send, the peer waits for us: everything it had to send for the previous request
+     * (a range of the update image) has arrived, and it sends nothing more until this request
+     * reaches it. So nothing is pushed until the send, and commands can run without data getting
+     * in between.
+     */
+    void letHeldBackCommandsThrough() {
+        std::unique_lock lock(pushGateMutex);
+        if (!pushSocketOpen || commandsHeldBack == 0) {
             return;
         }
-        LOGTD(CELLULAR, "%s waits until the connection pushing data closes", command.c_str());
-        while (pushSocketOpen) {
-            Task::delay(PUSH_WAIT_POLL);
+        inPushPause = true;
+        pushGate.notify_all();
+        auto deadline = steady_clock::now() + MAX_PUSH_PAUSE;
+        auto idle = [this] {
+            return commandsHeldBack == 0 && commandsInPause == 0;
+        };
+        while (pushGate.wait_until(lock, deadline, idle)) {
+            // A task tends to send a few commands in a row; give the next one a moment to come
+            if (!pushGate.wait_for(lock, PUSH_PAUSE_GRACE, [&] { return !idle(); })) {
+                break;
+            }
         }
+        // Commands let through already finish before the send
+        inPushPause = false;
+        pushGate.wait(lock, [this] {
+            return commandsInPause == 0;
+        });
     }
 
     /**
@@ -938,7 +998,9 @@ private:
     static constexpr milliseconds WAKE_MAX_BACKOFF = 1s;
     // At about 2 KB/s, a command that holds the module this long lets its receive buffer fill
     static constexpr milliseconds SLOW_COMMAND = 1s;
-    static constexpr milliseconds PUSH_WAIT_POLL = 1s;
+    // How long a pause in pushed data may hold up the next request, a range of the update image
+    static constexpr milliseconds MAX_PUSH_PAUSE = 5s;
+    static constexpr milliseconds PUSH_PAUSE_GRACE = 500ms;
 
     const uart_port_t port;
     std::atomic<uint32_t> uartErrors { 0 };
@@ -949,9 +1011,16 @@ private:
     // Keeps the wake sequence and the command that follows it together
     std::mutex commandMutex;
     const bool pushSocketData;
-    // While a socket in direct push mode is open
-    std::atomic<bool> pushSocketOpen { false };
     std::optional<PowerManagementLockGuard> awakeWhilePushing;
+    // Guards the state below, which holds back commands while a socket pushes data (see
+    // awaitPushPause())
+    std::mutex pushGateMutex;
+    std::condition_variable pushGate;
+    // While a socket in direct push mode is open
+    bool pushSocketOpen = false;
+    bool inPushPause = false;
+    int commandsHeldBack = 0;
+    int commandsInPause = 0;
     // The last command sent, for the log when another one had to wait for it; only touched with
     // commandMutex held
     std::string lastCommand;

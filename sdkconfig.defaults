@@ -145,6 +145,10 @@ CONFIG_MQTT_REPORT_DELETED_MESSAGES=y
 # modem's AT sockets, which lwIP can't reach (docs/specs/NB-IoT.md, stage 5)
 CONFIG_ESP_HTTP_CLIENT_ENABLE_CUSTOM_TRANSPORT=y
 
+# Fetch the update image in ranges over one connection (HttpUpdate.hpp): over the modem, the
+# commands held back while it pushes the image get through in between. WiFi takes the same path
+CONFIG_ESP_HTTPS_OTA_ENABLE_PARTIAL_DOWNLOAD=y
+
 # We don't need TLS server functionality
 CONFIG_MBEDTLS_TLS_CLIENT_ONLY=y
 

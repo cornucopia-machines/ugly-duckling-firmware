@@ -173,8 +173,8 @@ public:
      * can't read: every flash erase or write stops everything not in IRAM. During update
      * downloads the buffer overflowed. Pushed data waits in the ESP32's UART buffer instead,
      * which the UART interrupt keeps filling (CONFIG_UART_ISR_IN_IRAM). There's no flow control,
-     * though, and commands from elsewhere wait until the connection closes, so it's only for
-     * downloads.
+     * though, and commands from elsewhere wait for a pause in the data, the next time we send,
+     * so it's only for downloads.
      */
     virtual bool pushesSocketData() const = 0;
 

@@ -17,11 +17,16 @@
 #include <esp_https_ota.h>
 #include <esp_transport.h>
 
+#include <algorithm>
 #include <chrono>
 #include <memory>
 #include <optional>
 #include <string>
 #include <utility>
+
+#ifndef CONFIG_ESP_HTTPS_OTA_ENABLE_PARTIAL_DOWNLOAD
+#error "HttpUpdate fetches the image in ranges: set CONFIG_ESP_HTTPS_OTA_ENABLE_PARTIAL_DOWNLOAD=y"
+#endif
 
 namespace cornucopia::ugly_duckling::kernel {
 
@@ -174,6 +179,11 @@ private:
 
         esp_https_ota_config_t otaConfig = {};
         otaConfig.http_config = &httpConfig;
+        // In ranges over one connection. While the modem pushes the image, nothing else can talk
+        // to it; between ranges, the commands held back meanwhile get through. WiFi doesn't need
+        // it, but takes the same path, so bench updates over WiFi exercise it too
+        otaConfig.partial_http_download = true;
+        otaConfig.max_http_request_size = overModem ? MODEM_HTTP_RANGE_SIZE : WIFI_HTTP_RANGE_SIZE;
 
         esp_err_t ret = runOta(otaConfig);
         if (ret == ESP_OK) {
@@ -234,6 +244,10 @@ private:
      */
     esp_err_t attemptOta(const esp_https_ota_config_t& otaConfig, size_t& written) {
         statusCode = 0;
+        // What a broken-off attempt received beyond the last record that made it to flash comes
+        // again; count from where this attempt picks up
+        downloaded = written;
+        imageSize = 0;
         esp_https_ota_handle_t handle = nullptr;
         esp_err_t err;
         {
@@ -251,6 +265,7 @@ private:
         if (handle == nullptr) {
             return ESP_FAIL;
         }
+        imageSize = getImageSize(handle);
 
         err = esp_https_ota_perform(handle);
         while (err == ESP_ERR_HTTPS_OTA_IN_PROGRESS) {
@@ -268,6 +283,15 @@ private:
             return ESP_ERR_HTTPS_OTA_IN_PROGRESS;
         }
         return esp_https_ota_finish(handle);
+    }
+
+    /**
+     * @return the size of the whole image, 0 if unknown
+     */
+    static size_t getImageSize(esp_https_ota_handle_t handle) {
+        // Fetching ranges, esp_https_ota asks for the size of the whole image up front
+        int size = esp_https_ota_get_image_size(handle);
+        return size > 0 ? static_cast<size_t>(size) : 0;
     }
 
     static esp_err_t httpEventHandler(esp_http_client_event_t* event) {
@@ -305,7 +329,12 @@ private:
                 downloaded += static_cast<size_t>(event->data_len);
                 auto afterBatch = downloaded / DOWNLOAD_NOTIFICATION_BATCH;
                 if (beforeBatch < afterBatch) {
-                    LOGTI(UPDATE, "Downloaded %zu kB", downloaded / 1024);
+                    if (imageSize > 0) {
+                        LOGTI(UPDATE, "Downloaded %zu kB of %zu kB (%zu%%)", downloaded / 1024, imageSize / 1024,
+                            std::min<size_t>(downloaded * 100 / imageSize, 100));
+                    } else {
+                        LOGTI(UPDATE, "Downloaded %zu kB", downloaded / 1024);
+                    }
                 }
                 break;
             }
@@ -326,6 +355,8 @@ private:
     const std::shared_ptr<Watchdog> watchdog;
     const std::string firmwareVersion;
     size_t downloaded = 0;
+    // The size of the image being downloaded, 0 if unknown
+    size_t imageSize = 0;
     // Of the current attempt's response; 0 until one arrives
     int statusCode = 0;
 
@@ -336,6 +367,10 @@ private:
     static constexpr std::chrono::milliseconds MODEM_NETWORK_READY_TIMEOUT = std::chrono::minutes(5);
     // The same as MQTT's network timeout over the modem
     static constexpr std::chrono::milliseconds MODEM_HTTP_TIMEOUT = std::chrono::seconds(30);
+    // About 30 s at NB-IoT rates; each range costs a round trip more
+    static constexpr int MODEM_HTTP_RANGE_SIZE = 64 * 1024;
+    // A fraction of a second over WiFi, much longer than a round trip
+    static constexpr int WIFI_HTTP_RANGE_SIZE = 256 * 1024;
     // A download that breaks off is resumed, unless this many attempts in a row got no further
     static constexpr int MAX_ATTEMPTS_WITHOUT_PROGRESS = 3;
     static constexpr std::chrono::milliseconds RETRY_DELAY = std::chrono::seconds(2);
