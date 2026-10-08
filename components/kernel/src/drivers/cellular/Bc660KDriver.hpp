@@ -78,11 +78,17 @@ public:
             return processUrcData(std::string_view(reinterpret_cast<const char*>(data), len));
         });
         // On an overflow, esp_modem flushes everything the UART has buffered, which can take the
-        // rest of an AT+QIRD response with it. It logs these under uart_terminal, which is turned
-        // down to ERROR to keep out its warnings about light-sleep wakeups
+        // rest of an AT+QIRD response with it, or part of a pushed URC: what's left of that no
+        // longer parses as one, so only this tells the socket about the gap. esp_modem logs these
+        // under uart_terminal, which is turned down to ERROR to keep out its warnings about
+        // light-sleep wakeups
         dte->set_error_cb([this](esp_modem::terminal_error error) {
             uartErrors++;
             LOGTW(CELLULAR, "UART error from the modem: %s", describe(error));
+            std::scoped_lock lock(urcHandlerMutex);
+            if (socketEventHandler) {
+                socketEventHandler(SocketEvent { .type = SocketEventType::UartDataLost, .connectId = CONNECT_ID, .hex = {}, .length = std::nullopt });
+            }
         });
     }
 

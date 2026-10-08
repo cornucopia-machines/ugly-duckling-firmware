@@ -118,6 +118,8 @@ enum class SocketEventType : uint8_t {
     DataPushed,
     // The peer, or the network, closed the connection
     Closed,
+    // Not a URC: the UART lost data from the module, which may have been socket data
+    UartDataLost,
 };
 
 struct SocketEvent {

@@ -205,7 +205,6 @@ private:
         while (true) {
             auto left = duration_cast<milliseconds>(deadline - steady_clock::now());
             if (!pushed.empty()) {
-                checkPushedAfterUartErrors();
                 if (takePushed()) {
                     return 1;
                 }
@@ -391,22 +390,16 @@ private:
     }
 
     /**
-     * @brief Counts pushed data as lost once the UART has had an error since connecting.
-     *
-     * On an overflow, esp_modem flushes the UART's buffers, which can take part of a pushed URC
-     * with it: what's left no longer parses as one, and goes to the URC handler as an
-     * unrecognized line, so queuePushed() never sees the gap.
+     * @brief Breaks the connection after the UART lost data while pushes are coming in: a pushed
+     * URC cut by it no longer parses as one, so queuePushed() never sees the gap.
      */
-    void checkPushedAfterUartErrors() {
-        auto errors = module->getUartErrorCount() - uartErrorsAtConnect;
-        if (errors == 0 || pushBroken) {
+    void onUartDataLost() {
+        std::scoped_lock lock(pushMutex);
+        if (pushed.empty() || !acceptingPushes || pushBroken) {
             return;
         }
-        std::scoped_lock lock(pushMutex);
-        if (!pushBroken) {
-            LOGTW(CELLULAR, "Pushed data may be lost: %" PRIu32 " UART errors since connecting", errors);
-            pushBroken = true;
-        }
+        LOGTW(CELLULAR, "Pushed data may be lost: UART error");
+        pushBroken = true;
     }
 
     void stopAcceptingPushes() {
@@ -516,6 +509,9 @@ private:
             case SocketEventType::Closed:
                 LOGTI(CELLULAR, "Connection closed by the peer or the network");
                 closedByPeer = true;
+                break;
+            case SocketEventType::UartDataLost:
+                onUartDataLost();
                 break;
         }
         xSemaphoreGive(dataSignal);
