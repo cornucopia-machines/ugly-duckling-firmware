@@ -86,9 +86,7 @@ public:
             uartErrors++;
             LOGTW(CELLULAR, "UART error from the modem: %s", describe(error));
             std::scoped_lock lock(urcHandlerMutex);
-            if (socketEventHandler) {
-                socketEventHandler(SocketEvent { .type = SocketEventType::UartDataLost, .connectId = CONNECT_ID, .hex = {}, .length = std::nullopt });
-            }
+            reportDataLost();
         });
     }
 
@@ -718,6 +716,9 @@ private:
             if (responseComplete) {
                 urcBufferPrefix.clear();
             } else if (inFlightBuffer) {
+                // The command timed out, but what arrived meanwhile can still hold URCs, data
+                // pushed among them; dropping it would leave a gap nothing notices
+                feedUrcData(std::string_view(*inFlightBuffer).substr(std::min(alreadyHandled, inFlightBuffer->size())));
                 urcBufferPrefix = std::move(*inFlightBuffer);
             }
             inFlightBuffer.reset();
@@ -761,7 +762,16 @@ private:
      * @brief Handles socket URCs here, passes everything else on. Call with urcHandlerMutex held.
      */
     void dispatchUrc(std::string_view line) {
-        if (auto event = parseQiurc(line)) {
+        auto event = parseQiurc(line);
+        // A data URC that doesn't parse was garbled, and its data is lost
+        static constexpr std::string_view RECV_PREFIX = R"(+QIURC: "recv")";
+        if (!event && line.starts_with(RECV_PREFIX)) {
+            // %.*s takes the length, so the view needn't be NUL-terminated
+            LOGTW(CELLULAR, "Malformed data URC from the modem: '%.*s...'", static_cast<int>(std::min<size_t>(line.size(), 40)), line.data());    // NOLINT(bugprone-suspicious-stringview-data-usage)
+            reportDataLost();
+            return;
+        }
+        if (event) {
             if (event->connectId == CONNECT_ID) {
                 if (event->type == SocketEventType::DataPushed) {
                     pushedSinceSend = true;
@@ -787,6 +797,18 @@ private:
         });
         if (urcLines.getOverlongCount() != overlong) {
             LOGTW(CELLULAR, "Dropped the rest of a line from the modem longer than %zu bytes", MAX_URC_LINE);
+            // It may have been pushed data
+            reportDataLost();
+        }
+    }
+
+    /**
+     * @brief Tells the socket that data from the module may have been lost: in direct push mode,
+     * nothing else would notice the gap. Call with urcHandlerMutex held.
+     */
+    void reportDataLost() {
+        if (socketEventHandler) {
+            socketEventHandler(SocketEvent { .type = SocketEventType::DataLost, .connectId = CONNECT_ID, .hex = {}, .length = std::nullopt });
         }
     }
 

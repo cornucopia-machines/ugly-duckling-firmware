@@ -366,9 +366,10 @@ private:
             return;
         }
         size_t length = event.hex.size() / 2;
-        if ((event.length && *event.length != length) || pushedLength + length > pushed.size()) {
+        bool mismatch = event.hex.size() % 2 != 0 || (event.length && *event.length != length);
+        if (mismatch || pushedLength + length > pushed.size()) {
             LOGTW(CELLULAR, "Lost %zu pushed bytes (%zu queued): %s", length, pushedLength,
-                pushedLength + length > pushed.size() ? "the queue is full" : "length mismatch");
+                mismatch ? "length mismatch" : "the queue is full");
             pushBroken = true;
             return;
         }
@@ -390,15 +391,16 @@ private:
     }
 
     /**
-     * @brief Breaks the connection after the UART lost data while pushes are coming in: a pushed
-     * URC cut by it no longer parses as one, so queuePushed() never sees the gap.
+     * @brief Breaks the connection after data from the module was lost while pushes are coming
+     * in: the driver noticed (a UART error, or a line that doesn't parse), but queuePushed() never
+     * saw the gap.
      */
-    void onUartDataLost() {
+    void onDataLost() {
         std::scoped_lock lock(pushMutex);
         if (pushed.empty() || !acceptingPushes || pushBroken) {
             return;
         }
-        LOGTW(CELLULAR, "Pushed data may be lost: UART error");
+        LOGTW(CELLULAR, "Pushed data may be lost");
         pushBroken = true;
     }
 
@@ -510,8 +512,8 @@ private:
                 LOGTI(CELLULAR, "Connection closed by the peer or the network");
                 closedByPeer = true;
                 break;
-            case SocketEventType::UartDataLost:
-                onUartDataLost();
+            case SocketEventType::DataLost:
+                onDataLost();
                 break;
         }
         xSemaphoreGive(dataSignal);
