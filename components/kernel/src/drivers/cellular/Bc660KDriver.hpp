@@ -265,7 +265,8 @@ public:
         auto response = command("AT+QIDNSCFG=0", DEFAULT_TIMEOUT);
         auto fields = response.ok() ? findFields(response, "+QIDNSCFG:") : std::nullopt;
         auto primary = fields && fields->size() > 1 ? (*fields)[1].asString() : std::nullopt;
-        if (primary && *primary != "0.0.0.0") {
+        // "No server" reads as either "0.0.0.0" or an empty string, depending on the network
+        if (primary && !primary->empty() && *primary != "0.0.0.0") {
             LOGTD(CELLULAR, "DNS: %s", response.lines.front().c_str());
             return true;
         }
