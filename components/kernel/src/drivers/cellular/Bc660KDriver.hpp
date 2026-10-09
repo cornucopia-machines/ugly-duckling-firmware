@@ -609,7 +609,7 @@ private:
         for (int attempt = 1; attempt <= WAKE_ATTEMPTS; attempt++) {
             if (send("AT", WAKE_TIMEOUT).ok()) {
                 if (attempt > 1) {
-                    LOGTD(CELLULAR, "%s answered after %d attempts", getName(), attempt);
+                    LOGTV(CELLULAR, "%s answered after %d attempts", getName(), attempt);
                 }
                 return true;
             }
@@ -638,7 +638,7 @@ private:
                 send("", PROBE_FLUSH_TIMEOUT);
                 if (send("AT", WAKE_TIMEOUT).ok()) {
                     if (attempt > 1) {
-                        LOGTD(CELLULAR, "%s answered after %d attempts", getName(), attempt);
+                        LOGTV(CELLULAR, "%s answered after %d attempts", getName(), attempt);
                     }
                     return rate;
                 }
