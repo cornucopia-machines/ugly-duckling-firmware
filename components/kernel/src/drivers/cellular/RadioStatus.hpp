@@ -6,6 +6,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace cornucopia::ugly_duckling::kernel::drivers::cellular {
 
@@ -51,6 +52,44 @@ inline std::optional<bool> parseCscon(std::string_view line, size_t fieldCount) 
 }
 
 }    // namespace detail
+
+/**
+ * @brief Release 14 MAC RAI (release assistance in the access stratum), as AT+QR14FEATURE
+ * reports it. Only with both on does AT+CNMPSD make the network release the RRC connection.
+ */
+struct MacRaiSupport {
+    // Whether the module has it on (AT+QCFG="MacRAI")
+    std::optional<bool> module;
+    // Whether the network grants it; only reported while RRC connected
+    std::optional<bool> network;
+};
+
+/**
+ * @brief Parses the response lines of AT+QR14FEATURE.
+ *
+ * Three lines, told apart by their field count: "+QR14FEATURE: <UE_rel>,<UE_MAC_RAI>", then
+ * "+QR14FEATURE: <net_feature>", then, only while RRC connected,
+ * "+QR14FEATURE: <2-harq>,<net_MAC_RAI>,<N_NPRACH>,<N_paging>,<cp_reest>".
+ */
+inline MacRaiSupport parseQr14feature(const std::vector<std::string>& lines) {
+    auto asFlag = [](const AtField& field) -> std::optional<bool> {
+        auto value = field.asInt();
+        return value == 0 || value == 1 ? std::optional<bool>(value == 1) : std::nullopt;
+    };
+    MacRaiSupport support;
+    for (const auto& line : lines) {
+        auto fields = parseAtFields(line, "+QR14FEATURE:");
+        if (!fields) {
+            continue;
+        }
+        if (fields->size() == 2) {
+            support.module = asFlag((*fields)[1]);
+        } else if (fields->size() == 5) {
+            support.network = asFlag((*fields)[1]);
+        }
+    }
+    return support;
+}
 
 /**
  * @brief Parses the +CSCON: <mode> URC the module sends when the RRC connection goes up or down.

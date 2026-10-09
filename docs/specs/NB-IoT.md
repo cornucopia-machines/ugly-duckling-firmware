@@ -546,7 +546,7 @@ Order to be decided from the stage 3–4 measurements.
 
 - [ ] TLS 1.3 PSK session resumption for MQTT (cheap stopgap from cornucopia-app#492)
 - [ ] PSM between wakes for nodes that can tolerate command latency, with a cellular-specific wake/sync cadence (`AT+QSCLK=1` then, for deep sleep)
-- [ ] Release the RRC connection sooner after a send: RAI on `QISEND` (`rai=2`, after the reply) or a shorter `AT+QCFG="DataInactTimer"` (default 60 s); see "Power budget"
+- [ ] Release the RRC connection sooner after a send: `AT+CNMPSD` once an exchange ends with data received and 5 s of quiet, with `AT+QCFG="MacRAI",1` (implemented; whether the network grants MAC RAI is still to be seen in the field, and the effect to be measured with `rrc-releases`, `rrc-idle-ratio` and `rrc-longest-connected`). Alternatives if the network doesn't grant it: RAI on `QISEND` (`<rai_mode>` 1 or 2, BC660K-GL TCP/IP Application Note) or a shorter `AT+QCFG="DataInactTimer"` (default 60 s); see "Power budget"
 - [ ] Shorter field names in telemetry payloads (−35% measured, see cornucopia-app#492); needs server changes
 - [ ] Server-side handling of the link-quality telemetry fields
 - [ ] Use both: WiFi when available, NB-IoT fallback

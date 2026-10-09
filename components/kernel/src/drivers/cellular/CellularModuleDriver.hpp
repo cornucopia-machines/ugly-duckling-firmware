@@ -132,6 +132,13 @@ public:
      * The module only updates this on radio events, so it can be a little out of date.
      */
     virtual std::optional<bool> queryRrcConnected() = 0;
+    /**
+     * @brief Tells the network that no more data is expected, so it releases the RRC connection
+     * now instead of when its inactivity timer runs out (Release 14 release assistance).
+     *
+     * @return false if the module or the network doesn't support it, or the module refused
+     */
+    virtual bool releaseRrc() = 0;
 
     /**
      * @brief The IP address of the default PDP context, if the network has assigned one.

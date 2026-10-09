@@ -141,6 +141,7 @@ public:
         auto [sent, received] = transport.takeTrafficCounts();
         json["bytes-sent"] = sent;
         json["bytes-received"] = received;
+        json["rrc-releases"] = transport.takeReleaseRequests();
         populateRrcTelemetry(json);
     }
 

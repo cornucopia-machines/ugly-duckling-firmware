@@ -190,7 +190,9 @@ backing off from 100 ms to 1 s, since the first command after the module's sleep
    `AT+IPR` (saved in its NVRAM), confirm at the new rate, and go back if that fails.
 2. **Apply settings that may restart the module** first, since a restart loses the others:
    - `AT+QCFG="wakeupRXD",1`, so UART activity wakes the module; then `AT+QRST=1`;
-   - `AT+QCFG="relversion",14` (Cat NB2), set at `AT+CFUN=0`; then `AT+QRST=1`.
+   - `AT+QCFG="relversion",14` (Cat NB2), set at `AT+CFUN=0`; then `AT+QRST=1`;
+   - `AT+QCFG="MacRAI",1` (release assistance, see [Sockets](#sockets)), set at `AT+CFUN=0`; then
+     `AT+QRST=1`.
 3. **Apply settings sent on every boot**:
    - `ATE0`, `AT+CMEE=2`;
    - `AT+CEREG=3` (registration URCs with the reject cause);
@@ -246,6 +248,14 @@ the HTTP client accept it in place of lwIP. The module driver has a single conne
     take from. There's no flow control: if the queue fills, a URC doesn't decode, or the UART has
     had an error since connecting (it can cut a pushed URC so that it no longer parses as one),
     the next read fails and the connection breaks.
+- **Releasing the radio**: once an exchange ends with data received and nothing more for 5 s
+  (a PUBACK or PINGRESP answered what we sent), the transport sends `AT+CNMPSD`. With Release 14
+  MAC RAI on in the module and granted by the network, the network releases the RRC connection
+  straight away, instead of keeping it up (about 10 mA more than idle) until its inactivity timer
+  runs out. After a send, the transport leaves it to the network's timer, since an answer is
+  probably on its way. The first release of a boot checks `AT+QR14FEATURE` and logs whether the
+  network grants MAC RAI; without it, the transport stops asking. A wrong guess only costs a new
+  connection.
 - **Closing**: `AT+QICLOSE`. `+QIURC: "closed"` means the peer or the network closed it; the module
   can't tell which.
 
@@ -303,6 +313,8 @@ The `cellular` telemetry section has:
 - the serving cell's `cell`, `band`, `rsrp`, `rsrq`, `sinr` and `ecl`, as of the last registration
   check;
 - `bytes-sent` and `bytes-received` over the modem;
+- `rrc-releases`, how many times the network was asked to release the RRC connection after an
+  exchange (`AT+CNMPSD`, see below);
 - `rrc-idle-ratio` and `rrc-connections`;
 - `rrc-longest-connected`, the longest RRC connection in seconds (one still open counts as far as
   it got);
