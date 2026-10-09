@@ -368,7 +368,10 @@ buffers are 8 KB in and 4 KB out.
 Messages wait in esp-mqtt's outbox until the broker acknowledges them, and a reconnect sends again
 whatever is still there. The outbox drops a message 10 minutes after it was queued or first sent
 (`CONFIG_MQTT_OUTBOX_EXPIRED_TIMEOUT_MS`, 30 s by default), long enough to outlast an NB-IoT
-reconnect, and holds at most 16 KB; past that, publishing fails with "outbox full".
+reconnect, and holds at most 16 KB. What doesn't fit, e.g. the boot's log records while an NB-IoT
+connection is still coming up, waits in `MqttDriver`'s own queue, in order, until acks or expiry
+make room. That queue doesn't expire, but holds at most another 16 KB; past that, new messages are
+dropped.
 
 Plain `mqtts` costs the least over NB-IoT: WebSocket adds an HTTP upgrade per connection and a few
 bytes per packet.
