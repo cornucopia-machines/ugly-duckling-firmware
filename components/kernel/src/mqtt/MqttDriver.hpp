@@ -177,7 +177,7 @@ public:
                 .keepalive = static_cast<int>(duration_cast<seconds>(modemTransport == nullptr ? MQTT_SESSION_KEEP_ALIVE : MODEM_SESSION_KEEP_ALIVE).count()),
                 .disable_keepalive = false,
                 .protocol_ver = MQTT_PROTOCOL_UNDEFINED,    // Default MQTT version
-                .message_retransmit_timeout = duration_cast<milliseconds>(MQTT_MESSAGE_RETRANSMIT_TIMEOUT).count(),
+                .message_retransmit_timeout = static_cast<int>(duration_cast<milliseconds>(modemTransport == nullptr ? MQTT_MESSAGE_RETRANSMIT_TIMEOUT : MODEM_MESSAGE_RETRANSMIT_TIMEOUT).count()),
             },
             .network {
                 .reconnect_timeout_ms = duration_cast<milliseconds>(MQTT_CONNECTION_TIMEOUT).count(),
@@ -289,6 +289,13 @@ private:
     }
 
     static constexpr milliseconds MQTT_MESSAGE_RETRANSMIT_TIMEOUT = 5s;
+    // esp-mqtt resends an unacknowledged message on the same connection after this long. Over
+    // NB-IoT the ack routinely takes longer than 5 s when the link stalls, and every resend is the
+    // whole message again over the air: one night in the field had up to six copies of a telemetry
+    // message arriving together. TCP already delivers what was sent on a live connection, so
+    // resending there buys nothing. Anything over esp-mqtt's 30 s outbox expiry means it never
+    // happens; a reconnect still requeues what wasn't acknowledged yet.
+    static constexpr milliseconds MODEM_MESSAGE_RETRANSMIT_TIMEOUT = 1min;
     static constexpr milliseconds MQTT_CONNECTION_TIMEOUT = MQTT_NETWORK_TIMEOUT;
     static constexpr milliseconds MQTT_SESSION_KEEP_ALIVE = 120s;
     // esp-mqtt pings at half the keepalive, and every ping costs about 200 bytes over the air

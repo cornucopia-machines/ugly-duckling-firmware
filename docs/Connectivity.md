@@ -303,7 +303,12 @@ The `cellular` telemetry section has:
 - the serving cell's `cell`, `band`, `rsrp`, `rsrq`, `sinr` and `ecl`, as of the last registration
   check;
 - `bytes-sent` and `bytes-received` over the modem;
-- `rrc-idle-ratio` and `rrc-connections`.
+- `rrc-idle-ratio` and `rrc-connections`;
+- `rrc-longest-connected`, the longest RRC connection in seconds (one still open counts as far as
+  it got);
+- `rrc-missed-changes`, the RRC state changes that no `+CSCON` URC reported, only the periodic
+  `AT+CSCON?` read found. Until that read, the time was counted in the wrong state, so the RRC
+  fields are only as accurate as this count is low.
 
 The byte and RRC counts cover the time since the last telemetry message.
 
