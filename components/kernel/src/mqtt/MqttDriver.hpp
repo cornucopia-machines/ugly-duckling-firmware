@@ -305,7 +305,7 @@ private:
     // if told to: without a limit, a long outage would fill the heap with log records and
     // telemetry. What doesn't fit waits in our own queue (see holdBack()), up to its own limit,
     // so at most the two together stay in RAM
-    static constexpr uint64_t MQTT_OUTBOX_LIMIT_BYTES = 16 * 1024;
+    static constexpr uint64_t MQTT_OUTBOX_LIMIT_BYTES = uint64_t { 16 } * 1024;
     static constexpr size_t MQTT_HELD_BACK_LIMIT_BYTES = 16 * 1024;
     static constexpr milliseconds MQTT_CONNECTION_TIMEOUT = MQTT_NETWORK_TIMEOUT;
     static constexpr milliseconds MQTT_SESSION_KEEP_ALIVE = 120s;
