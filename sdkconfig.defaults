@@ -141,6 +141,13 @@ CONFIG_ESP_COREDUMP_LOGS=n
 # Handle undelivered MQTT messages
 CONFIG_MQTT_REPORT_DELETED_MESSAGES=y
 
+# Keep unacknowledged and not yet sent MQTT messages for 10 minutes instead of 30 s, so they
+# survive a reconnect: over NB-IoT, reopening the socket and the TLS handshake alone can take
+# close to a minute. The expiry counts from when a message was queued or first sent, not from
+# its last resend. MqttDriver caps the outbox size
+CONFIG_MQTT_USE_CUSTOM_CONFIG=y
+CONFIG_MQTT_OUTBOX_EXPIRED_TIMEOUT_MS=600000
+
 # Let the HTTP client run over a transport we provide: the OTA download goes over the cellular
 # modem's AT sockets, which lwIP can't reach (docs/specs/NB-IoT.md, stage 5)
 CONFIG_ESP_HTTP_CLIENT_ENABLE_CUSTOM_TRANSPORT=y

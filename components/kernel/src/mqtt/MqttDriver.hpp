@@ -14,6 +14,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -193,7 +194,9 @@ public:
                 .size = 8192,
                 .out_size = 4096,
             },
-            .outbox {},
+            .outbox {
+                .limit = MQTT_OUTBOX_LIMIT_BYTES,
+            },
         };
 
         LOGTI(MQTT, "Server: %s, client ID is '%s'",
@@ -293,9 +296,14 @@ private:
     // NB-IoT the ack routinely takes longer than 5 s when the link stalls, and every resend is the
     // whole message again over the air: one night in the field had up to six copies of a telemetry
     // message arriving together. TCP already delivers what was sent on a live connection, so
-    // resending there buys nothing. Anything over esp-mqtt's 30 s outbox expiry means it never
-    // happens; a reconnect still requeues what wasn't acknowledged yet.
+    // resending there buys little; a reconnect requeues what wasn't acknowledged yet anyway.
     static constexpr milliseconds MODEM_MESSAGE_RETRANSMIT_TIMEOUT = 1min;
+    // Messages wait in the outbox until acknowledged, or until CONFIG_MQTT_OUTBOX_EXPIRED_TIMEOUT_MS
+    // after they were queued or first sent (10 minutes, to outlast an NB-IoT reconnect: see
+    // sdkconfig.defaults). esp-mqtt limits the total size of the queued messages, in bytes, and only
+    // if told to: without a limit, a long outage would fill the heap with log records
+    // and telemetry; past it, publishing fails with "outbox full"
+    static constexpr uint64_t MQTT_OUTBOX_LIMIT_BYTES = 16 * 1024;
     static constexpr milliseconds MQTT_CONNECTION_TIMEOUT = MQTT_NETWORK_TIMEOUT;
     static constexpr milliseconds MQTT_SESSION_KEEP_ALIVE = 120s;
     // esp-mqtt pings at half the keepalive, and every ping costs about 200 bytes over the air

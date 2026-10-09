@@ -347,10 +347,16 @@ to match it:
 | Client certificate | `clientCert` / `clientKey`, if set | The same |
 | Keepalive | 120 s | 10 minutes (a ping every 5 minutes), for the SIM's data budget |
 | Network timeout | 15 s | 30 s |
+| Resend of an unacknowledged message | after 5 s | after 1 minute, since TCP already delivers it and every resend goes over the air |
 | esp-mqtt task stack | IDF default | 8 KB, for TLS on top of the AT layer |
 
 On both links, sessions are always clean, so subscriptions are made again on every connect. The
 buffers are 8 KB in and 4 KB out.
+
+Messages wait in esp-mqtt's outbox until the broker acknowledges them, and a reconnect sends again
+whatever is still there. The outbox drops a message 10 minutes after it was queued or first sent
+(`CONFIG_MQTT_OUTBOX_EXPIRED_TIMEOUT_MS`, 30 s by default), long enough to outlast an NB-IoT
+reconnect, and holds at most 16 KB; past that, publishing fails with "outbox full".
 
 Plain `mqtts` costs the least over NB-IoT: WebSocket adds an HTTP upgrade per connection and a few
 bytes per packet.
