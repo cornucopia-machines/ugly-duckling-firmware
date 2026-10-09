@@ -475,6 +475,24 @@ TEST_CASE("parseCsconRead reads the mode after <n>") {
     REQUIRE_FALSE(parseCsconRead("+CSCON: 1").has_value());
 }
 
+TEST_CASE("parseQr14feature reads MAC RAI on both sides while connected") {
+    auto support = parseQr14feature({ "+QR14FEATURE: 14,1", "+QR14FEATURE: 1", "+QR14FEATURE: 1,0,0,0,1" });
+    REQUIRE(support.module == true);
+    REQUIRE(support.network == false);
+}
+
+TEST_CASE("parseQr14feature leaves the network side unknown while idle") {
+    auto support = parseQr14feature({ "+QR14FEATURE: 14,0", "+QR14FEATURE: 0" });
+    REQUIRE(support.module == false);
+    REQUIRE_FALSE(support.network.has_value());
+}
+
+TEST_CASE("parseQr14feature ignores other lines") {
+    auto support = parseQr14feature({ "+CSCON: 0,1", "+QR14FEATURE: 14,2" });
+    REQUIRE_FALSE(support.module.has_value());
+    REQUIRE_FALSE(support.network.has_value());
+}
+
 TEST_CASE("encodeEdrxCycle gives the 4-bit code of NB-IoT cycles") {
     REQUIRE(encodeEdrxCycle(20480ms) == "0010");
     REQUIRE(encodeEdrxCycle(40960ms) == "0011");

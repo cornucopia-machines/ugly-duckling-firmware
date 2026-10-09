@@ -22,6 +22,7 @@
 #include <sdkconfig.h>
 #include <soc/uart_pins.h>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
@@ -140,6 +141,7 @@ public:
         auto [sent, received] = transport.takeTrafficCounts();
         json["bytes-sent"] = sent;
         json["bytes-received"] = received;
+        json["rrc-releases"] = transport.takeReleaseRequests();
         populateRrcTelemetry(json);
     }
 
@@ -212,7 +214,7 @@ private:
             auto cell = !registered || !wasRegistered ? module->logRadioStatus() : module->queryServingCell();
             // The URC only reports changes, and could have been missed
             if (auto rrcConnected = module->queryRrcConnected()) {
-                updateRrcState(*rrcConnected);
+                updateRrcState(*rrcConnected, RrcSource::Poll);
             }
             if (registered) {
                 logPagingIfChanged();
@@ -340,45 +342,69 @@ private:
         }
     }
 
+    enum class RrcSource : uint8_t {
+        // The +CSCON URC, sent by the module as the state changes
+        Urc,
+        // AT+CSCON?, read on every registration check
+        Poll,
+    };
+
     /**
      * @brief Tracks the RRC state for the status, and how long and how often the radio is
      * connected, which is where most of the modem's energy goes. Called from the URC handler too.
      */
-    void updateRrcState(bool connected) {
+    void updateRrcState(bool connected, RrcSource source) {
         std::scoped_lock lock(statusMutex);
         if (status.rrcConnected == connected) {
             return;
         }
+        // The URCs should have reported this already: until the read caught up, the time was
+        // counted in the wrong state, so the telemetry is only as good as this count is low
+        if (source == RrcSource::Poll && status.rrcConnected.has_value()) {
+            LOGTV(CELLULAR, "RRC %s, missed by the URCs", connected ? "connected" : "idle");
+            rrcMissedChanges++;
+        }
         auto now = steady_clock::now();
         if (connected) {
             rrcConnectedSince = now;
+            rrcStretchStart = now;
             rrcConnections++;
         } else if (status.rrcConnected == true) {
             rrcConnectedTime += now - rrcConnectedSince;
+            rrcLongestConnected = std::max(rrcLongestConnected, now - rrcStretchStart);
         }
         status.rrcConnected = connected;
     }
 
     /**
      * @brief The share of the time since the last call the radio spent RRC idle, and how many
-     * times it connected, the same way PowerManager reports the ESP32's light sleep.
+     * times it connected, the same way PowerManager reports the ESP32's light sleep. Also the
+     * longest connection, to tell one connection held open apart from many short ones, and how
+     * many changes only the periodic read found, to tell how far the URCs can be trusted.
      */
     void populateRrcTelemetry(JsonObject& json) {
         std::scoped_lock lock(statusMutex);
         auto now = steady_clock::now();
         auto connectedTime = rrcConnectedTime;
+        auto longestConnected = rrcLongestConnected;
         if (status.rrcConnected == true) {
             connectedTime += now - rrcConnectedSince;
             rrcConnectedSince = now;
+            // Still going, so it may well turn out longer in the next report too
+            longestConnected = std::max(longestConnected, now - rrcStretchStart);
         }
         auto elapsed = now - rrcLastReported;
         if (elapsed.count() > 0) {
             json["rrc-idle-ratio"] = 1.0 - (duration<double>(connectedTime) / duration<double>(elapsed));
             json["rrc-connections"] = rrcConnections;
+            json["rrc-longest-connected"] = duration_cast<seconds>(longestConnected).count();
+            json["rrc-missed-changes"] = rrcMissedChanges;
         }
         rrcLastReported = now;
         rrcConnectedTime = steady_clock::duration::zero();
         rrcConnections = 0;
+        rrcLongestConnected = steady_clock::duration::zero();
+        rrcMissedChanges = 0;
     }
 
     static std::optional<milliseconds> toEdrxCycle(milliseconds configured) {
@@ -467,7 +493,7 @@ private:
             // Verbose only: a published log record is an uplink, so if this got published,
             // logging "idle" would bring the radio straight back to connected
             LOGTV(CELLULAR, "RRC %s", *connected ? "connected" : "idle");
-            updateRrcState(*connected);
+            updateRrcState(*connected, RrcSource::Urc);
             return;
         }
         if (auto edrx = parseCedrxp(line)) {
@@ -538,11 +564,16 @@ private:
     mutable std::mutex statusMutex;
     CellularStatus status;
     // Guarded by statusMutex too
+    // Since the start of the current telemetry interval, or of the connection if it's later
     steady_clock::time_point rrcConnectedSince;
+    // Since the connection came up, across telemetry intervals
+    steady_clock::time_point rrcStretchStart;
     steady_clock::duration rrcConnectedTime {};
+    steady_clock::duration rrcLongestConnected {};
     // Counted from when the driver starts, like the ESP32's sleep time
     steady_clock::time_point rrcLastReported = steady_clock::now();
     uint32_t rrcConnections = 0;
+    uint32_t rrcMissedChanges = 0;
 };
 
 }    // namespace cornucopia::ugly_duckling::kernel::drivers::cellular

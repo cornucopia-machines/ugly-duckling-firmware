@@ -127,6 +127,8 @@ public:
         // First, since they may restart the module, which loses the settings below
         bool success = ensureRxdWakeup();
         success = ensureReleaseVersion() && success;
+        // After the release version: the module only takes it in Release 14
+        success = ensureMacRai() && success;
 
         // None of these is ever wrong to repeat, so there's no point checking first
         static constexpr std::array SETTINGS {
@@ -246,6 +248,31 @@ public:
 
     std::optional<bool> queryRrcConnected() override {
         return findDecoded(command("AT+CSCON?", DEFAULT_TIMEOUT), parseCsconRead);
+    }
+
+    bool releaseRrc() override {
+        if (macRaiSupported == false) {
+            return false;
+        }
+        if (!macRaiSupported) {
+            // The network side is only reported while RRC connected, which the caller just was
+            auto support = parseQr14feature(command("AT+QR14FEATURE", DEFAULT_TIMEOUT).lines);
+            if (support.module && support.network) {
+                macRaiSupported = *support.module && *support.network;
+                // Once per boot, and whether we're on a network that has it matters
+                LOGTI(CELLULAR, "Release assistance (MAC RAI): %s on %s, %s by the network",
+                    *support.module ? "on" : "off", getName(), *support.network ? "granted" : "not granted");
+            }
+            if (macRaiSupported == false) {
+                return false;
+            }
+        }
+        auto response = command("AT+CNMPSD", DEFAULT_TIMEOUT);
+        if (!response.ok()) {
+            LOGTD(CELLULAR, "AT+CNMPSD failed: %s %s", toString(response.result), response.error.c_str());
+            return false;
+        }
+        return true;
     }
 
     std::optional<std::string> queryIpAddress() override {
@@ -582,7 +609,7 @@ private:
         for (int attempt = 1; attempt <= WAKE_ATTEMPTS; attempt++) {
             if (send("AT", WAKE_TIMEOUT).ok()) {
                 if (attempt > 1) {
-                    LOGTD(CELLULAR, "%s answered after %d attempts", getName(), attempt);
+                    LOGTV(CELLULAR, "%s answered after %d attempts", getName(), attempt);
                 }
                 return true;
             }
@@ -611,7 +638,7 @@ private:
                 send("", PROBE_FLUSH_TIMEOUT);
                 if (send("AT", WAKE_TIMEOUT).ok()) {
                     if (attempt > 1) {
-                        LOGTD(CELLULAR, "%s answered after %d attempts", getName(), attempt);
+                        LOGTV(CELLULAR, "%s answered after %d attempts", getName(), attempt);
                     }
                     return rate;
                 }
@@ -898,28 +925,45 @@ private:
 
     bool ensureReleaseVersion() {
         // Release 14 makes the module Cat NB2 (NBcategory follows it to 2): 2536-bit downlink
-        // transport blocks instead of 680, and two HARQ processes, if the network supports it.
-        // Saved to NVRAM, only accepted at minimum functionality, and only takes effect after a
-        // restart. ensureFullFunctionality() brings CFUN back to 1 afterwards
+        // transport blocks instead of 680, and two HARQ processes, if the network supports it
         static constexpr PersistedSetting RELEASE_VERSION {
             .query = R"(AT+QCFG="relversion")", .expected = R"(+QCFG: "relversion",14)", .set = R"(AT+QCFG="relversion",14)"
         };
-        auto current = checkSetting(RELEASE_VERSION);
+        return ensureSettingWithRestart(RELEASE_VERSION);
+    }
+
+    bool ensureMacRai() {
+        // Release 14 release assistance in the access stratum: with it, AT+CNMPSD makes the
+        // network release the RRC connection right away instead of when its inactivity timer
+        // runs out (see releaseRrc()). Only does anything if the network grants it too
+        static constexpr PersistedSetting MAC_RAI {
+            .query = R"(AT+QCFG="MacRAI")", .expected = R"(+QCFG: "MacRAI",1)", .set = R"(AT+QCFG="MacRAI",1)"
+        };
+        return ensureSettingWithRestart(MAC_RAI);
+    }
+
+    /**
+     * @brief For a setting that is saved to NVRAM, only accepted at minimum functionality, and
+     * only takes effect after a restart. ensureFullFunctionality() brings CFUN back to 1
+     * afterwards.
+     */
+    bool ensureSettingWithRestart(const PersistedSetting& setting) {
+        auto current = checkSetting(setting);
         if (!current) {
             return true;
         }
-        if (isUnreadable(RELEASE_VERSION, *current)) {
+        if (isUnreadable(setting, *current)) {
             return false;
         }
-        LOGTI(CELLULAR, "Setting %s (was: %s), and restarting %s for it to take effect", RELEASE_VERSION.set, current->c_str(), getName());
+        LOGTI(CELLULAR, "Setting %s (was: %s), and restarting %s for it to take effect", setting.set, current->c_str(), getName());
         auto response = command("AT+CFUN=0", CFUN_TIMEOUT);
         if (!response.ok()) {
             LOGTW(CELLULAR, "AT+CFUN=0 failed: %s %s", toString(response.result), response.error.c_str());
             return false;
         }
-        response = command(RELEASE_VERSION.set, DEFAULT_TIMEOUT);
+        response = command(setting.set, DEFAULT_TIMEOUT);
         if (!response.ok()) {
-            LOGTW(CELLULAR, "%s failed: %s %s", RELEASE_VERSION.set, toString(response.result), response.error.c_str());
+            LOGTW(CELLULAR, "%s failed: %s %s", setting.set, toString(response.result), response.error.c_str());
             return false;
         }
         // Answers OK, then resets straight away
@@ -1023,6 +1067,10 @@ private:
     static constexpr milliseconds DEFAULT_TIMEOUT = 5s;
     // What checkSetting() reports when the module doesn't answer the query
     static constexpr std::string_view UNREADABLE_SETTING = "?";
+
+    // Whether AT+CNMPSD can release RRC: unknown until AT+QR14FEATURE reports both sides. Only
+    // touched from the task esp-mqtt runs the socket transport on
+    std::optional<bool> macRaiSupported;
     // Maximum response times from the AT manual
     static constexpr milliseconds QENG_TIMEOUT = 15s;
     static constexpr milliseconds CFUN_TIMEOUT = 25s;

@@ -91,6 +91,14 @@ public:
     }
 
     /**
+     * @brief How many times the network was asked to release the RRC connection (see
+     * releaseIfDone()) since the last call.
+     */
+    uint32_t takeReleaseRequests() {
+        return releaseRequests.exchange(0);
+    }
+
+    /**
      * @brief Makes the next poll ask the module for data, for when it may have announced some in
      * a URC that didn't arrive intact.
      */
@@ -173,6 +181,7 @@ private:
         connected = true;
         lastReceive = steady_clock::now();
         lastActivity = lastReceive;
+        releaseDue = false;
         return 0;
     }
 
@@ -260,6 +269,28 @@ private:
     };
 
     /**
+     * @brief Once an exchange is over, asks the network to release the RRC connection, instead
+     * of keeping the radio connected (about 10 mA more than idle) until the network's inactivity
+     * timer runs out, 20-60 s after the last packet.
+     *
+     * Over? When the last thing was data received, and nothing more came for ACTIVE_WINDOW:
+     * whatever we sent got its answer (a PUBACK, a PINGRESP), and the module has sent its TCP
+     * ACKs by then. After a send, we're waiting for an answer, so it's left to the network's
+     * timer. Guessing wrong only costs a new connection: the network pages us for what it still
+     * has, and our next send connects again. Pushed data (downloads) never gets here.
+     */
+    void releaseIfDone() {
+        if (!releaseDue) {
+            return;
+        }
+        releaseDue = false;
+        auto module = this->module;
+        if (module != nullptr && module->releaseRrc()) {
+            releaseRequests++;
+        }
+    }
+
+    /**
      * @brief Whether to ask the module for data: it told us it has some, data is flowing, or
      * it's been a while. Waits up to the timeout for one of these.
      *
@@ -279,11 +310,14 @@ private:
             return ReceiveReason::Announced;
         }
         auto now = steady_clock::now();
+        bool flowing = now - lastActivity < ACTIVE_WINDOW;
+        if (!flowing) {
+            releaseIfDone();
+        }
         auto sinceLastReceive = duration_cast<milliseconds>(now - lastReceive);
         if (sinceLastReceive >= SAFETY_POLL_INTERVAL) {
             return ReceiveReason::SafetyPoll;
         }
-        bool flowing = now - lastActivity < ACTIVE_WINDOW;
         if (flowing && sinceLastReceive >= ACTIVE_POLL_INTERVAL) {
             return ReceiveReason::ActivePoll;
         }
@@ -320,6 +354,7 @@ private:
         bufferEnd = result->length;
         if (result->length > 0) {
             lastActivity = steady_clock::now();
+            releaseDue = true;
         }
         // Keep reading until a read comes back empty, not just until the module says nothing is
         // left: like the BG96, it seems to announce new data only once a read has found its
@@ -426,6 +461,7 @@ private:
         }
         // An answer is likely to follow
         lastActivity = steady_clock::now();
+        releaseDue = false;
         return static_cast<int>(written);
     }
 
@@ -549,12 +585,17 @@ private:
     steady_clock::time_point lastReceive;
     // When data was last sent, or received from the module
     steady_clock::time_point lastActivity;
+    // Whether the last thing on the connection was data received, and the RRC connection hasn't
+    // been released since (see releaseIfDone())
+    bool releaseDue = false;
 
     // Data announcements (URCs) and unrecognized lines from the module, counted by the URC
     // handler, for telling a lost URC apart from data that arrived faster than it was read
     std::atomic<uint32_t> announcements { 0 };
     std::atomic<steady_clock::time_point> lastAnnouncedAt;
     std::atomic<uint32_t> unrecognizedLines { 0 };
+    // Taken by the telemetry, on another task
+    std::atomic<uint32_t> releaseRequests { 0 };
     uint32_t announcementsAtConnect = 0;
     uint32_t announcementsAtLastReceive = 0;
     uint32_t unrecognizedLinesAtLastReceive = 0;

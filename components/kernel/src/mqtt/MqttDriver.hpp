@@ -14,6 +14,8 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstdint>
+#include <deque>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -177,7 +179,7 @@ public:
                 .keepalive = static_cast<int>(duration_cast<seconds>(modemTransport == nullptr ? MQTT_SESSION_KEEP_ALIVE : MODEM_SESSION_KEEP_ALIVE).count()),
                 .disable_keepalive = false,
                 .protocol_ver = MQTT_PROTOCOL_UNDEFINED,    // Default MQTT version
-                .message_retransmit_timeout = duration_cast<milliseconds>(MQTT_MESSAGE_RETRANSMIT_TIMEOUT).count(),
+                .message_retransmit_timeout = static_cast<int>(duration_cast<milliseconds>(modemTransport == nullptr ? MQTT_MESSAGE_RETRANSMIT_TIMEOUT : MODEM_MESSAGE_RETRANSMIT_TIMEOUT).count()),
             },
             .network {
                 .reconnect_timeout_ms = duration_cast<milliseconds>(MQTT_CONNECTION_TIMEOUT).count(),
@@ -193,7 +195,9 @@ public:
                 .size = 8192,
                 .out_size = 4096,
             },
-            .outbox {},
+            .outbox {
+                .limit = MQTT_OUTBOX_LIMIT_BYTES,
+            },
         };
 
         LOGTI(MQTT, "Server: %s, client ID is '%s'",
@@ -289,6 +293,20 @@ private:
     }
 
     static constexpr milliseconds MQTT_MESSAGE_RETRANSMIT_TIMEOUT = 5s;
+    // esp-mqtt resends an unacknowledged message on the same connection after this long. Over
+    // NB-IoT the ack routinely takes longer than 5 s when the link stalls, and every resend is the
+    // whole message again over the air: one night in the field had up to six copies of a telemetry
+    // message arriving together. TCP already delivers what was sent on a live connection, so
+    // resending there buys little; a reconnect requeues what wasn't acknowledged yet anyway.
+    static constexpr milliseconds MODEM_MESSAGE_RETRANSMIT_TIMEOUT = 1min;
+    // Messages wait in the outbox until acknowledged, or until CONFIG_MQTT_OUTBOX_EXPIRED_TIMEOUT_MS
+    // after they were queued or first sent (10 minutes, to outlast an NB-IoT reconnect: see
+    // sdkconfig.defaults). esp-mqtt limits the total size of the queued messages, in bytes, and only
+    // if told to: without a limit, a long outage would fill the heap with log records and
+    // telemetry. What doesn't fit waits in our own queue (see holdBack()), up to its own limit,
+    // so at most the two together stay in RAM
+    static constexpr uint64_t MQTT_OUTBOX_LIMIT_BYTES = uint64_t { 16 } * 1024;
+    static constexpr size_t MQTT_HELD_BACK_LIMIT_BYTES = 16 * 1024;
     static constexpr milliseconds MQTT_CONNECTION_TIMEOUT = MQTT_NETWORK_TIMEOUT;
     static constexpr milliseconds MQTT_SESSION_KEEP_ALIVE = 120s;
     // esp-mqtt pings at half the keepalive, and every ping costs about 200 bytes over the air
@@ -409,6 +427,10 @@ private:
         // List of messages we are waiting on
         std::vector<PendingSubscription> pendingSubscriptions;
 
+        // Messages that didn't fit in esp-mqtt's outbox yet, oldest first (see holdBack())
+        std::deque<OutgoingMessage> heldBack;
+        size_t heldBackBytes = 0;
+
         while (true) {
             auto now = steady_clock::now();
 
@@ -442,6 +464,12 @@ private:
                 case MqttState::Connected:
                     // Stay connected
                     break;
+            }
+
+            // Acks and expiry make room in the outbox; the oldest held-back messages go first
+            while (!heldBack.empty() && processOutgoingMessage(heldBack.front()) != EnqueueResult::OutboxFull) {
+                heldBackBytes -= heldBack.front().payload.size();
+                heldBack.pop_front();
             }
 
             eventQueue.drainIn(duration_cast<ticks>(MQTT_LOOP_INTERVAL), [&](const auto& event) {
@@ -483,7 +511,10 @@ private:
                         [&](const OutgoingMessage& arg) {
                             LOGTV(MQTT, "Processing outgoing message to %s",
                                 arg.topic.c_str());
-                            processOutgoingMessage(arg);
+                            // Behind what's held back already, to keep the order
+                            if (!heldBack.empty() || processOutgoingMessage(arg) == EnqueueResult::OutboxFull) {
+                                holdBack(heldBack, heldBackBytes, arg);
+                            }
                         },
                         [&](const Subscription& arg) {
                             LOGTV(MQTT, "Processing subscription");
@@ -638,7 +669,14 @@ private:
         }
     }
 
-    void processOutgoingMessage(const OutgoingMessage& message) {
+    enum class EnqueueResult : uint8_t {
+        Enqueued,
+        // Try again once acks or expiry have made room
+        OutboxFull,
+        Failed,
+    };
+
+    EnqueueResult processOutgoingMessage(const OutgoingMessage& message) {
         int ret = esp_mqtt_client_enqueue(
             client,
             message.topic.c_str(),
@@ -647,22 +685,46 @@ private:
             static_cast<int>(message.qos),
             0,    // Never retain: nothing the device publishes is a retained message
             true);
+        if (ret == -2) {
+            return EnqueueResult::OutboxFull;
+        }
 
         // Silent publishes (log records) must not log here: the log line would be published in
-        // turn, and a full outbox would then feed itself. A lost log record still shows up as a
-        // gap in its `seq`.
+        // turn, and a failing publish would then feed itself. A lost log record still shows up as
+        // a gap in its `seq`.
         if (message.log == LogPublish::Silent) {
-            return;
+            return ret < 0 ? EnqueueResult::Failed : EnqueueResult::Enqueued;
         }
         if (ret < 0) {
-            LOGTD(MQTT, "Error publishing to '%s': %s",
-                message.topic.c_str(), ret == -2 ? "outbox full" : "failure");
-            return;
+            LOGTD(MQTT, "Error publishing to '%s'", message.topic.c_str());
+            return EnqueueResult::Failed;
         }
 #ifdef DUMP_MQTT
         LOGTV(MQTT, "Published to '%s' (size: %d), message ID: %d",
             message.topic.c_str(), message.payload.length(), ret);
 #endif
+        return EnqueueResult::Enqueued;
+    }
+
+    /**
+     * @brief Keeps a message that doesn't fit in the outbox until it does, instead of dropping it.
+     *
+     * The outbox fills up while the connection is down, e.g. with the boot's log records until an
+     * NB-IoT connection is up, and when the broker's acks come slower than we publish. Held-back
+     * messages don't expire, but they are capped too: past MQTT_HELD_BACK_LIMIT_BYTES, new
+     * messages are dropped.
+     */
+    static void holdBack(std::deque<OutgoingMessage>& heldBack, size_t& heldBackBytes, const OutgoingMessage& message) {
+        // One that wouldn't fit even in an empty outbox would hold up everything behind it
+        if (message.payload.size() > MQTT_OUTBOX_LIMIT_BYTES || heldBackBytes + message.payload.size() > MQTT_HELD_BACK_LIMIT_BYTES) {
+            // Silent publishes (log records) must not log: see processOutgoingMessage()
+            if (message.log != LogPublish::Silent) {
+                LOGTD(MQTT, "Error publishing to '%s': outbox full, and too much held back already", message.topic.c_str());
+            }
+            return;
+        }
+        heldBack.push_back(message);
+        heldBackBytes += message.payload.size();
     }
 
     void processSubscriptions(const std::vector<Subscription>& subscriptions, std::vector<PendingSubscription>& pendingSubscriptions) {
