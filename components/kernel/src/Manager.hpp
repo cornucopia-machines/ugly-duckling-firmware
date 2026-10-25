@@ -1,4 +1,5 @@
 #pragma once
+#include <FunctionRef.hpp>
 #include <Log.hpp>
 #include <Result.hpp>
 #include <config/Configuration.hpp>
@@ -144,7 +145,7 @@ public:
     Result<> createWithFactory(
         const std::string& name,
         const std::string& type,
-        const std::function<Result<Handle>(const FactoryT&)>& make) {
+        FunctionRef<Result<Handle>(const FactoryT&)> make) {
         std::scoped_lock lock(mutex);
         if (state == State::Stopped) {
             return failure("Not creating " + managed + " because the manager is stopped");
@@ -189,7 +190,7 @@ public:
     Result<> createFromSettings(
         const std::string& settingsAsString,
         JsonObject initJson,
-        const std::function<Result<Handle>(const std::string&, const FactoryT&, const std::string&)>& make) {
+        FunctionRef<Result<Handle>(const std::string&, const FactoryT&, const std::string&)> make) {
         LOGI("Creating %s with settings: %s",
             this->managed.c_str(), settingsAsString.c_str());
         std::shared_ptr<ProductSettings> settings = std::make_shared<ProductSettings>();
