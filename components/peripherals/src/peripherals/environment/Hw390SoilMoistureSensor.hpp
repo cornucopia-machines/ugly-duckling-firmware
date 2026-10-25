@@ -36,19 +36,19 @@ public:
         int airValue,
         int waterValue,
         double alpha,
-        const InternalPinPtr& pin,
+        std::unique_ptr<AnalogPin> pin,
         const PinPtr& disablePin,
         milliseconds enableDelay = 100ms)
         : Peripheral(name)
         , airValue(airValue)
         , waterValue(waterValue)
         , alpha(alpha)
-        , pin(pin)
+        , pin(std::move(pin))
         , disablePin(disablePin)
         , enableDelay(enableDelay) {
 
         LOGTI(ENV, "Initializing soil moisture sensor '%s' on pin %s; air value: %d; water value: %d; EMA alpha: %.2f; disable pin: %s; enable delay: %dms",
-            name.c_str(), pin->getName().c_str(), airValue, waterValue, alpha, disablePin ? disablePin->getName().c_str() : "none", enableDelay.count());
+            name.c_str(), this->pin->getName().c_str(), airValue, waterValue, alpha, disablePin ? disablePin->getName().c_str() : "none", enableDelay.count());
 
         if (disablePin) {
             disablePin->pinMode(Pin::Mode::Output);
@@ -64,15 +64,15 @@ private:
     const int airValue;
     const int waterValue;
     const double alpha;
-    const AnalogPin pin;
+    const std::unique_ptr<AnalogPin> pin;
     const PinPtr disablePin;
     const milliseconds enableDelay;
 
     std::optional<Percent> measure(const utils::DebouncedParams<Percent> params) {
-        std::optional<uint16_t> soilMoistureValue = pin.tryAnalogRead();
+        std::optional<uint16_t> soilMoistureValue = pin->tryAnalogRead();
         if (!soilMoistureValue.has_value()) {
             LOGTW(ENV, "Failed to read soil moisture value from pin %s",
-                pin.getName().c_str());
+                pin->getName().c_str());
             return std::nullopt;
         }
         LOGTV(ENV, "Soil moisture value: %d",
@@ -110,13 +110,14 @@ inline PeripheralFactory makeFactoryForHw390SoilMoisture(const std::string& fact
     return makePeripheralFactory<Hw390SoilMoistureSensor, Hw390SoilMoistureSensorSettings, ISoilMoistureSensor>(
         factoryType,
         "environment",
-        [](PeripheralInitParameters& params, const std::shared_ptr<Hw390SoilMoistureSensorSettings>& settings) {
+        [](PeripheralInitParameters& params, const std::shared_ptr<Hw390SoilMoistureSensorSettings>& settings) -> Result<std::shared_ptr<Hw390SoilMoistureSensor>> {
+            auto pin = TRY(AnalogPin::create(settings->pin.get()));
             auto sensor = std::make_shared<Hw390SoilMoistureSensor>(
                 params.name,
                 settings->air.get(),
                 settings->water.get(),
                 settings->alpha.get(),
-                settings->pin.get(),
+                std::move(pin),
                 settings->disablePin.get(),
                 settings->enableDelay.get());
             params.registerFeature("moisture", [sensor](JsonObject& telemetryJson) {

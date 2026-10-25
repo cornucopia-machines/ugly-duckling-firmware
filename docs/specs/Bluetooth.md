@@ -202,11 +202,11 @@ lifecycle:
 - Constructed in `Device.hpp` before WiFi, passing device name, model, firmware
   version, serial number, and an `NvsStore` for address persistence.
 - Constructor errors (NimBLE init, GATT service registration, GAP/DIS field
-  setters) **throw** rather than log-and-continue — a device that can't stand
+  setters) **abort** rather than log-and-continue — a device that can't stand
   up its GATT server or advertise isn't usable, so it fails fast at boot.
   NimBLE host functions return their own `int` error codes (`BLE_HS_*`), not
-  `esp_err_t`, so a small `throwOnBleError()` helper is used alongside
-  `ESP_ERROR_THROW` (for the genuine `esp_err_t`-returning calls, e.g.
+  `esp_err_t`, so a small `abortOnBleError()` helper is used alongside
+  `ESP_ERROR_CHECK` (for the genuine `esp_err_t`-returning calls, e.g.
   `nimble_port_init()`). Runtime paths (notify, restart-advertising-after-
   disconnect) still log-and-continue, since a transient failure there is
   expected and recoverable.

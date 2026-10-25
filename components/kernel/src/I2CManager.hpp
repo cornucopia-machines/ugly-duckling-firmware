@@ -1,15 +1,14 @@
 #pragma once
-#include <EspException.hpp>
+#include <EspError.hpp>
 #include <Pin.hpp>
+#include <Result.hpp>
 #include <Strings.hpp>
 
 #include <driver/i2c_master.h>
 #include <i2cdev.h>
 
-#include <exception>
 #include <memory>
 #include <mutex>
-#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -35,13 +34,6 @@ public:
 };
 
 struct I2CBus {
-    /** Lookup the I2C bus handle if already allocated by i2c_bus_create() */
-    i2c_master_bus_handle_t lookupHandle() const {
-        i2c_master_bus_handle_t bus;
-        ESP_ERROR_THROW(i2c_master_get_bus_handle(port, &bus));
-        return bus;
-    }
-
     const i2c_port_t port;
     const InternalPinPtr sda;
     const InternalPinPtr scl;
@@ -86,41 +78,41 @@ public:
         return i2c_dev_check_present(&device);
     }
 
-    uint8_t readRegByte(uint8_t reg) {
+    Result<uint8_t> readRegByte(uint8_t reg) {
         uint8_t value;
-        ESP_ERROR_THROW(i2c_dev_read(&device, &reg, 1, &value, 1));
+        ESP_TRY(i2c_dev_read(&device, &reg, 1, &value, 1));
         return value;
     }
 
-    uint16_t readRegWord(uint8_t reg) {
+    Result<uint16_t> readRegWord(uint8_t reg) {
         uint16_t value;
-        ESP_ERROR_THROW(i2c_dev_read(&device, &reg, 1, &value, 2));
+        ESP_TRY(i2c_dev_read(&device, &reg, 1, &value, 2));
         return value;
     }
 
-    void readReg(uint8_t reg, uint8_t* buffer, size_t length) {
-        ESP_ERROR_THROW(i2c_dev_read(&device, &reg, 1, buffer, length));
+    Result<> readReg(uint8_t reg, uint8_t* buffer, size_t length) {
+        return espResult(i2c_dev_read(&device, &reg, 1, buffer, length));
     }
 
-    void writeRegByte(uint8_t reg, uint8_t value) {
-        ESP_ERROR_THROW(i2c_dev_write(&device, &reg, 1, &value, 1));
+    Result<> writeRegByte(uint8_t reg, uint8_t value) {
+        return espResult(i2c_dev_write(&device, &reg, 1, &value, 1));
     }
 
-    void writeRegWord(uint8_t reg, uint16_t value) {
-        ESP_ERROR_THROW(i2c_dev_write(&device, &reg, 1, &value, 2));
+    Result<> writeRegWord(uint8_t reg, uint16_t value) {
+        return espResult(i2c_dev_write(&device, &reg, 1, &value, 2));
     }
 
-    void writeReg(uint8_t reg, uint8_t* buffer, size_t length) {
-        ESP_ERROR_THROW(i2c_dev_write(&device, &reg, 1, buffer, length));
+    Result<> writeReg(uint8_t reg, uint8_t* buffer, size_t length) {
+        return espResult(i2c_dev_write(&device, &reg, 1, buffer, length));
     }
 
-    void writeByte(uint8_t cmd) {
-        ESP_ERROR_THROW(i2c_dev_write(&device, &cmd, 1, nullptr, 0));
+    Result<> writeByte(uint8_t cmd) {
+        return espResult(i2c_dev_write(&device, &cmd, 1, nullptr, 0));
     }
 
-    std::vector<uint8_t> readBytes(uint8_t cmd, size_t n) {
+    Result<std::vector<uint8_t>> readBytes(uint8_t cmd, size_t n) {
         std::vector<uint8_t> buffer(n);
-        ESP_ERROR_THROW(i2c_dev_read(&device, &cmd, 1, buffer.data(), n));
+        ESP_TRY(i2c_dev_read(&device, &cmd, 1, buffer.data(), n));
         return buffer;
     }
 
@@ -141,7 +133,7 @@ private:
 class I2CManager {
 public:
     I2CManager() {
-        ESP_ERROR_THROW(i2cdev_init());
+        ESP_ERROR_CHECK(i2cdev_init());
         buses.reserve(I2C_NUM_MAX);
     }
 
@@ -149,31 +141,33 @@ public:
         ESP_ERROR_CHECK(i2cdev_done());
     }
 
-    std::shared_ptr<I2CDevice> createDevice(const std::string& name, const I2CConfig& config) {
-        auto device = std::make_shared<I2CDevice>(name, getBusFor(config.sda, config.scl), config.address, config.clkSpeed);
+    Result<std::shared_ptr<I2CDevice>> createDevice(const std::string& name, const I2CConfig& config) {
+        auto bus = TRY(getBusFor(config.sda, config.scl));
+        auto device = std::make_shared<I2CDevice>(name, bus, config.address, config.clkSpeed);
         LOGTI(I2C, "Created I2C device %s at address 0x%02x (clk: %.02f kHz)",
             name.c_str(), config.address, config.clkSpeed / 1000.0);
         return device;
     }
 
-    std::shared_ptr<I2CDevice> createDevice(const std::string& name, const InternalPinPtr& sda, const InternalPinPtr& scl, uint8_t address) {
-        auto device = std::make_shared<I2CDevice>(name, getBusFor(sda, scl), address);
+    Result<std::shared_ptr<I2CDevice>> createDevice(const std::string& name, const InternalPinPtr& sda, const InternalPinPtr& scl, uint8_t address) {
+        auto bus = TRY(getBusFor(sda, scl));
+        auto device = std::make_shared<I2CDevice>(name, bus, address);
         LOGTI(I2C, "Created I2C device %s at address 0x%02x",
             name.c_str(), address);
         // Test if communication is possible
         // esp_err_t err = device->probeRead();
         // if (err != ESP_OK) {
-        //     throw std::runtime_error(
+        //     return failure(
         //         "Failed to communicate with I2C device " + name + " at address 0x" + std::to_string(address) + ": " + esp_err_to_name(err);
         // }
         return device;
     }
 
-    std::shared_ptr<I2CBus> getBusFor(const I2CConfig& config) {
+    Result<std::shared_ptr<I2CBus>> getBusFor(const I2CConfig& config) {
         return getBusFor(config.sda, config.scl);
     }
 
-    std::shared_ptr<I2CBus> getBusFor(const InternalPinPtr& sda, const InternalPinPtr& scl) {
+    Result<std::shared_ptr<I2CBus>> getBusFor(const InternalPinPtr& sda, const InternalPinPtr& scl) {
         std::scoped_lock lock(mutex);
         for (auto bus : buses) {
             if (bus->sda == sda && bus->scl == scl) {
@@ -182,7 +176,7 @@ public:
                 return bus;
             }
         }
-        auto port = selectPort(sda, scl);
+        auto port = TRY(selectPort(sda, scl));
         LOGTI(I2C, "Registering I2C bus #%d for SDA: %s, SCL: %s",
             static_cast<int>(port), sda->getName().c_str(), scl->getName().c_str());
         auto bus = std::make_shared<I2CBus>(I2CBus { .port = port, .sda = sda, .scl = scl });
@@ -196,7 +190,7 @@ private:
 
     // On chips with LP_I2C (ESP32-C6): LP_I2C_NUM_0 is pin-locked to GPIO6/GPIO7; the single HP bus is I2C_NUM_0.
     // On other platforms (ESP32-S3): all buses are HP, assigned in registration order.
-    i2c_port_t selectPort(const InternalPinPtr& sda, const InternalPinPtr& scl) {
+    Result<i2c_port_t> selectPort(const InternalPinPtr& sda, const InternalPinPtr& scl) {
 #if SOC_LP_I2C_SUPPORTED
         if (sda->getGpio() == GPIO_NUM_6 && scl->getGpio() == GPIO_NUM_7) {
             LOGTI(I2C, "Using LP I2C bus #%d for SDA: %s, SCL: %s",
@@ -205,7 +199,7 @@ private:
         }
         for (const auto& b : buses) {
             if (b->port == I2C_NUM_0) {
-                throw std::runtime_error("Maximum number of I2C buses reached");
+                return failure("Maximum number of I2C buses reached");
             }
         }
         LOGTI(I2C, "Using HP I2C bus #%d for SDA: %s, SCL: %s",
@@ -213,7 +207,7 @@ private:
         return I2C_NUM_0;
 #else
         if (buses.size() >= SOC_HP_I2C_NUM) {
-            throw std::runtime_error("Maximum number of I2C buses reached");
+            return failure("Maximum number of I2C buses reached");
         }
         return static_cast<i2c_port_t>(buses.size());
 #endif

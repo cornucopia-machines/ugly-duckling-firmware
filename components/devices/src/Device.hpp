@@ -10,6 +10,7 @@
 
 #include <esp_app_desc.h>
 #include <esp_event.h>
+#include <esp_system.h>
 
 #include <chrono>
 #include <concepts>
@@ -42,7 +43,6 @@ static const std::string firmwareVersion(esp_app_get_description()->version);
 #include <SyncPublisher.hpp>
 #include <TelemetryTask.hpp>
 #include <config/ConfigBootPlan.hpp>
-#include <config/NvsConfiguration.hpp>
 #include <devices/DeviceDefinition.hpp>
 #include <mqtt/MqttLog.hpp>
 
@@ -152,7 +152,7 @@ static void startDevice() {
 
     // Init switch and button handling
     auto switches = std::make_shared<SwitchManager>();
-    switches->registerSwitch({ //
+    auto factoryResetSwitch = switches->registerSwitch({ //
         .name = "factory-reset",
         .pin = deviceDefinition->bootPin,
         .mode = SwitchMode::PullUp,
@@ -171,6 +171,10 @@ static void startDevice() {
                 deviceDefinition->handleShortButtonPress(duration);
             }
         } });
+    if (!factoryResetSwitch) {
+        // The boot pin comes from the board definition
+        esp_system_abort(factoryResetSwitch.error().message.c_str());
+    }
 
     // Init battery management
     auto shutdownManager = std::make_shared<ShutdownManager>();

@@ -33,37 +33,58 @@ public:
 class Tsl2591 final
     : public LightSensor {
 public:
-    Tsl2591(
+    static Result<std::shared_ptr<Tsl2591>> create(
         const std::string& name,
         const std::shared_ptr<I2CManager>& i2c,
         const I2CConfig& config,
         seconds measurementFrequency,
-        seconds latencyInterval)
-        : LightSensor(name, measurementFrequency, latencyInterval)
-        , bus(i2c->getBusFor(config)) {
+        seconds latencyInterval) {
+        auto bus = TRY(i2c->getBusFor(config));
 
         LOGI("Initializing TSL2591 light sensor with %s",
             config.toString().c_str());
 
-        ESP_ERROR_THROW(tsl2591_init_desc(&sensor, bus->port, bus->sda->getGpio(), bus->scl->getGpio()));
-        ESP_ERROR_THROW(tsl2591_init(&sensor));
+        auto sensor = std::shared_ptr<Tsl2591>(new Tsl2591(name, bus, measurementFrequency, latencyInterval));
+        auto* device = &sensor->sensor;
+        ESP_TRY(tsl2591_init_desc(device, bus->port, bus->sda->getGpio(), bus->scl->getGpio()));
+        ESP_TRY(tsl2591_init(device));
 
         // TODO Make these configurable
-        ESP_ERROR_THROW(tsl2591_set_power_status(&sensor, TSL2591_POWER_ON));
-        ESP_ERROR_THROW(tsl2591_set_als_status(&sensor, TSL2591_ALS_ON));
-        ESP_ERROR_THROW(tsl2591_set_gain(&sensor, TSL2591_GAIN_MEDIUM));
-        ESP_ERROR_THROW(tsl2591_set_integration_time(&sensor, TSL2591_INTEGRATION_300MS));
+        ESP_TRY(tsl2591_set_power_status(device, TSL2591_POWER_ON));
+        ESP_TRY(tsl2591_set_als_status(device, TSL2591_ALS_ON));
+        ESP_TRY(tsl2591_set_gain(device, TSL2591_GAIN_MEDIUM));
+        ESP_TRY(tsl2591_set_integration_time(device, TSL2591_INTEGRATION_300MS));
 
-        runLoop();
+        sensor->runLoop();
+        return sensor;
+    }
+
+    ~Tsl2591() override {
+        tsl2591_free_desc(&sensor);
+    }
+
+    Tsl2591(const Tsl2591&) = delete;
+    Tsl2591& operator=(const Tsl2591&) = delete;
+    Tsl2591(Tsl2591&&) = delete;
+    Tsl2591& operator=(Tsl2591&&) = delete;
+
+private:
+    Tsl2591(
+        const std::string& name,
+        const std::shared_ptr<I2CBus>& bus,
+        seconds measurementFrequency,
+        seconds latencyInterval)
+        : LightSensor(name, measurementFrequency, latencyInterval)
+        , bus(bus) {
     }
 
 protected:
-    double readLightLevel() override {
+    std::optional<double> readLightLevel() override {
         float lux;
         esp_err_t res = tsl2591_get_lux(&sensor, &lux);
         if (res != ESP_OK) {
             LOGD("Could not read light level: %s", esp_err_to_name(res));
-            return std::numeric_limits<double>::quiet_NaN();
+            return std::nullopt;
         }
         return static_cast<double>(lux);
     }
@@ -77,14 +98,9 @@ inline PeripheralFactory makeFactoryForTsl2591() {
     return makePeripheralFactory<Tsl2591, Tsl2591Settings, ILightSensor>(
         "light-sensor:tsl2591",
         "light-sensor",
-        [](PeripheralInitParameters& params, const std::shared_ptr<Tsl2591Settings>& settings) {
+        [](PeripheralInitParameters& params, const std::shared_ptr<Tsl2591Settings>& settings) -> Result<std::shared_ptr<Tsl2591>> {
             I2CConfig i2cConfig = settings->parse(TSL2591_ADDR);
-            auto sensor = std::make_shared<Tsl2591>(
-                params.name,
-                params.services.i2c,
-                i2cConfig,
-                settings->measurementFrequency.get(),
-                settings->latencyInterval.get());
+            auto sensor = TRY(Tsl2591::create(params.name, params.services.i2c, i2cConfig, settings->measurementFrequency.get(), settings->latencyInterval.get()));
             params.registerFeature("light", [sensor](JsonObject& telemetryJson) {
                 telemetryJson["value"] = sensor->getLightLevel();
             });

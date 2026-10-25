@@ -125,9 +125,9 @@ inline PeripheralFactory makeFactoryForKalmanSoilMoisture() {
     return makePeripheralFactory<KalmanFilterSoilSensor, KalmanFilterSoilSensorSettings, ISoilMoistureSensor>(
         "environment:kalman-soil-moisture",
         "environment",
-        [](PeripheralInitParameters& params, const std::shared_ptr<KalmanFilterSoilSensorSettings>& settings) {
-            auto rawMoistureSensor = params.peripheral<api::ISoilMoistureSensor>(settings->rawMoistureSensor.get());
-            auto tempSensor = params.peripheral<api::ITemperatureSensor>(settings->temperatureSensor.get());
+        [](PeripheralInitParameters& params, const std::shared_ptr<KalmanFilterSoilSensorSettings>& settings) -> Result<std::shared_ptr<KalmanFilterSoilSensor>> {
+            auto rawMoistureSensor = TRY(params.peripheral<api::ISoilMoistureSensor>(settings->rawMoistureSensor.get()));
+            auto tempSensor = TRY(params.peripheral<api::ITemperatureSensor>(settings->temperatureSensor.get()));
             auto sensor = std::make_shared<KalmanFilterSoilSensor>(
                 params.name,
                 rawMoistureSensor,

@@ -1,4 +1,5 @@
 #pragma once
+#include <Result.hpp>
 #include <config/Configuration.hpp>
 #include <peripherals/api/IValve.hpp>
 #include <peripherals/valve/ValveControlStrategy.hpp>
@@ -73,13 +74,13 @@ public:
      */
     Property<milliseconds> brakeDuration { this, "brakeDuration", 10ms };
 
-    std::unique_ptr<ValveControlStrategy> createValveControlStrategy(const std::map<std::string, std::shared_ptr<PwmMotorDriver>>& motors, const std::string& motorName) const {
+    Result<std::unique_ptr<ValveControlStrategy>> createValveControlStrategy(const std::map<std::string, std::shared_ptr<PwmMotorDriver>>& motors, const std::string& motorName) const {
         PinPtr pin = this->pin.get();
         if (pin != nullptr) {
             return std::make_unique<LatchingPinValveControlStrategy>(pin);
         }
 
-        auto motor = findMotor(motors, motorName);
+        auto motor = TRY(findMotor(motors, motorName));
         auto strategy = this->strategy.get();
         auto switchDuration = this->switchDuration.getOrDefault(strategy == ValveControlStrategyType::Latching
                 ? DEFAULT_LATCHING_SWITCH_DURATION
@@ -94,7 +95,7 @@ public:
             case ValveControlStrategyType::Latching:
                 return std::make_unique<LatchingMotorValveControlStrategy>(motor, switchDuration, brakeDuration.get(), holdDuty);
             default:
-                throw PeripheralCreationException("unknown strategy");
+                return failure("unknown strategy");
         }
     }
 };

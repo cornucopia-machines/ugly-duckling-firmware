@@ -165,7 +165,12 @@ private:
             transport = network.modemTransport;
             if (url.starts_with("https://")) {
                 // The image host is verified against the CA bundle, without a client certificate
-                modemTls = std::make_unique<mqtt::TlsTransport>(network.modemTransport, std::nullopt);
+                auto tls = mqtt::TlsTransport::create(network.modemTransport, std::nullopt);
+                if (!tls) {
+                    LOGTE(UPDATE, "Update failed (%s), restarting...", tls.error().message.c_str());
+                    delayedRestart();
+                }
+                modemTls = std::move(*tls);
                 transport = modemTls->getHandle();
             }
         }

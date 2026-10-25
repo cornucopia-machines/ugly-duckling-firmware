@@ -4,7 +4,6 @@
 #include <devices/DeviceDefinition.hpp>
 #include <drivers/Bq27220Driver.hpp>
 #include <drivers/Drv8848Driver.hpp>
-#include <drivers/Ina219Driver.hpp>
 #include <drivers/LedDriver.hpp>
 #include <peripherals/Peripheral.hpp>
 #include <peripherals/door/Door.hpp>
@@ -28,8 +27,8 @@ public:
         : DeviceDefinition({ .model = "mk10", .revision = 1, .boot = GPIO_NUM_9, .status = GPIO_NUM_8 }) {
     }
 
-    std::shared_ptr<BatteryDriver> createBatteryDriver(const std::shared_ptr<I2CManager>& i2c) override {
-        return std::make_shared<Bq27220Driver>(
+    Result<std::shared_ptr<BatteryDriver>> createBatteryDriver(const std::shared_ptr<I2CManager>& i2c) override {
+        return Bq27220Driver::create(
             i2c,
             SDA,
             SCL,
@@ -67,21 +66,7 @@ protected:
         // revisit whether a general-purpose bitbang transport is warranted; do not copy this class.
         peripheralManager->registerFactory(environment::makeFactoryForSpadefootToadSensorWithBitbangI2C());
 
-        ina219 = std::make_shared<Ina219Driver>(
-            services.i2c,
-            I2CConfig {
-                .address = Ina219Driver::DEFAULT_ADDRESS,
-                .sda = SDA,
-                .scl = SCL,
-            },
-            Ina219Parameters {
-                .uRange = INA219_BUS_RANGE_16V,
-                .gain = INA219_GAIN_0_125,
-                .uResolution = INA219_RES_12BIT_1S,
-                .iResolution = INA219_RES_12BIT_1S,
-                .mode = INA219_MODE_CONT_SHUNT_BUS,
-                .shuntMilliOhm = 50,
-            });
+        ina219 = createOnboardIna219(services.i2c, SDA, SCL);
     }
 
     // Battery fuel gauge interrupt

@@ -2,6 +2,7 @@
 #include <Log.hpp>
 #include <Overloaded.hpp>
 #include <Queue.hpp>
+#include <Result.hpp>
 #include <State.hpp>
 #include <Task.hpp>
 #include <config/Configuration.hpp>
@@ -19,7 +20,6 @@
 #include <functional>
 #include <memory>
 #include <optional>
-#include <stdexcept>
 #include <string>
 #include <utility>
 #include <variant>
@@ -130,7 +130,7 @@ public:
         json["disconnects"] = disconnectCount.exchange(0, std::memory_order_relaxed);
     }
 
-    void configMqttClient(esp_mqtt_client_config_t& config) {
+    Result<> configMqttClient(esp_mqtt_client_config_t& config) {
         if (url.empty()) {
             if (!configHostname.empty()) {
                 // Legacy host/port mode (deprecated)
@@ -145,7 +145,7 @@ public:
 #endif
                 port = 1883;
 #else
-                throw std::runtime_error("No MQTT server specified in configuration");
+                return failure("No MQTT server specified in configuration");
 #endif
             }
         }
@@ -207,14 +207,14 @@ public:
         if (modemTransport != nullptr) {
             // esp-mqtt ignores the URI's scheme when given a transport, and takes its TLS settings
             // only for transports it creates itself, so the stack is built here to match
-            config.network.transport = getModemTransport();
+            config.network.transport = TRY(getModemTransport());
             if (!url.empty()) {
                 // Leave it to the URI, as it is anyway, instead of a warning about the conflict
                 config.broker.address.transport = MQTT_TRANSPORT_UNKNOWN;
             }
             // TLS runs on esp-mqtt's task here, with the AT command layer underneath
             config.task.stack_size = MODEM_TASK_STACK_SIZE;
-            return;
+            return {};
         }
 
         if (!configServerCert.empty()) {
@@ -233,6 +233,7 @@ public:
                     config.credentials.authentication.certificate);
             }
         }
+        return {};
     }
 
 private:
@@ -241,7 +242,7 @@ private:
      * mqtts and wss (or a server certificate in legacy host mode), WebSocket for ws and wss.
      * Built on first use, so a bad certificate shows up where connecting does, not at startup.
      */
-    esp_transport_handle_t getModemTransport() {
+    Result<esp_transport_handle_t> getModemTransport() {
         if (modemTransportStack != nullptr) {
             return modemTransportStack;
         }
@@ -253,20 +254,20 @@ private:
         esp_transport_handle_t transport = modemTransport;
         if (secure) {
             if (configServerCert.empty()) {
-                throw std::runtime_error("TLS over the modem needs a server certificate in the configuration");
+                return failure("TLS over the modem needs a server certificate in the configuration");
             }
-            modemTlsTransport = std::make_unique<TlsTransport>(modemTransport, TlsTransport::Credentials {
-                                                                                   .serverCert = configServerCert,
-                                                                                   .clientCert = configClientCert,
-                                                                                   .clientKey = configClientKey,
-                                                                               });
+            modemTlsTransport = TRY(TlsTransport::create(modemTransport, TlsTransport::Credentials {
+                                                                             .serverCert = configServerCert,
+                                                                             .clientCert = configClientCert,
+                                                                             .clientKey = configClientKey,
+                                                                         }));
             transport = modemTlsTransport->getHandle();
         }
         if (webSocket) {
             // The same setup esp-mqtt gives the WebSocket transports it creates itself
             esp_transport_handle_t ws = esp_transport_ws_init(transport);
             if (ws == nullptr) {
-                throw std::runtime_error("could not create WebSocket transport");
+                return failure("could not create WebSocket transport");
             }
             auto pathStart = url.find('/', schemeEnd + 3);
             if (pathStart != std::string::npos) {
@@ -544,14 +545,13 @@ private:
         stopClient();
 
         esp_mqtt_client_config_t mqttConfig {};
-        try {
-            configMqttClient(mqttConfig);
-        } catch (const std::exception& e) {
+        auto configured = configMqttClient(mqttConfig);
+        if (!configured) {
             // Config is loaded once at startup and won't fix itself without a reboot, but we
             // still just leave the state machine to retry on its normal cadence (see the
             // Connecting-state timeout in runEventLoop()) rather than special-casing a backoff --
             // the client was never started, so that retry is as cheap as this one was.
-            LOGTE(MQTT, "Cannot configure MQTT client, not connecting: %s", e.what());
+            LOGTE(MQTT, "Cannot configure MQTT client, not connecting: %s", configured.error().message.c_str());
             return;
         }
         mqttConfig.session.disable_clean_session = !startCleanSession;

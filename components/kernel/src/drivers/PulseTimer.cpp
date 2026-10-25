@@ -1,14 +1,16 @@
 #include "PulseTimer.hpp"
 
-#include <EspException.hpp>
+#include <EspError.hpp>
 #include <Log.hpp>
 #include <PwmManager.hpp>
+#include <Result.hpp>
 
 #include <driver/gptimer.h>
 #include <driver/gptimer_types.h>
 #include <driver/ledc.h>
 #include <esp_attr.h>
 #include <esp_err.h>
+#include <esp_system.h>
 #include <freertos/portmacro.h>
 #include <freertos/projdefs.h>
 #include <freertos/semphr.h>    // NOLINT(misc-header-include-cycle)
@@ -19,7 +21,6 @@
 #include <chrono>
 #include <cstdint>
 #include <functional>
-#include <stdexcept>
 
 namespace cornucopia::ugly_duckling::kernel::drivers {
 
@@ -34,12 +35,27 @@ PulseTimer::PulseTimer(const PwmPin& channelA, const PwmPin& channelB)
     , channelA(channelA.getChannel())
     , channelB(channelB.getChannel()) {
     if (channelB.getSpeedMode() != speedMode) {
-        throw std::runtime_error("Pulse timer channels must use the same LEDC speed mode");
+        // The channels come from the board definition
+        esp_system_abort("Pulse timer channels must use the same LEDC speed mode");
     }
+}
 
+PulseTimer::~PulseTimer() {
+    if (timer != nullptr) {
+        // In case run() failed halfway: the timer can only be deleted once stopped and disabled
+        release();
+        gptimer_del_timer(timer);
+    }
+    if (done != nullptr) {
+        vSemaphoreDelete(done);
+    }
+}
+
+Result<> PulseTimer::allocate() {
+    // The destructor frees whatever got allocated before a failure
     done = xSemaphoreCreateBinary();
     if (done == nullptr) {
-        throw std::runtime_error("Could not create pulse timer semaphore");
+        return failure("Could not create pulse timer semaphore");
     }
 
     gptimer_config_t config = {
@@ -53,31 +69,16 @@ PulseTimer::PulseTimer(const PwmPin& channelA, const PwmPin& channelB)
         .on_alarm = onAlarm,
     };
     esp_err_t err = gptimer_new_timer(&config, &timer);
-    if (err == ESP_OK) {
-        err = gptimer_register_event_callbacks(timer, &callbacks, this);
-    }
     if (err != ESP_OK) {
-        // The destructor doesn't run when the constructor throws
-        if (timer != nullptr) {
-            gptimer_del_timer(timer);
-        }
-        vSemaphoreDelete(done);
-        ESP_ERROR_THROW(err);
+        return failure(std::string("Could not create pulse timer: ") + esp_err_to_name(err));
     }
+    ESP_TRY(gptimer_register_event_callbacks(timer, &callbacks, this));
+    return {};
 }
 
-PulseTimer::~PulseTimer() {
-    if (timer != nullptr) {
-        // In case run() threw halfway: the timer can only be deleted once stopped and disabled
-        release();
-        gptimer_del_timer(timer);
-    }
-    if (done != nullptr) {
-        vSemaphoreDelete(done);
-    }
-}
+Result<bool> PulseTimer::run(std::chrono::microseconds duration, const std::function<void()>& start) {
+    TRY(allocate());
 
-bool PulseTimer::run(std::chrono::microseconds duration, const std::function<void()>& start) {
     gptimer_alarm_config_t alarm = {
         .alarm_count = static_cast<uint64_t>(duration.count()),
         .reload_count = 0,
@@ -86,10 +87,10 @@ bool PulseTimer::run(std::chrono::microseconds duration, const std::function<voi
         },
     };
     // Enabling the timer holds a power management lock until it's disabled again
-    ESP_ERROR_THROW(gptimer_enable(timer));
+    ESP_TRY(gptimer_enable(timer));
     enabled = true;
-    ESP_ERROR_THROW(gptimer_set_raw_count(timer, 0));
-    ESP_ERROR_THROW(gptimer_set_alarm_action(timer, &alarm));
+    ESP_TRY(gptimer_set_raw_count(timer, 0));
+    ESP_TRY(gptimer_set_alarm_action(timer, &alarm));
     // Clear any stale signal from an earlier, timed-out run
     xSemaphoreTake(done, 0);
 

@@ -175,14 +175,16 @@ struct NoOpSoilMoistureSensor : virtual ISoilMoistureSensor, Named {
 inline FunctionFactory makeFactory() {
     return makeFunctionFactory<PlotController, PlotControllerSettings, PlotControllerConfig>(
         "plot-controller",
-        [](const FunctionInitParameters& params, const std::shared_ptr<PlotControllerSettings>& settings) {
-            auto valve = params.peripheral<IValve>(settings->valve.get());
-            auto flowMeter = settings->flowMeter.hasValue()
-                ? params.peripheral<IFlowMeter>(settings->flowMeter.get())
-                : std::make_shared<NoOpFlowMeter>(params.name + ":flow");
-            auto soilMoistureSensor = settings->soilMoistureSensor.hasValue()
-                ? params.peripheral<ISoilMoistureSensor>(settings->soilMoistureSensor.get())
-                : std::make_shared<NoOpSoilMoistureSensor>(params.name + ":soil");
+        [](const FunctionInitParameters& params, const std::shared_ptr<PlotControllerSettings>& settings) -> Result<std::shared_ptr<PlotController>> {
+            auto valve = TRY(params.peripheral<IValve>(settings->valve.get()));
+            std::shared_ptr<IFlowMeter> flowMeter = std::make_shared<NoOpFlowMeter>(params.name + ":flow");
+            if (settings->flowMeter.hasValue()) {
+                flowMeter = TRY(params.peripheral<IFlowMeter>(settings->flowMeter.get()));
+            }
+            std::shared_ptr<ISoilMoistureSensor> soilMoistureSensor = std::make_shared<NoOpSoilMoistureSensor>(params.name + ":soil");
+            if (settings->soilMoistureSensor.hasValue()) {
+                soilMoistureSensor = TRY(params.peripheral<ISoilMoistureSensor>(settings->soilMoistureSensor.get()));
+            }
             auto moistureBasedSettings = settings->moistureBasedScheduler.get();
             return std::make_shared<PlotController>(
                 params.name,

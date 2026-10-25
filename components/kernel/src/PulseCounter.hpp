@@ -1,9 +1,9 @@
 #pragma once
 
-#include <EspException.hpp>
 #include <Log.hpp>
 #include <Pin.hpp>
 #include <Queue.hpp>
+#include <Result.hpp>
 
 #include <driver/gpio.h>
 #include <esp_sleep.h>
@@ -84,13 +84,14 @@ public:
             .pull_down_en = GPIO_PULLDOWN_ENABLE,
             .intr_type = GPIO_INTR_ANYEDGE,
         };
-        ESP_ERROR_THROW(gpio_config(&config));
+        // These only fail for an invalid GPIO number, which no InternalPin has
+        ESP_ERROR_CHECK(gpio_config(&config));
 
         // Use the same configuration while in light sleep
-        ESP_ERROR_THROW(gpio_sleep_sel_dis(gpio));
+        ESP_ERROR_CHECK(gpio_sleep_sel_dis(gpio));
 
         // TODO Where should this be called?
-        ESP_ERROR_THROW(esp_sleep_enable_gpio_wakeup());
+        ESP_ERROR_CHECK(esp_sleep_enable_gpio_wakeup());
 
         LOGTD(PULSE, "Registered interrupt-based pulse counter on pin %s",
             pin->getName().c_str());
@@ -181,7 +182,7 @@ static void IRAM_ATTR handleGpioPulseCounterInterrupt(void* arg) {
  */
 class PulseCounterManager {
 public:
-    std::shared_ptr<PulseCounter> create(const PulseCounterConfig& config);
+    Result<std::shared_ptr<PulseCounter>> create(const PulseCounterConfig& config);
 
     /**
      * @brief Load and start the ULP/LP-core firmware.
@@ -214,10 +215,10 @@ private:
     };
     UlpChannelConfig ulpChannelConfigs[ULP_MAX_CHANNELS] = {};
 
-    std::shared_ptr<PulseCounter> createUlp(const PulseCounterConfig& config);
+    Result<std::shared_ptr<PulseCounter>> createUlp(const PulseCounterConfig& config);
 #endif    // CONFIG_ULP_COPROC_ENABLED
 
-    std::shared_ptr<PulseCounter> createGpio(const PulseCounterConfig& config);
+    Result<std::shared_ptr<PulseCounter>> createGpio(const PulseCounterConfig& config);
 };
 
 }    // namespace cornucopia::ugly_duckling::kernel

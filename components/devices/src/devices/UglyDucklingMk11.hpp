@@ -30,8 +30,8 @@ public:
         rtc_clk_32k_enable(true);
     }
 
-    std::shared_ptr<BatteryDriver> createBatteryDriver(const std::shared_ptr<I2CManager>& _i2c) override {
-        return std::make_shared<AnalogBatteryDriver>(
+    Result<std::shared_ptr<BatteryDriver>> createBatteryDriver(const std::shared_ptr<I2CManager>& _i2c) override {
+        return AnalogBatteryDriver::create(
             BAT_LEVEL,
             2,    // RBATL1 (5.6 MΩ) / RBATL2 (5.6 MΩ) voltage divider: V_VBAT = V_BAT_LEVEL × 2
             BatteryParameters {

@@ -19,6 +19,10 @@ public:
         const std::string commandsTopic = fullTopic("commands/#");
         const auto commandsPrefixLength = commandsTopic.length() - 1;
         mqtt->subscribe(commandsTopic, QoS::ExactlyOnce, [this, commandsPrefixLength](const std::string& topic, const JsonObject& request) {
+            // The wildcard also matches the parent topic itself, which names no command
+            if (topic.length() <= commandsPrefixLength) {
+                return;
+            }
             std::string command = topic.substr(commandsPrefixLength);
             auto it = commandHandlers.find(command);
             if (it != commandHandlers.end()) {

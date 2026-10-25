@@ -11,12 +11,27 @@
 #include <config/ConfigEnvelope.hpp>
 #include <config/StoredConfig.hpp>
 
+#include <esp_system.h>
+
 #include <memory>
-#include <stdexcept>
+#include <string>
 
 using namespace cornucopia::ugly_duckling::devices;
 using namespace cornucopia::ugly_duckling::kernel;
 using namespace cornucopia::ugly_duckling::kernel::config;
+
+/**
+ * A stored configuration we cannot load stops the boot, with a message that says why (#673). We
+ * deliberately don't fall back to defaults: a crash is what lets the boot plan revert a strict
+ * boot to the confirmed slot, while a device that came up on defaults could end up confirming
+ * the faulty configuration. The message is kept as the core dump's panic reason, which
+ * CrashManager reports once the device is online again.
+ */
+[[noreturn]] static void abortBoot(const std::string& message) {
+    std::string reason = "Boot failed: " + message;
+    LOGE("%s", reason.c_str());
+    esp_system_abort(reason.c_str());
+}
 
 /**
  * Two-slot confirmed/requested atomicity (docs/Configuration.md, "The confirmed/requested state
@@ -64,7 +79,10 @@ DeviceBootConfig loadDeviceBootConfig() {
     StoredConfig deviceStoredConfig(configNvs, DEVICE_CONFIGURATION_NAME);
     if (deviceStoredConfig.hasValue()) {
         JsonDocument deviceConfigRaw = deviceStoredConfig.data();
-        deviceConfig->load(deviceConfigRaw.as<JsonObject>());
+        auto loaded = deviceConfig->load(deviceConfigRaw.as<JsonObject>());
+        if (!loaded) {
+            abortBoot(loaded.error().message + " (while loading device config from slot '" + toString(bootPlan.slotToLoad) + "')");
+        }
         deviceManifestEntry = { .fingerprint = deviceStoredConfig.fingerprint(), .requestedAt = deviceStoredConfig.requestedAt() };
     }
 
@@ -103,7 +121,7 @@ std::shared_ptr<NetworkConfig> loadNetworkConfig(
     manifestEntry = {};
 
     if (!slotNvs) {
-        throw std::runtime_error("No confirmed config slot -- network config requires a slot to load from");
+        abortBoot("No confirmed config slot -- network config requires a slot to load from");
     }
 
     StoredConfig networkStored(slotNvs, NETWORK_CONFIGURATION_NAME);
@@ -124,7 +142,10 @@ std::shared_ptr<NetworkConfig> loadNetworkConfig(
     // Load network config from the slot (which now includes the migrated data, if applicable)
     if (networkStored.hasValue()) {
         JsonDocument networkRaw = networkStored.data();
-        networkConfig->load(networkRaw.as<JsonObject>());
+        auto loaded = networkConfig->load(networkRaw.as<JsonObject>());
+        if (!loaded) {
+            abortBoot(loaded.error().message + " (while loading network config)");
+        }
         manifestEntry = { .fingerprint = networkStored.fingerprint(), .requestedAt = networkStored.requestedAt() };
     }
 

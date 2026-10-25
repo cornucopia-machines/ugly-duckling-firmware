@@ -32,34 +32,50 @@ public:
 class Bh1750 final
     : public LightSensor {
 public:
-    Bh1750(
+    static Result<std::shared_ptr<Bh1750>> create(
         const std::string& name,
-        const std::shared_ptr<I2CManager>& _i2c,
         const I2CConfig& config,
         seconds measurementFrequency,
-        seconds latencyInterval)
-        : LightSensor(name, measurementFrequency, latencyInterval) {
-
+        seconds latencyInterval) {
         LOGI("Initializing BH1750 light sensor with %s",
             config.toString().c_str());
 
+        auto sensor = std::shared_ptr<Bh1750>(new Bh1750(name, measurementFrequency, latencyInterval));
         // TODO Use I2CManager to create device
-        ESP_ERROR_THROW(bh1750_init_desc(&sensor, config.address, I2C_NUM_0, config.sda->getGpio(), config.scl->getGpio()));
-        ESP_ERROR_THROW(bh1750_setup(&sensor, BH1750_MODE_CONTINUOUS, BH1750_RES_LOW));
+        ESP_TRY(bh1750_init_desc(&sensor->sensor, config.address, I2C_NUM_0, config.sda->getGpio(), config.scl->getGpio()));
+        ESP_TRY(bh1750_setup(&sensor->sensor, BH1750_MODE_CONTINUOUS, BH1750_RES_LOW));
 
-        runLoop();
+        sensor->runLoop();
+        return sensor;
     }
 
+    ~Bh1750() override {
+        bh1750_free_desc(&sensor);
+    }
+
+    Bh1750(const Bh1750&) = delete;
+    Bh1750& operator=(const Bh1750&) = delete;
+    Bh1750(Bh1750&&) = delete;
+    Bh1750& operator=(Bh1750&&) = delete;
+
 protected:
-    double readLightLevel() override {
+    std::optional<double> readLightLevel() override {
         uint16_t lightLevel;
         if (bh1750_read(&sensor, &lightLevel) != ESP_OK) {
             LOGE("Could not read light level");
+            return std::nullopt;
         }
         return lightLevel;
     }
 
 private:
+    Bh1750(
+        const std::string& name,
+        seconds measurementFrequency,
+        seconds latencyInterval)
+        : LightSensor(name, measurementFrequency, latencyInterval) {
+    }
+
     i2c_dev_t sensor {};
 };
 
@@ -67,14 +83,9 @@ inline PeripheralFactory makeFactoryForBh1750() {
     return makePeripheralFactory<Bh1750, Bh1750Settings, ILightSensor>(
         "light-sensor:bh1750",
         "light-sensor",
-        [](PeripheralInitParameters& params, const std::shared_ptr<Bh1750Settings>& settings) {
+        [](PeripheralInitParameters& params, const std::shared_ptr<Bh1750Settings>& settings) -> Result<std::shared_ptr<Bh1750>> {
             I2CConfig i2cConfig = settings->parse(0x23);
-            auto sensor = std::make_shared<Bh1750>(
-                params.name,
-                params.services.i2c,
-                i2cConfig,
-                settings->measurementFrequency.get(),
-                settings->latencyInterval.get());
+            auto sensor = TRY(Bh1750::create(params.name, i2cConfig, settings->measurementFrequency.get(), settings->latencyInterval.get()));
             params.registerFeature("light", [sensor](JsonObject& telemetryJson) {
                 telemetryJson["value"] = sensor->getLightLevel();
             });

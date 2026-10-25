@@ -26,6 +26,17 @@
 - Use `toStringWithPrecision()` from `Strings.hpp` or `snprintf("%.1f", ...)` instead. `vfprintf` is linked for logging anyway, so these cost nothing extra. For values that are really integers (e.g. Hz to kHz), use integer maths.
 - CI fails the build if `floating_to_chars.o` shows up in the link map.
 
+## Error Handling
+
+The firmware is built without C++ exceptions (`CONFIG_COMPILER_CXX_EXCEPTIONS=n`): the unwind tables alone cost more than 100 KB of flash ([#565](https://github.com/cornucopia-machines/ugly-duckling-firmware/issues/565)). Don't use `throw`, `try` or `catch`.
+
+- Anything that can fail because of configuration, attached hardware or the network returns a `Result<T>` (`std::expected<T, Error>`, from `Result.hpp`). The `Error` carries a message for the logs and the init message, so make it say what went wrong in terms of the configuration.
+- Propagate errors with `TRY(expr)`: `auto device = TRY(i2c->createDevice(...));`, or `TRY(device->writeRegByte(...));` for a `Result<>`. For `esp_err_t`, use `ESP_TRY(err)` from `EspError.hpp`.
+- Classes that can fail to set up get a `static Result<std::shared_ptr<T>> create(...)` factory and a private constructor. Peripheral and function factories may return either the instance or a `Result` of it.
+- Configuration values that ArduinoJson converts but which can still be invalid (such as pin names) are rejected by specializing `PropertyValidator<T>`.
+- Where a failure can only mean the firmware itself is broken (hardware the board definition hard-codes, resources the firmware allocates at boot), abort with `ESP_ERROR_CHECK` or `esp_system_abort("reason")`, so the crash says why.
+- Code that calls into the standard library still aborts on its errors (out-of-range `substr`, constructing a `std::string` from `nullptr`, running out of memory): check the inputs instead.
+
 ## Naming Conventions
 
 | Kind | Convention | Example |

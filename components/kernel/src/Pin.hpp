@@ -1,20 +1,18 @@
 #pragma once
-#include <EspException.hpp>
+#include <EspError.hpp>
 #include <Log.hpp>
+#include <config/Configuration.hpp>
 
 #include <ArduinoJson.h>
 #include <driver/gpio.h>
-#include <driver/gpio_filter.h>
 #include <esp_adc/adc_cali.h>
 #include <esp_adc/adc_cali_scheme.h>
 #include <esp_adc/adc_oneshot.h>
 #include <hal/adc_types.h>
 
-#include <exception>
 #include <map>
 #include <memory>
 #include <optional>
-#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -34,12 +32,15 @@ using InternalPinPtr = std::shared_ptr<InternalPin>;
  */
 class Pin {
 public:
+    /**
+     * @brief Look up a pin by name; nullptr if the board has no such pin.
+     */
     static PinPtr byName(const std::string& name) {
         auto it = BY_NAME.find(name);
         if (it != BY_NAME.end()) {
             return it->second;
         }
-        throw std::runtime_error(std::string("Unknown pin: " + name).c_str());
+        return nullptr;
     }
 
     enum class Mode : uint8_t {
@@ -88,12 +89,15 @@ public:
         return pin;
     }
 
+    /**
+     * @brief Look up an internal pin by name; nullptr if the board has no such pin.
+     */
     static InternalPinPtr byName(const std::string& name) {
         auto it = INTERNAL_BY_NAME.find(name);
         if (it != INTERNAL_BY_NAME.end()) {
             return it->second;
         }
-        throw std::runtime_error(std::string("Unknown internal pin: " + name).c_str());
+        return nullptr;
     }
 
     static InternalPinPtr byGpio(gpio_num_t pin) {
@@ -119,7 +123,8 @@ public:
             .intr_type = GPIO_INTR_DISABLE,
         };
         gpio_sleep_set_direction(gpio, conf.mode);
-        ESP_ERROR_THROW(gpio_config(&conf));
+        // Only fails for an invalid GPIO number, which no InternalPin has
+        ESP_ERROR_CHECK(gpio_config(&conf));
     }
 
     /**
@@ -136,12 +141,12 @@ public:
      * leave whatever pull configuration the pad happens to carry.
      */
     void parkOutput(uint8_t level) const {
-        ESP_ERROR_THROW(gpio_set_pull_mode(gpio, GPIO_FLOATING));
+        ESP_ERROR_CHECK(gpio_set_pull_mode(gpio, GPIO_FLOATING));
         // Set the level first so enabling the output driver doesn't glitch the
         // pin through whatever the output register happened to hold.
-        ESP_ERROR_THROW(gpio_set_level(gpio, level));
+        ESP_ERROR_CHECK(gpio_set_level(gpio, level));
         gpio_sleep_set_direction(gpio, GPIO_MODE_OUTPUT);
-        ESP_ERROR_THROW(gpio_set_direction(gpio, GPIO_MODE_OUTPUT));
+        ESP_ERROR_CHECK(gpio_set_direction(gpio, GPIO_MODE_OUTPUT));
     }
 
     void digitalWrite(uint8_t val) const override {
@@ -164,59 +169,8 @@ public:
         return gpio;
     }
 
-    /**
-     * @brief Enable hardware glitch filter on this pin.
-     * Filters out pulses shorter than two IO-MUX clock cycles.
-     *
-     * @throws EspException if the filter cannot be created or enabled
-     */
-    void enableGlitchFilter() {
-        if (glitchFilter != nullptr) {
-            // Already enabled
-            return;
-        }
-
-        gpio_pin_glitch_filter_config_t filter_config = {
-            .clk_src = GLITCH_FILTER_CLK_SRC_DEFAULT,
-            .gpio_num = gpio,
-        };
-
-        ESP_ERROR_THROW(gpio_new_pin_glitch_filter(&filter_config, &glitchFilter));
-
-        try {
-            ESP_ERROR_THROW(gpio_glitch_filter_enable(glitchFilter));
-        } catch (...) {
-            // Clean up the filter if enable fails
-            gpio_del_glitch_filter(glitchFilter);
-            glitchFilter = nullptr;
-            throw;
-        }
-
-        LOGD("Enabled glitch filter for pin %s", name.c_str());
-    }
-
-    /**
-     * @brief Disable and remove hardware glitch filter from this pin.
-     * Multiple calls are safe - will only delete if filter exists.
-     *
-     * @throws EspException if the filter cannot be disabled or deleted
-     */
-    void disableGlitchFilter() {
-        if (glitchFilter == nullptr) {
-            // Already disabled
-            return;
-        }
-
-        ESP_ERROR_THROW(gpio_glitch_filter_disable(glitchFilter));
-        ESP_ERROR_THROW(gpio_del_glitch_filter(glitchFilter));
-
-        glitchFilter = nullptr;
-        LOGD("Disabled glitch filter for pin %s", name.c_str());
-    }
-
 private:
     const gpio_num_t gpio;
-    gpio_glitch_filter_handle_t glitchFilter = nullptr;
     static std::map<std::string, InternalPinPtr> INTERNAL_BY_NAME;
     static std::map<gpio_num_t, InternalPinPtr> INTERNAL_BY_GPIO;
 };
@@ -225,15 +179,21 @@ class AnalogPin {
 public:
     static constexpr double MAX_ANALOG_VALUE = 4096.0;
 
-    AnalogPin(
+    /**
+     * @brief Set up `pin` for analog reads; fails if the pin cannot do ADC.
+     */
+    static Result<std::unique_ptr<AnalogPin>> create(
         const InternalPinPtr& pin,
         adc_atten_t atten = ADC_ATTEN_DB_12,
-        adc_bitwidth_t bitwidth = ADC_BITWIDTH_DEFAULT)
-        : pin(pin) {
+        adc_bitwidth_t bitwidth = ADC_BITWIDTH_DEFAULT) {
         adc_unit_t unit;
-        ESP_ERROR_THROW(adc_oneshot_io_to_channel(pin->getGpio(), &unit, &channel));
+        adc_channel_t channel {};
+        esp_err_t err = adc_oneshot_io_to_channel(pin->getGpio(), &unit, &channel);
+        if (err != ESP_OK) {
+            return failure("Pin " + pin->getName() + " cannot be used for analog reads: " + esp_err_to_name(err));
+        }
 
-        handle = getUnitHandle(unit);
+        adc_oneshot_unit_handle_t handle = TRY(getUnitHandle(unit));
 
         LOGI("Initializing analog pin %s (GPIO %d) with attenuation %d and bitwidth %d",
             pin->getName().c_str(), static_cast<int>(pin->getGpio()), static_cast<int>(atten), static_cast<int>(bitwidth));
@@ -242,7 +202,7 @@ public:
             .atten = atten,
             .bitwidth = bitwidth,
         };
-        ESP_ERROR_THROW(adc_oneshot_config_channel(handle, channel, &config));
+        ESP_TRY(adc_oneshot_config_channel(handle, channel, &config));
 
         adc_cali_curve_fitting_config_t caliConfig = {
             .unit_id = unit,
@@ -250,38 +210,35 @@ public:
             .atten = atten,
             .bitwidth = bitwidth,
         };
+        adc_cali_handle_t caliHandle = nullptr;
         esp_err_t ret = adc_cali_create_scheme_curve_fitting(&caliConfig, &caliHandle);
         if (ret != ESP_OK) {
             LOGW("ADC calibration unavailable for pin %s (%s)",
                 pin->getName().c_str(), esp_err_to_name(ret));
+            caliHandle = nullptr;
         }
+        return std::unique_ptr<AnalogPin>(new AnalogPin(pin, channel, handle, caliHandle));
     }
+
+    AnalogPin(const AnalogPin&) = delete;
+    AnalogPin& operator=(const AnalogPin&) = delete;
 
     ~AnalogPin() {
         if (caliHandle != nullptr) {
             ESP_ERROR_CHECK(adc_cali_delete_scheme_curve_fitting(caliHandle));
         }
-        ESP_ERROR_CHECK(adc_oneshot_del_unit(handle));
+        // The unit handle is shared with every other pin on the unit, and stays in ANALOG_UNITS
     }
 
     /**
-     * @brief Read an analog value. Throws when reading fails or times out.
+     * @brief Read an analog value as a double. Returns `std::nullopt` if the read fails.
      */
-    int analogRead() const {
+    std::optional<double> tryAnalogReadAsDouble() const {
         auto value = tryAnalogRead();
         if (!value) {
-            ESP_ERROR_THROW(ESP_ERR_TIMEOUT);
-            // Won't get this far
-            abort();
+            return std::nullopt;
         }
-        return *value;
-    }
-
-    /**
-     * @brief Read an analog value as a double. Throws when reading fails or times out.
-     */
-    double analogReadAsDouble() const {
-        return analogRead() / MAX_ANALOG_VALUE;
+        return *value / MAX_ANALOG_VALUE;
     }
 
     /**
@@ -293,13 +250,12 @@ public:
         switch (err) {
             case ESP_OK:
                 return value;
-                break;
             case ESP_ERR_TIMEOUT:
                 return std::nullopt;
             default:
-                ESP_ERROR_THROW(err);
-                // Won't get this far
-                abort();
+                LOGW("Analog read on pin %s failed: %s",
+                    pin->getName().c_str(), esp_err_to_name(err));
+                return std::nullopt;
         }
     }
 
@@ -316,7 +272,12 @@ public:
             return std::nullopt;
         }
         int mv;
-        ESP_ERROR_THROW(adc_cali_raw_to_voltage(caliHandle, *raw, &mv));
+        esp_err_t err = adc_cali_raw_to_voltage(caliHandle, *raw, &mv);
+        if (err != ESP_OK) {
+            LOGW("Converting analog read on pin %s to voltage failed: %s",
+                pin->getName().c_str(), esp_err_to_name(err));
+            return std::nullopt;
+        }
         LOGV("Analog read on pin %s (GPIO %d): raw=%d, voltage=%d mV",
             pin->getName().c_str(), static_cast<int>(pin->getGpio()), *raw, mv);
         return mv;
@@ -327,23 +288,31 @@ public:
     }
 
 private:
-    static adc_oneshot_unit_handle_t getUnitHandle(adc_unit_t unit) {
+    AnalogPin(const InternalPinPtr& pin, adc_channel_t channel, adc_oneshot_unit_handle_t handle, adc_cali_handle_t caliHandle)
+        : pin(pin)
+        , channel(channel)
+        , handle(handle)
+        , caliHandle(caliHandle) {
+    }
+
+    static Result<adc_oneshot_unit_handle_t> getUnitHandle(adc_unit_t unit) {
         adc_oneshot_unit_handle_t handle = ANALOG_UNITS[unit];
         if (handle == nullptr) {
             adc_oneshot_unit_init_cfg_t config = {};
             config.unit_id = unit;
-            ESP_ERROR_THROW(adc_oneshot_new_unit(&config, &handle));
+            ESP_TRY(adc_oneshot_new_unit(&config, &handle));
             ANALOG_UNITS[unit] = handle;
         }
         return handle;
     }
 
+    // Created on first use, and kept for good: there are at most two units
     static std::vector<adc_oneshot_unit_handle_t> ANALOG_UNITS;
 
     const InternalPinPtr pin;
-    adc_channel_t channel {};
+    const adc_channel_t channel;
     adc_oneshot_unit_handle_t handle;
-    adc_cali_handle_t caliHandle = nullptr;
+    adc_cali_handle_t caliHandle;
 };
 
 }    // namespace cornucopia::ugly_duckling::kernel
@@ -365,11 +334,9 @@ struct Converter<PinPtr> {
         }
     }
 
+    // nullptr for an unknown pin name; PropertyValidator<PinPtr> reports it
     static PinPtr fromJson(JsonVariantConst src) {
-        if (src.is<const char*>()) {
-            return Pin::byName(src.as<const char*>());
-        }
-        throw std::runtime_error("Invalid pin name: " + src.as<std::string>());
+        return Pin::byName(src.as<const char*>());
     }
 
     static bool checkJson(JsonVariantConst src) {
@@ -389,6 +356,7 @@ struct Converter<InternalPinPtr> {
         }
     }
 
+    // nullptr for an unknown pin name; PropertyValidator<InternalPinPtr> reports it
     static InternalPinPtr fromJson(JsonVariantConst src) {
         if (src.is<const char*>()) {
             return InternalPin::byName(src.as<const char*>());
@@ -402,3 +370,27 @@ struct Converter<InternalPinPtr> {
 };
 
 }    // namespace ArduinoJson
+
+namespace cornucopia::ugly_duckling::kernel::config {
+
+template <>
+struct PropertyValidator<PinPtr> {
+    static Result<> validate(const PinPtr& pin, JsonVariantConst json) {
+        if (pin == nullptr) {
+            return failure("Unknown pin: " + json.as<std::string>());
+        }
+        return {};
+    }
+};
+
+template <>
+struct PropertyValidator<InternalPinPtr> {
+    static Result<> validate(const InternalPinPtr& pin, JsonVariantConst json) {
+        if (pin == nullptr) {
+            return failure("Unknown internal pin: " + json.as<std::string>());
+        }
+        return {};
+    }
+};
+
+}    // namespace cornucopia::ugly_duckling::kernel::config

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <I2CManager.hpp>
+#include <Result.hpp>
 #include <Task.hpp>
 #include <drivers/BatteryDriver.hpp>
 
@@ -9,7 +10,6 @@
 #include <chrono>
 #include <memory>
 #include <optional>
-#include <stdexcept>
 #include <string>
 
 using namespace cornucopia::ugly_duckling::kernel;
@@ -70,38 +70,56 @@ static constexpr uint16_t OPERATION_CONFIG_A_TEMPS = 0x8000;
 // component keeps its own bq27220_control() static, so we issue these over our own
 // I2C device instead.
 static constexpr uint8_t COMMAND_CONTROL = 0x00;
-static constexpr uint8_t COMMAND_INTERNAL_TEMPERATURE = 0x28;
 static constexpr uint16_t CONTROL_FULL_ACCESS_KEY = 0xFFFF;
 static constexpr uint16_t CONTROL_ENTER_CFG_UPDATE = 0x0090;
 static constexpr uint16_t CONTROL_EXIT_CFG_UPDATE_REINIT = 0x0091;
 
 class Bq27220Driver final : public BatteryDriver {
 public:
-    Bq27220Driver(
+    static Result<std::shared_ptr<Bq27220Driver>> create(
         const std::shared_ptr<I2CManager>& i2c,
         const InternalPinPtr& sda,
         const InternalPinPtr& scl,
-        const BatteryParameters& parameters)
-        : Bq27220Driver(i2c, sda, scl, 0x55, parameters) {
+        const BatteryParameters& parameters) {
+        auto device = TRY(i2c->createDevice("battery:bq27220", sda, scl, ADDRESS));
+        auto driver = std::shared_ptr<Bq27220Driver>(new Bq27220Driver(device, parameters));
+        TRY(driver->init(sda, scl));
+        return driver;
     }
 
-    Bq27220Driver(
-        const std::shared_ptr<I2CManager>& i2c,
-        const InternalPinPtr& sda,
-        const InternalPinPtr& scl,
-        uint8_t address,
-        const BatteryParameters& parameters)
+    ~Bq27220Driver() override {
+        // Not i2c_bus_delete(): the bus is i2cdev's, which other devices use too
+        if (gauge != nullptr) {
+            bq27220_delete(gauge);
+        }
+    }
+
+    Bq27220Driver(const Bq27220Driver&) = delete;
+    Bq27220Driver& operator=(const Bq27220Driver&) = delete;
+    Bq27220Driver(Bq27220Driver&&) = delete;
+    Bq27220Driver& operator=(Bq27220Driver&&) = delete;
+
+private:
+    static constexpr uint8_t ADDRESS = 0x55;
+
+    Bq27220Driver(const std::shared_ptr<I2CDevice>& device, const BatteryParameters& parameters)
         : BatteryDriver(parameters)
-        , device(i2c->createDevice("battery:bq27220", sda, scl, address)) {
+        , device(device) {
+    }
+
+    Result<> init(const InternalPinPtr& sda, const InternalPinPtr& scl) {
         LOGTI(BATTERY, "Initializing BQ27220 driver on SDA %s, SCL %s, address 0x%02X",
-            sda->getName().c_str(), scl->getName().c_str(), address);
+            sda->getName().c_str(), scl->getName().c_str(), ADDRESS);
 
         // Probe the device so i2cdev initializes the I2C master bus first.
         // i2c_bus_create() (used by espressif__bq27220) calls i2c_master_get_bus_handle()
         // before trying i2c_new_master_bus(); if i2cdev already owns the bus it reuses the
         // handle instead of failing with ESP_ERR_INVALID_STATE. Result is ignored because
-        // the BQ27220 may not ACK until fully powered.
-        ESP_ERROR_THROW(device->probeRead());
+        // the BQ27220 may not ACK until fully powered (#577).
+        esp_err_t probeErr = device->probeRead();
+        if (probeErr != ESP_OK) {
+            LOGTW(BATTERY, "BQ27220 did not ACK probe (%s); continuing anyway", esp_err_to_name(probeErr));
+        }
 
         // Get the bus handle
         auto port = device->getBus()->port;
@@ -115,6 +133,9 @@ public:
             .clk_flags = 0,
         };
         auto* bus = i2c_bus_create(port, &conf);
+        if (bus == nullptr) {
+            return failure("Could not attach BQ27220 to the I2C bus");
+        }
 
         // Initialize BQ27220 on existing bus
         bq27220_config_t bq27220_cfg = {
@@ -126,12 +147,14 @@ public:
         if (gauge == nullptr) {
             // Every reading would come back as 0, which the boot and shutdown thresholds would
             // act on; better to have no battery driver at all (see initBattery())
-            throw std::runtime_error("BQ27220 did not initialize");
+            return failure("BQ27220 did not initialize");
         }
 
         LOGTI(BATTERY, "Battery voltage at boot: %d mV / %.2f%%; temp = %.2f°C", getVoltage(), getPercentage(), getTemperature());
+        return {};
     }
 
+public:
     int getVoltage() override {
         return bq27220_get_voltage(gauge);
     }
@@ -178,10 +201,12 @@ public:
             return;
         }
         // Unsealing alone does not grant data memory access; FULL ACCESS does.
-        controlCommand(CONTROL_FULL_ACCESS_KEY);
-        controlCommand(CONTROL_FULL_ACCESS_KEY);
-
-        controlCommand(CONTROL_ENTER_CFG_UPDATE);
+        if (!controlCommand(CONTROL_FULL_ACCESS_KEY)
+            || !controlCommand(CONTROL_FULL_ACCESS_KEY)
+            || !controlCommand(CONTROL_ENTER_CFG_UPDATE)) {
+            LOGTE(BATTERY, "Could not send control commands to the BQ27220, leaving the temperature source alone");
+            return;
+        }
         if (!waitForConfigUpdate(true)) {
             LOGTE(BATTERY, "BQ27220 did not enter CFGUPDATE mode, leaving the temperature source alone");
             return;
@@ -189,8 +214,7 @@ public:
 
         bq27220_set_parameter_u16(gauge, OPERATION_CONFIG_A_ADDRESS, config | OPERATION_CONFIG_A_TEMPS);
 
-        controlCommand(CONTROL_EXIT_CFG_UPDATE_REINIT);
-        if (!waitForConfigUpdate(false)) {
+        if (!controlCommand(CONTROL_EXIT_CFG_UPDATE_REINIT) || !waitForConfigUpdate(false)) {
             LOGTE(BATTERY, "BQ27220 did not leave CFGUPDATE mode");
             return;
         }
@@ -225,18 +249,6 @@ public:
         return status;
     }
 
-    /**
-     * @brief Returns the on-chip sensor temperature in Celsius.
-     *
-     * InternalTemperature() always reports the internal sensor regardless of [TEMPS],
-     * which makes it a useful cross-check against getTemperature(). The
-     * espressif__bq27220 component has no accessor for it, so read the command
-     * directly; like every gauge word it comes back LSB first, in units of 0.1 K.
-     */
-    double getInternalTemperature() {
-        return (device->readRegWord(COMMAND_INTERNAL_TEMPERATURE) / 10.0) - 273.15;
-    }
-
     std::optional<seconds> getTimeToEmpty() override {
         return minutes { bq27220_get_time_to_empty(gauge) };
     }
@@ -246,11 +258,20 @@ public:
     }
 
 private:
-    void controlCommand(uint16_t subcommand) {
+    /**
+     * @return false if the command could not be written.
+     */
+    bool controlCommand(uint16_t subcommand) {
         // Control() expects the subcommand LSB first, which is how writeRegWord()
         // lays out a uint16_t on our little-endian targets.
-        device->writeRegWord(COMMAND_CONTROL, subcommand);
+        auto written = device->writeRegWord(COMMAND_CONTROL, subcommand);
+        if (!written) {
+            LOGTE(BATTERY, "Failed to send control command 0x%04X to the BQ27220: %s",
+                subcommand, written.error().message.c_str());
+            return false;
+        }
         Task::delay(10ms);
+        return true;
     }
 
     bool waitForConfigUpdate(bool expected) {

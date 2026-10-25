@@ -1,4 +1,6 @@
 #pragma once
+#include <Result.hpp>
+
 #include <ArduinoJson.h>
 
 #include <chrono>
@@ -15,18 +17,15 @@ using std::reference_wrapper;
 
 namespace cornucopia::ugly_duckling::kernel::config {
 
-class ConfigurationException
-    : public std::exception {
-public:
-    ConfigurationException(const std::string& message)
-        : message("ConfigurationException: " + message) {
+/**
+ * @brief Lets a property reject a value after ArduinoJson converted it, e.g. a pin name that names no
+ * pin on this board. Specialize it for types whose conversion can fail.
+ */
+template <typename T>
+struct PropertyValidator {
+    static Result<> validate(const T& /*value*/, JsonVariantConst /*json*/) {
+        return {};
     }
-
-    const char* what() const noexcept override {
-        return message.c_str();
-    }
-
-    const std::string message;
 };
 
 class JsonAsString {
@@ -58,19 +57,19 @@ class ConfigurationEntry {
 public:
     virtual ~ConfigurationEntry() = default;
 
-    void loadFromString(const std::string& json) {
+    Result<> loadFromString(const std::string& json) {
         JsonDocument jsonDocument;
         DeserializationError error = deserializeJson(jsonDocument, json);
         if (error == DeserializationError::EmptyInput) {
-            return;
+            return {};
         }
         if (error) {
-            throw ConfigurationException("Cannot parse JSON configuration: " + std::string(error.c_str()) + ": " + json);
+            return failure("Cannot parse JSON configuration: " + std::string(error.c_str()) + ": " + json);
         }
-        load(jsonDocument.as<JsonObject>());
+        return load(jsonDocument.as<JsonObject>());
     }
 
-    virtual void load(const JsonObject& json) = 0;
+    virtual Result<> load(const JsonObject& json) = 0;
     virtual bool hasValue() const = 0;
 };
 
@@ -81,10 +80,11 @@ public:
         entries.push_back(reference);
     }
 
-    void load(const JsonObject& json) override {
+    Result<> load(const JsonObject& json) override {
         for (auto& entry : entries) {
-            entry.get().load(json);
+            TRY(entry.get().load(json));
         }
+        return {};
     }
 
     bool hasValue() const override {
@@ -125,11 +125,15 @@ public:
         : NamedConfigurationEntry(parent, name, std::make_shared<TDelegateEntry>(std::forward<Args>(args)...)) {
     }
 
-    void load(const JsonObject& json) override {
+    Result<> load(const JsonObject& json) override {
         if (json[name].template is<JsonObject>()) {
             namePresentAtLoad = true;
-            delegate->load(json[name]);
+            auto loaded = delegate->load(json[name]);
+            if (!loaded) {
+                return failure("In '" + name + "': " + loaded.error().message);
+            }
         }
+        return {};
     }
 
     bool hasValue() const override {
@@ -171,11 +175,18 @@ public:
         return std::nullopt;
     }
 
-    void load(const JsonObject& json) override {
-        if (json[name].template is<T>()) {
-            value = json[name].template as<T>();
+    Result<> load(const JsonObject& json) override {
+        JsonVariantConst jsonValue = json[name];
+        if (jsonValue.template is<T>()) {
+            T converted = jsonValue.template as<T>();
+            auto valid = PropertyValidator<T>::validate(converted, jsonValue);
+            if (!valid) {
+                return failure("Invalid '" + name + "': " + valid.error().message);
+            }
+            value = std::move(converted);
             configured = true;
         }
+        return {};
     }
 
     bool hasValue() const override {
@@ -201,14 +212,19 @@ public:
         return entries;
     }
 
-    void load(const JsonObject& json) override {
+    Result<> load(const JsonObject& json) override {
         if (json[name].template is<JsonArray>()) {
             auto jsonArray = json[name].template as<JsonArray>();
             for (auto jsonEntry : jsonArray) {
-                const T& entry = jsonEntry.template as<T>();
-                entries.push_back(entry);
+                T entry = jsonEntry.template as<T>();
+                auto valid = PropertyValidator<T>::validate(entry, jsonEntry);
+                if (!valid) {
+                    return failure("Invalid entry in '" + name + "': " + valid.error().message);
+                }
+                entries.push_back(std::move(entry));
             }
         }
+        return {};
     }
 
     bool hasValue() const override {

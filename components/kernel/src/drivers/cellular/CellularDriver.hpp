@@ -1,8 +1,9 @@
 #pragma once
 
-#include <EspException.hpp>
+#include <EspError.hpp>
 #include <Log.hpp>
 #include <Queue.hpp>
+#include <Result.hpp>
 #include <State.hpp>
 #include <Task.hpp>
 #include <drivers/cellular/AtSocketTransport.hpp>
@@ -27,13 +28,11 @@
 #include <chrono>
 #include <cstdint>
 #include <ctime>
-#include <exception>
 #include <functional>
 #include <initializer_list>
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -93,10 +92,9 @@ public:
         , ntpServer(std::move(ntpServer))
         , onNetworkTime(std::move(onNetworkTime)) {
         Task::run("cellular", 4096, [this](Task& /*task*/) {
-            try {
-                run();
-            } catch (const std::exception& e) {
-                LOGTE(CELLULAR, "Cellular modem failed: %s", e.what());
+            auto result = run();
+            if (!result) {
+                LOGTE(CELLULAR, "Cellular modem failed: %s", result.error().message.c_str());
             }
             // Only gets here when the modem is out of the picture
             this->networkConnecting.clear();
@@ -146,20 +144,26 @@ public:
     }
 
 private:
-    void run() {
+    /**
+     * @brief Runs the modem; only returns when the modem is out of the picture.
+     *
+     * esp_modem itself aborts when it cannot set up the UART (we build without exceptions, which it
+     * would otherwise throw); that only happens with a broken board definition or out of memory.
+     */
+    Result<> run() {
         if (sharesPinsWithConsole(pins)) {
             // UD_UART0_CONSOLE builds put the console back on these pins for early-boot debugging
             LOGTW(CELLULAR, "Console is on UART0, which uses the modem's pins (GPIO %d/%d); not starting the modem",
                 static_cast<int>(pins.tx->getGpio()), static_cast<int>(pins.rx->getGpio()));
-            return;
+            return {};
         }
 
         networkConnecting.set();
         LOGTI(CELLULAR, "Starting modem on UART%d (TX GPIO %d, RX GPIO %d)",
             static_cast<int>(MODEM_UART), static_cast<int>(pins.tx->getGpio()), static_cast<int>(pins.rx->getGpio()));
 
-        auto dte = createDte(pins, pushSocketData);
-        enableUartWakeup();
+        auto dte = TRY(createDte(pins, pushSocketData));
+        TRY(enableUartWakeup());
         // esp_modem's UART terminal warns about every UART_WAKEUP event, which it doesn't handle.
         // Published, each warning is an uplink whose acknowledgement wakes us again
         esp_log_level_set("uart_terminal", ESP_LOG_ERROR);
@@ -170,7 +174,7 @@ private:
 
         if (!module->start()) {
             LOGTE(CELLULAR, "%s is not answering; is the daughter board connected?", module->getName());
-            return;
+            return {};
         }
         LOGTI(CELLULAR, "%s is answering", module->getName());
 
@@ -188,6 +192,7 @@ private:
             lastTimeSync = steady_clock::now();
         }
         monitorNetwork();
+        return {};
     }
 
     /**
@@ -422,7 +427,7 @@ private:
         }
     }
 
-    static std::shared_ptr<esp_modem::DTE> createDte(const CellularModemPins& pins, bool pushSocketData) {
+    static Result<std::shared_ptr<esp_modem::DTE>> createDte(const CellularModemPins& pins, bool pushSocketData) {
         esp_modem_dte_config_t config = ESP_MODEM_DTE_DEFAULT_CONFIG();
         config.uart_config.port_num = MODEM_UART;
         config.uart_config.tx_io_num = pins.tx->getGpio();
@@ -448,7 +453,7 @@ private:
         }
         auto dte = esp_modem::create_uart_dte(&config);
         if (dte == nullptr) {
-            throw std::runtime_error("could not create UART terminal");
+            return failure("could not create UART terminal");
         }
         return dte;
     }
@@ -462,13 +467,14 @@ private:
      * for itself (docs/specs/NB-IoT.md, "Waking the ESP32 on UART edges"). While a command is in
      * flight the ESP32 stays awake, so responses arrive intact.
      */
-    static void enableUartWakeup() {
+    static Result<> enableUartWakeup() {
         uart_wakeup_cfg_t config {};
         config.wakeup_mode = UART_WK_MODE_ACTIVE_THRESH;
         // The fewest edges the hardware takes
         config.rx_edge_threshold = 3;
-        ESP_ERROR_THROW(uart_wakeup_setup(MODEM_UART, &config));
-        ESP_ERROR_THROW(esp_sleep_enable_uart_wakeup(MODEM_UART));
+        ESP_TRY(uart_wakeup_setup(MODEM_UART, &config));
+        ESP_TRY(esp_sleep_enable_uart_wakeup(MODEM_UART));
+        return {};
     }
 
     // Runs on the UART's receive task, so it must not send commands to the module

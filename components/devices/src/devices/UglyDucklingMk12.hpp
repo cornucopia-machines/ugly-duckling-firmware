@@ -34,8 +34,8 @@ public:
         BUZZER->digitalWrite(0);
     }
 
-    std::shared_ptr<BatteryDriver> createBatteryDriver(const std::shared_ptr<I2CManager>& i2c) override {
-        return std::make_shared<Bq27220Driver>(
+    Result<std::shared_ptr<BatteryDriver>> createBatteryDriver(const std::shared_ptr<I2CManager>& i2c) override {
+        return Bq27220Driver::create(
             i2c,
             LP_SDA,
             LP_SCL,

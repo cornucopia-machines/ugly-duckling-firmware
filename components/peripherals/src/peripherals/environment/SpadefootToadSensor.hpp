@@ -24,7 +24,9 @@
 
 #include "BitbangI2C.hpp"
 #include "Environment.hpp"
+#include <EspError.hpp>
 #include <I2CManager.hpp>
+#include <Result.hpp>
 #include <Task.hpp>
 #include <peripherals/I2CSettings.hpp>
 #include <peripherals/Peripheral.hpp>
@@ -40,7 +42,6 @@
 #include <limits>
 #include <memory>
 #include <mutex>
-#include <stdexcept>
 #include <vector>
 
 using namespace cornucopia::ugly_duckling::kernel;
@@ -82,22 +83,22 @@ public:
         return measurement.getValue().temperature;
     }
 
-    void calibrate(CalibrationReference ref) {
+    Result<> calibrate(CalibrationReference ref) {
         uint8_t cmd = (ref == CalibrationReference::Wet) ? CMD_CALIBRATE_WET : CMD_CALIBRATE_DRY;
         LOGTI(ENV, "Spadefoot Toad '%s': calibrating %s reference",
             getName().c_str(), ref == CalibrationReference::Wet ? "wet" : "dry");
-        transportWriteByte(cmd);
+        return transportWriteByte(cmd);
     }
 
-    void readCalibration(JsonObject& res) {
-        auto calibration = transportReadBytes(CMD_READ_CALIBRATION, 17);
+    Result<> readCalibration(JsonObject& res) {
+        auto calibration = TRY(transportReadBytes(CMD_READ_CALIBRATION, 17));
         uint8_t csum = 0;
         for (size_t i = 0; i < 16; i++) {
             csum ^= calibration[i];
         }
         if (csum != calibration[16]) {
             res["checksumOk"] = false;
-            return;
+            return {};
         }
         res["checksumOk"] = true;
         static constexpr const char* PROBE_NAMES[] = { "top-front", "top-rear", "bottom-front", "bottom-rear" };
@@ -108,11 +109,12 @@ public:
             probeObj["dry"] = dryVal;
             probeObj["wet"] = wetVal;
         }
+        return {};
     }
 
-    void factoryReset() {
+    Result<> factoryReset() {
         LOGTW(ENV, "Spadefoot Toad '%s': factory reset issued", getName().c_str());
-        transportWriteByte(CMD_FACTORY_RESET);
+        return transportWriteByte(CMD_FACTORY_RESET);
     }
 
 protected:
@@ -142,31 +144,31 @@ protected:
         , logRawValues(logRawValues) {
     }
 
-    // Must be called by the derived class constructor after the transport is ready.
-    void initializeProtocol(const std::string& configDescription) {
+    // Must be called by the derived class's create() once the transport is ready.
+    Result<> initializeProtocol(const std::string& configDescription) {
         LOGTI(ENV, "Initializing Spadefoot Toad soil sensor '%s' with %s",
             getName().c_str(), configDescription.c_str());
 
-        uint16_t mfrId = transportReadWord(CMD_GET_MFR_ID);
+        uint16_t mfrId = TRY(transportReadWord(CMD_GET_MFR_ID));
         if (mfrId != EXPECTED_MFR_ID) {
             LOGTE(ENV, "Spadefoot Toad '%s': unexpected manufacturer ID 0x%04X (expected 0x%04X)",
                 getName().c_str(), mfrId, EXPECTED_MFR_ID);
-            throw std::runtime_error("Spadefoot Toad: manufacturer ID mismatch");
+            return failure("Spadefoot Toad: manufacturer ID mismatch");
         }
 
-        uint16_t deviceId = transportReadWord(CMD_GET_DEVICE_ID);
+        uint16_t deviceId = TRY(transportReadWord(CMD_GET_DEVICE_ID));
         if (deviceId != EXPECTED_DEVICE_ID) {
             LOGTE(ENV, "Spadefoot Toad '%s': unexpected device ID 0x%04X (expected 0x%04X)",
                 getName().c_str(), deviceId, EXPECTED_DEVICE_ID);
-            throw std::runtime_error("Spadefoot Toad: device ID mismatch");
+            return failure("Spadefoot Toad: device ID mismatch");
         }
 
-        uint16_t firmwareRev = transportReadWord(CMD_GET_FIRMWARE_REV);
-        uint16_t deviceRev = transportReadWord(CMD_GET_DEVICE_REV);
+        uint16_t firmwareRev = TRY(transportReadWord(CMD_GET_FIRMWARE_REV));
+        uint16_t deviceRev = TRY(transportReadWord(CMD_GET_DEVICE_REV));
         LOGTI(ENV, "Spadefoot Toad '%s': firmware rev 0x%04X, device rev 0x%04X",
             getName().c_str(), firmwareRev, deviceRev);
 
-        auto calibration = transportReadBytes(CMD_READ_CALIBRATION, 17);
+        auto calibration = TRY(transportReadBytes(CMD_READ_CALIBRATION, 17));
         uint8_t calibrationCsum = 0;
         for (size_t i = 0; i < 16; i++) {
             calibrationCsum ^= calibration[i];
@@ -183,47 +185,68 @@ protected:
             LOGTI(ENV, "Spadefoot Toad '%s': calibration  TF dry=%u wet=%u  TR dry=%u wet=%u  BF dry=%u wet=%u  BR dry=%u wet=%u",
                 getName().c_str(), dry[0], wet[0], dry[1], wet[1], dry[2], wet[2], dry[3], wet[3]);
         }
+        return {};
     }
 
     // Transport primitives — implemented by subclasses.
     // transportReadWord returns the 16-bit value with the first received byte in the high byte.
-    virtual void transportWriteByte(uint8_t cmd) = 0;
-    virtual uint16_t transportReadWord(uint8_t cmd) = 0;
-    virtual std::vector<uint8_t> transportReadBytes(uint8_t cmd, size_t n) = 0;
+    virtual Result<> transportWriteByte(uint8_t cmd) = 0;
+    virtual Result<uint16_t> transportReadWord(uint8_t cmd) = 0;
+    virtual Result<std::vector<uint8_t>> transportReadBytes(uint8_t cmd, size_t n) = 0;
 
 private:
     const bool logRawValues;
 
+    void logRawReading() {
+        auto rawResult = transportReadBytes(CMD_READ_RAW, 14);
+        if (!rawResult) {
+            LOGTW(ENV, "Spadefoot Toad '%s': failed to read raw values: %s",
+                getName().c_str(), rawResult.error().message.c_str());
+            return;
+        }
+        const auto& rawData = *rawResult;
+        uint8_t rawCsum = 0;
+        for (size_t i = 0; i < 13; i++) {
+            rawCsum ^= rawData[i];
+        }
+        if (rawCsum == rawData[13]) {
+            uint16_t ticks[4];
+            for (size_t i = 0; i < 4; i++) {
+                ticks[i] = static_cast<uint16_t>((rawData[i * 2] << 8) | rawData[(i * 2) + 1]);
+            }
+            auto adcTop = static_cast<uint16_t>((rawData[8] << 8) | rawData[9]);
+            auto adcBot = static_cast<uint16_t>((rawData[10] << 8) | rawData[11]);
+            LOGTI(ENV, "Spadefoot Toad '%s': raw ticks TF=%u TR=%u BF=%u BR=%u, ADC top=%u bot=%u, flags=0x%02X",
+                getName().c_str(), ticks[0], ticks[1], ticks[2], ticks[3], adcTop, adcBot, rawData[12]);
+        } else {
+            LOGTW(ENV, "Spadefoot Toad '%s': raw read checksum mismatch", getName().c_str());
+        }
+    }
+
     utils::DebouncedMeasurement<SpadefootToadReading> measurement {
         [this](const utils::DebouncedParams<SpadefootToadReading>) -> std::optional<SpadefootToadReading> {
             // Phase 1: trigger measurement
-            transportWriteByte(CMD_TRIGGER);
+            if (auto triggered = transportWriteByte(CMD_TRIGGER); !triggered) {
+                LOGTW(ENV, "Spadefoot Toad '%s': failed to trigger measurement: %s",
+                    getName().c_str(), triggered.error().message.c_str());
+                return std::nullopt;
+            }
 
             // Phase 2: wait 1 s, then read results
             Task::delay(1s);
 
             // Log raw ADC ticks for debugging (temporary)
             if (logRawValues) {
-                auto rawData = transportReadBytes(CMD_READ_RAW, 14);
-                uint8_t rawCsum = 0;
-                for (size_t i = 0; i < 13; i++) {
-                    rawCsum ^= rawData[i];
-                }
-                if (rawCsum == rawData[13]) {
-                    uint16_t ticks[4];
-                    for (size_t i = 0; i < 4; i++) {
-                        ticks[i] = static_cast<uint16_t>((rawData[i * 2] << 8) | rawData[(i * 2) + 1]);
-                    }
-                    auto adcTop = static_cast<uint16_t>((rawData[8] << 8) | rawData[9]);
-                    auto adcBot = static_cast<uint16_t>((rawData[10] << 8) | rawData[11]);
-                    LOGTI(ENV, "Spadefoot Toad '%s': raw ticks TF=%u TR=%u BF=%u BR=%u, ADC top=%u bot=%u, flags=0x%02X",
-                        getName().c_str(), ticks[0], ticks[1], ticks[2], ticks[3], adcTop, adcBot, rawData[12]);
-                } else {
-                    LOGTW(ENV, "Spadefoot Toad '%s': raw read checksum mismatch", getName().c_str());
-                }
+                logRawReading();
             }
 
-            auto data = transportReadBytes(CMD_READ, 10);
+            auto dataResult = transportReadBytes(CMD_READ, 10);
+            if (!dataResult) {
+                LOGTW(ENV, "Spadefoot Toad '%s': failed to read measurement: %s",
+                    getName().c_str(), dataResult.error().message.c_str());
+                return std::nullopt;
+            }
+            const auto& data = *dataResult;
 
             // Validate checksum (XOR of bytes [0..8])
             uint8_t csum = 0;
@@ -282,32 +305,40 @@ private:
 
 class SpadefootToadSensor final : public SpadefootToadSensorBase {
 public:
-    SpadefootToadSensor(
+    static Result<std::shared_ptr<SpadefootToadSensor>> create(
         const std::string& name,
         const std::shared_ptr<I2CManager>& i2c,
         const I2CConfig& config,
-        bool logRawValues)
-        : SpadefootToadSensorBase(name, logRawValues)
-        , device(i2c->createDevice(name, config)) {
-        initializeProtocol(config.toString());
+        bool logRawValues) {
+        auto device = TRY(i2c->createDevice(name, config));
+        auto sensor = std::shared_ptr<SpadefootToadSensor>(new SpadefootToadSensor(name, device, logRawValues));
+        TRY(sensor->initializeProtocol(config.toString()));
+        return sensor;
     }
 
 protected:
-    void transportWriteByte(uint8_t cmd) override {
-        device->writeByte(cmd);
+    Result<> transportWriteByte(uint8_t cmd) override {
+        return device->writeByte(cmd);
     }
 
-    uint16_t transportReadWord(uint8_t cmd) override {
+    Result<uint16_t> transportReadWord(uint8_t cmd) override {
         // i2cdev stores bytes in receive order (first byte at low address on LE);
         // swap to put the first received byte (device MSB) in the high byte.
-        return __builtin_bswap16(device->readRegWord(cmd));
+        return device->readRegWord(cmd).transform([](uint16_t word) {
+            return __builtin_bswap16(word);
+        });
     }
 
-    std::vector<uint8_t> transportReadBytes(uint8_t cmd, size_t n) override {
+    Result<std::vector<uint8_t>> transportReadBytes(uint8_t cmd, size_t n) override {
         return device->readBytes(cmd, n);
     }
 
 private:
+    SpadefootToadSensor(const std::string& name, const std::shared_ptr<I2CDevice>& device, bool logRawValues)
+        : SpadefootToadSensorBase(name, logRawValues)
+        , device(device) {
+    }
+
     const std::shared_ptr<I2CDevice> device;
 };
 
@@ -326,6 +357,61 @@ private:
 
 class SpadefootToadSensorWithBitbangI2C final : public SpadefootToadSensorBase {
 public:
+    static Result<std::shared_ptr<SpadefootToadSensorWithBitbangI2C>> create(
+        const std::string& name,
+        const InternalPinPtr& sda,
+        const InternalPinPtr& scl,
+        uint8_t address,
+        bool logRawValues) {
+        gpio_config_t conf = {
+            .pin_bit_mask = (1ULL << sda->getGpio()) | (1ULL << scl->getGpio()),
+            .mode = GPIO_MODE_INPUT_OUTPUT_OD,
+            .pull_up_en = GPIO_PULLUP_ENABLE,
+            .pull_down_en = GPIO_PULLDOWN_DISABLE,
+            .intr_type = GPIO_INTR_DISABLE,
+        };
+        ESP_TRY(gpio_config(&conf));
+        // Release both lines — bus idle state.
+        sda->digitalWrite(1);
+        scl->digitalWrite(1);
+
+        auto sensor = std::shared_ptr<SpadefootToadSensorWithBitbangI2C>(new SpadefootToadSensorWithBitbangI2C(name, sda, scl, address, logRawValues));
+        char addrBuf[5];
+        (void) snprintf(addrBuf, sizeof(addrBuf), "%02X", address);
+        TRY(sensor->initializeProtocol("bitbang I2C SDA:" + sda->getName() + " SCL:" + scl->getName() + " addr:0x" + addrBuf));
+        return sensor;
+    }
+
+protected:
+    Result<> transportWriteByte(uint8_t cmd) override {
+        std::scoped_lock lock(bbMutex);
+        TRY(beginCommand(cmd));
+        bus.stop();
+        return {};
+    }
+
+    Result<uint16_t> transportReadWord(uint8_t cmd) override {
+        auto bytes = TRY(transportReadBytes(cmd, 2));
+        return static_cast<uint16_t>((bytes[0] << 8) | bytes[1]);
+    }
+
+    Result<std::vector<uint8_t>> transportReadBytes(uint8_t cmd, size_t n) override {
+        std::scoped_lock lock(bbMutex);
+        TRY(beginRead(cmd));
+        std::vector<uint8_t> buf(n);
+        for (size_t i = 0; i < n; i++) {
+            auto byte = bus.readByteAndAck(i == n - 1);    // NACK on last byte
+            if (!byte) {
+                bus.stop();
+                return std::unexpected(std::move(byte).error());
+            }
+            buf[i] = *byte;
+        }
+        bus.stop();
+        return buf;
+    }
+
+private:
     SpadefootToadSensorWithBitbangI2C(
         const std::string& name,
         const InternalPinPtr& sda,
@@ -337,85 +423,36 @@ public:
         , sclPin(scl)
         , bus(sdaPin, sclPin)
         , bbAddress(address) {
-        gpio_config_t conf = {
-            .pin_bit_mask = (1ULL << sda->getGpio()) | (1ULL << scl->getGpio()),
-            .mode = GPIO_MODE_INPUT_OUTPUT_OD,
-            .pull_up_en = GPIO_PULLUP_ENABLE,
-            .pull_down_en = GPIO_PULLDOWN_DISABLE,
-            .intr_type = GPIO_INTR_DISABLE,
-        };
-        ESP_ERROR_THROW(gpio_config(&conf));
-        // Release both lines — bus idle state.
-        sda->digitalWrite(1);
-        scl->digitalWrite(1);
-
-        char addrBuf[5];
-        (void) snprintf(addrBuf, sizeof(addrBuf), "%02X", address);
-        initializeProtocol("bitbang I2C SDA:" + sda->getName() + " SCL:" + scl->getName() + " addr:0x" + addrBuf);
     }
 
-protected:
-    void transportWriteByte(uint8_t cmd) override {
-        std::scoped_lock lock(bbMutex);
-        bus.start();
-        if (!bus.writeByteGetAck(static_cast<uint8_t>((bbAddress << 1) | 0x00))) {
+    // Writes a byte, failing on NACK; stops the bus on any failure.
+    Result<> writeByteExpectAck(uint8_t byte, const char* what) {
+        auto ack = bus.writeByteGetAck(byte);
+        if (!ack) {
             bus.stop();
-            throw std::runtime_error("Spadefoot Toad bitbang: NACK on address (write)");
+            return std::unexpected(std::move(ack).error());
         }
-        if (!bus.writeByteGetAck(cmd)) {
+        if (!*ack) {
             bus.stop();
-            throw std::runtime_error("Spadefoot Toad bitbang: NACK on command byte");
+            return failure(std::string("Spadefoot Toad bitbang: NACK on ") + what);
         }
-        bus.stop();
+        return {};
     }
 
-    uint16_t transportReadWord(uint8_t cmd) override {
-        std::scoped_lock lock(bbMutex);
+    // START, address for writing, then the command byte; the bus is left open on success.
+    Result<> beginCommand(uint8_t cmd) {
         bus.start();
-        if (!bus.writeByteGetAck(static_cast<uint8_t>((bbAddress << 1) | 0x00))) {
-            bus.stop();
-            throw std::runtime_error("Spadefoot Toad bitbang: NACK on address (write)");
-        }
-        if (!bus.writeByteGetAck(cmd)) {
-            bus.stop();
-            throw std::runtime_error("Spadefoot Toad bitbang: NACK on command byte");
-        }
+        TRY(writeByteExpectAck(static_cast<uint8_t>((bbAddress << 1) | 0x00), "address (write)"));
+        return writeByteExpectAck(cmd, "command byte");
+    }
+
+    // Sends the command, then a REPEATED START and the address for reading.
+    Result<> beginRead(uint8_t cmd) {
+        TRY(beginCommand(cmd));
         bus.repeatedStart();
-        if (!bus.writeByteGetAck(static_cast<uint8_t>((bbAddress << 1) | 0x01))) {
-            bus.stop();
-            throw std::runtime_error("Spadefoot Toad bitbang: NACK on address (read)");
-        }
-        uint8_t hi = bus.readByteAndAck(false);    // ACK — more bytes coming
-        uint8_t lo = bus.readByteAndAck(true);     // NACK — last byte
-        bus.stop();
-        return static_cast<uint16_t>((hi << 8) | lo);
+        return writeByteExpectAck(static_cast<uint8_t>((bbAddress << 1) | 0x01), "address (read)");
     }
 
-    std::vector<uint8_t> transportReadBytes(uint8_t cmd, size_t n) override {
-        std::scoped_lock lock(bbMutex);
-        bus.start();
-        if (!bus.writeByteGetAck(static_cast<uint8_t>((bbAddress << 1) | 0x00))) {
-            bus.stop();
-            throw std::runtime_error("Spadefoot Toad bitbang: NACK on address (write)");
-        }
-        if (!bus.writeByteGetAck(cmd)) {
-            bus.stop();
-            throw std::runtime_error("Spadefoot Toad bitbang: NACK on command byte");
-        }
-        bus.repeatedStart();
-        if (!bus.writeByteGetAck(static_cast<uint8_t>((bbAddress << 1) | 0x01))) {
-            bus.stop();
-            throw std::runtime_error("Spadefoot Toad bitbang: NACK on address (read)");
-        }
-        std::vector<uint8_t> buf(n);
-        for (size_t i = 0; i < n; i++) {
-            buf[i] = bus.readByteAndAck(i == n - 1);    // NACK on last byte
-        }
-        bus.stop();
-        return buf;
-    }
-
-private:
     // Members are declared in initialization order: pins first, then bus (holds refs to pins).
     EspBitbangPin sdaPin;
     EspBitbangPin sclPin;
@@ -428,6 +465,32 @@ private:
 // Factory functions
 // ---------------------------------------------------------------------------
 
+inline void reportCommandError(const Result<>& result, JsonObject& res) {
+    if (!result) {
+        LOGTE(ENV, "Spadefoot Toad command failed: %s", result.error().message.c_str());
+        res["error"] = result.error().message;
+    }
+}
+
+inline void registerFeaturesAndCommands(PeripheralInitParameters& params, const std::shared_ptr<SpadefootToadSensorBase>& sensor) {
+    params.registerFeature("moisture", [sensor](JsonObject& telemetryJson) {
+        telemetryJson["value"] = sensor->getMoisture();
+    });
+    params.registerFeature("temperature", [sensor](JsonObject& telemetryJson) {
+        telemetryJson["value"] = sensor->getTemperature();
+    });
+    params.peripheralRoot()->registerCommand("calibrate", [sensor](const JsonObject& req, JsonObject& res) {
+        auto ref = req["reference"].as<CalibrationReference>();
+        reportCommandError(sensor->calibrate(ref), res);
+    });
+    params.peripheralRoot()->registerCommand("read-calibration", [sensor](const JsonObject&, JsonObject& res) {
+        reportCommandError(sensor->readCalibration(res), res);
+    });
+    params.peripheralRoot()->registerCommand("factory-reset", [sensor](const JsonObject&, JsonObject& res) {
+        reportCommandError(sensor->factoryReset(), res);
+    });
+}
+
 inline PeripheralFactory makeFactoryForSpadefootToadSensor() {
     return makePeripheralFactory<
         SpadefootToadSensor,
@@ -436,30 +499,11 @@ inline PeripheralFactory makeFactoryForSpadefootToadSensor() {
         api::ITemperatureSensor>(
         "soil:spadefoot-toad",
         "environment",
-        [](PeripheralInitParameters& params, const std::shared_ptr<SpadefootToadSensorSettings>& settings) {
+        [](PeripheralInitParameters& params, const std::shared_ptr<SpadefootToadSensorSettings>& settings) -> Result<std::shared_ptr<SpadefootToadSensor>> {
             I2CConfig i2cConfig = settings->parse(0x20);
             i2cConfig.clkSpeed = 100000;    // ATtiny TWI Address Match wakeup requires 100 kHz
-            auto sensor = std::make_shared<SpadefootToadSensor>(
-                params.name,
-                params.services.i2c,
-                i2cConfig,
-                settings->logRawValues.get());
-            params.registerFeature("moisture", [sensor](JsonObject& telemetryJson) {
-                telemetryJson["value"] = sensor->getMoisture();
-            });
-            params.registerFeature("temperature", [sensor](JsonObject& telemetryJson) {
-                telemetryJson["value"] = sensor->getTemperature();
-            });
-            params.peripheralRoot()->registerCommand("calibrate", [sensor](const JsonObject& req, JsonObject&) {
-                auto ref = req["reference"].as<CalibrationReference>();
-                sensor->calibrate(ref);
-            });
-            params.peripheralRoot()->registerCommand("read-calibration", [sensor](const JsonObject&, JsonObject& res) {
-                sensor->readCalibration(res);
-            });
-            params.peripheralRoot()->registerCommand("factory-reset", [sensor](const JsonObject&, JsonObject&) {
-                sensor->factoryReset();
-            });
+            auto sensor = TRY(SpadefootToadSensor::create(params.name, params.services.i2c, i2cConfig, settings->logRawValues.get()));
+            registerFeaturesAndCommands(params, sensor);
             return sensor;
         });
 }
@@ -473,32 +517,12 @@ inline PeripheralFactory makeFactoryForSpadefootToadSensorWithBitbangI2C() {
         api::ITemperatureSensor>(
         "soil:spadefoot-toad-bb",
         "environment",
-        [](PeripheralInitParameters& params, const std::shared_ptr<SpadefootToadSensorSettings>& settings) {
+        [](PeripheralInitParameters& params, const std::shared_ptr<SpadefootToadSensorSettings>& settings) -> Result<std::shared_ptr<SpadefootToadSensorWithBitbangI2C>> {
             // No i2c service — raw pin pointers are passed directly.
             // Clock is fixed at 100 kHz by the bitbang transport.
             I2CConfig i2cConfig = settings->parse(0x20);
-            auto sensor = std::make_shared<SpadefootToadSensorWithBitbangI2C>(
-                params.name,
-                i2cConfig.sda,
-                i2cConfig.scl,
-                i2cConfig.address,
-                settings->logRawValues.get());
-            params.registerFeature("moisture", [sensor](JsonObject& telemetryJson) {
-                telemetryJson["value"] = sensor->getMoisture();
-            });
-            params.registerFeature("temperature", [sensor](JsonObject& telemetryJson) {
-                telemetryJson["value"] = sensor->getTemperature();
-            });
-            params.peripheralRoot()->registerCommand("calibrate", [sensor](const JsonObject& req, JsonObject&) {
-                auto ref = req["reference"].as<CalibrationReference>();
-                sensor->calibrate(ref);
-            });
-            params.peripheralRoot()->registerCommand("read-calibration", [sensor](const JsonObject&, JsonObject& res) {
-                sensor->readCalibration(res);
-            });
-            params.peripheralRoot()->registerCommand("factory-reset", [sensor](const JsonObject&, JsonObject&) {
-                sensor->factoryReset();
-            });
+            auto sensor = TRY(SpadefootToadSensorWithBitbangI2C::create(params.name, i2cConfig.sda, i2cConfig.scl, i2cConfig.address, settings->logRawValues.get()));
+            registerFeaturesAndCommands(params, sensor);
             return sensor;
         });
 }

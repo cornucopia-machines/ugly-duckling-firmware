@@ -1,11 +1,11 @@
 #pragma once
-#include "PeripheralException.hpp"
-#include <EspException.hpp>
+#include <EspError.hpp>
 #include <I2CManager.hpp>
 #include <Manager.hpp>
 #include <Named.hpp>
 #include <PulseCounter.hpp>
 #include <PwmManager.hpp>
+#include <Result.hpp>
 #include <Telemetry.hpp>
 #include <config/Configuration.hpp>
 #include <drivers/SwitchManager.hpp>
@@ -54,7 +54,7 @@ struct PeripheralServices {
 
 struct PeripheralInitParameters;
 
-using PeripheralCreateFn = std::function<Handle(
+using PeripheralCreateFn = std::function<Result<Handle>(
     PeripheralInitParameters& params,
     const std::string& jsonSettings)>;
 using PeripheralFactory = kernel::Factory<PeripheralCreateFn>;
@@ -73,7 +73,7 @@ struct PeripheralInitParameters {
     }
 
     template <typename T>
-    std::shared_ptr<T> peripheral(const std::string& name) const {
+    Result<std::shared_ptr<T>> peripheral(const std::string& name) const {
         return peripherals.getInstance<T>(name);
     }
 
@@ -89,12 +89,13 @@ struct PeripheralInitParameters {
 // Helper to build a PeripheralFactory while keeping strong types for settings/config.
 // RegisterAs... lists the interface types to register the peripheral under. If empty,
 // the peripheral is registered under its concrete Impl type.
+// makeImpl may return either the peripheral, or a Result of it when creating it can fail.
 template <
     typename Impl,
     std::derived_from<ConfigurationSection> TSettings,
     typename... RegisterAs>
     requires(sizeof...(RegisterAs) == 0 || (std::derived_from<Impl, RegisterAs> && ...))
-PeripheralFactory makePeripheralFactory(const std::string& factoryType, const std::string& peripheralType, std::function<std::shared_ptr<Impl>(PeripheralInitParameters&, const std::shared_ptr<TSettings>&)> makeImpl, std::function<std::shared_ptr<TSettings>()> makeSettings = [] { return std::make_shared<TSettings>(); }) {
+PeripheralFactory makePeripheralFactory(const std::string& factoryType, const std::string& peripheralType, std::function<Result<std::shared_ptr<Impl>>(PeripheralInitParameters&, const std::shared_ptr<TSettings>&)> makeImpl, std::function<std::shared_ptr<TSettings>()> makeSettings = [] { return std::make_shared<TSettings>(); }) {
 
     // Build the factory using designated initializers (C++20+)
     auto effectiveType = peripheralType.empty() ? factoryType : peripheralType;
@@ -103,13 +104,13 @@ PeripheralFactory makePeripheralFactory(const std::string& factoryType, const st
         .productType = std::move(effectiveType),
         .create = [makeImpl = std::move(makeImpl), makeSettings = std::move(makeSettings)](
                       PeripheralInitParameters& params,
-                      const std::string& jsonSettings) -> Handle {
+                      const std::string& jsonSettings) -> Result<Handle> {
             // Construct and load settings
             auto settings = makeSettings();
-            settings->loadFromString(jsonSettings);
+            TRY(settings->loadFromString(jsonSettings));
 
             // Create concrete implementation via user-provided callable
-            auto impl = makeImpl(params, settings);
+            auto impl = TRY(makeImpl(params, settings));
             return Handle::wrap<RegisterAs...>(std::move(impl));
         },
     };
@@ -129,27 +130,26 @@ public:
 
     bool createPeripheral(const std::string& peripheralSettings, JsonArray peripheralsInitJson) {
         auto initJson = peripheralsInitJson.add<JsonObject>();
-        try {
-            manager.createFromSettings(
-                peripheralSettings,
-                initJson,
-                [&](const std::string& name, const PeripheralFactory& factory, const std::string& settings) {
-                    PeripheralInitParameters params = {
-                        .name = name,
-                        .services = services,
-                        .telemetryCollector = telemetryCollector,
-                        .features = initJson["features"].to<JsonArray>(),
-                        .peripherals = manager,
-                    };
-                    return factory.create(params, settings);
-                });
-            return true;
-        } catch (const std::exception& e) {
+        auto created = manager.createFromSettings(
+            peripheralSettings,
+            initJson,
+            [&](const std::string& name, const PeripheralFactory& factory, const std::string& settings) {
+                PeripheralInitParameters params = {
+                    .name = name,
+                    .services = services,
+                    .telemetryCollector = telemetryCollector,
+                    .features = initJson["features"].to<JsonArray>(),
+                    .peripherals = manager,
+                };
+                return factory.create(params, settings);
+            });
+        if (!created) {
             LOGE("%s",
-                e.what());
-            initJson["error"] = std::string(e.what());
+                created.error().message.c_str());
+            initJson["error"] = created.error().message;
             return false;
         }
+        return true;
     }
 
     void registerFactory(PeripheralFactory factory) {
@@ -157,7 +157,7 @@ public:
     }
 
     template <typename T>
-    std::shared_ptr<T> getPeripheral(const std::string& name) const {
+    Result<std::shared_ptr<T>> getPeripheral(const std::string& name) const {
         return manager.getInstance<T>(name);
     }
 

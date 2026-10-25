@@ -1,6 +1,7 @@
 #pragma once
 
 #include <PwmManager.hpp>
+#include <Result.hpp>
 
 #include <driver/gptimer.h>
 #include <driver/ledc.h>
@@ -25,8 +26,9 @@ namespace cornucopia::ugly_duckling::kernel::drivers {
  * On the alarm, both channels are stopped with idle level 1, i.e. held statically high. For a
  * DRV88xx-style bridge input pair that is the brake state. The next `PwmPin::write()` on a channel
  * turns its PWM output back on. *
- * The GPTimer is allocated for the lifetime of the object; there are only a few of them (two on the
- * ESP32-C6), so create one for each pulse rather than keeping it around.
+ * The GPTimer is allocated by run(), which may only be called once, and kept for the lifetime of the
+ * object; there are only a few of them (two on the ESP32-C6), so create one for each pulse rather than
+ * keeping it around.
  */
 class PulseTimer {
 public:
@@ -42,14 +44,18 @@ public:
      * @brief Run `start`, and hold both channels high `duration` after it.
      *
      * @details `start` runs in a critical section together with starting the timer, so nothing can
-     * delay the timer relative to the start of the pulse. It must be short, and must not block or throw.
+     * delay the timer relative to the start of the pulse. It must be short, and must not block.
      * Blocks until the alarm has fired.
      *
      * @return false if the alarm did not fire in time; the channels are then held high from the task instead.
+     * An error if the timer could not be set up, e.g. because every GPTimer is in use; `start` has
+     * not run then.
      */
-    bool run(std::chrono::microseconds duration, const std::function<void()>& start);
+    Result<bool> run(std::chrono::microseconds duration, const std::function<void()>& start);
 
 private:
+    Result<> allocate();
+
     static bool onAlarm(gptimer_handle_t timer, const gptimer_alarm_event_data_t* event, void* context);
 
     void holdChannelsHigh() const;

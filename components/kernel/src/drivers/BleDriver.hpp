@@ -10,7 +10,6 @@
 #include <chrono>
 #include <functional>
 #include <memory>
-#include <stdexcept>
 #include <string>
 
 // NimBleDriver and everything it needs from the "bt" component are only available when
@@ -18,10 +17,10 @@
 // entirely — see docs/specs/Bluetooth.md ("Platform support decision") — which drops the
 // bt component's nimble/host include paths, so these headers wouldn't even resolve there.
 #ifdef CONFIG_BT_NIMBLE_ENABLED
-#include <EspException.hpp>
-
 #include <ArduinoJson.h>
+#include <esp_err.h>
 #include <esp_random.h>
+#include <esp_system.h>
 // NimBLE's os_mbuf.h has inline functions with implicit narrowing conversions
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wconversion"
@@ -105,10 +104,10 @@ public:
         , advBurstInterval(advBurstInterval) {
         instance = this;
 
-        // Errors from here through the end of the constructor throw (see throwOnBleError):
+        // Errors from here through the end of the constructor abort (see abortOnBleError):
         // a device that can't stand up its GATT server or advertise isn't usable, so fail
         // fast at boot instead of continuing in a silently broken state.
-        ESP_ERROR_THROW(nimble_port_init());
+        ESP_ERROR_CHECK(nimble_port_init());
 
         ble_hs_cfg.reset_cb = onReset;
         ble_hs_cfg.sync_cb = onSync;
@@ -127,23 +126,23 @@ public:
         });
 
         // Register the Ugly Duckling custom GATT service (must be before nimble_port_freertos_init)
-        throwOnBleError(ble_gatts_count_cfg(gattSvcs), "ble_gatts_count_cfg");
-        throwOnBleError(ble_gatts_add_svcs(gattSvcs), "ble_gatts_add_svcs");
+        abortOnBleError(ble_gatts_count_cfg(gattSvcs), "ble_gatts_count_cfg");
+        abortOnBleError(ble_gatts_add_svcs(gattSvcs), "ble_gatts_add_svcs");
 
         // NimBLE DIS stores these pointers directly (no copy), so the strings must remain alive
         // for the device lifetime. They are stored as members below.
-        throwOnBleError(ble_svc_gap_device_name_set(this->deviceName.c_str()), "ble_svc_gap_device_name_set");
-        throwOnBleError(ble_svc_dis_manufacturer_name_set("Cornucopia Machines"), "ble_svc_dis_manufacturer_name_set");
-        throwOnBleError(ble_svc_dis_model_number_set(this->modelName.c_str()), "ble_svc_dis_model_number_set");
-        throwOnBleError(ble_svc_dis_firmware_revision_set(this->firmwareVersion.c_str()), "ble_svc_dis_firmware_revision_set");
-        throwOnBleError(ble_svc_dis_serial_number_set(this->serialNumber.c_str()), "ble_svc_dis_serial_number_set");
+        abortOnBleError(ble_svc_gap_device_name_set(this->deviceName.c_str()), "ble_svc_gap_device_name_set");
+        abortOnBleError(ble_svc_dis_manufacturer_name_set("Cornucopia Machines"), "ble_svc_dis_manufacturer_name_set");
+        abortOnBleError(ble_svc_dis_model_number_set(this->modelName.c_str()), "ble_svc_dis_model_number_set");
+        abortOnBleError(ble_svc_dis_firmware_revision_set(this->firmwareVersion.c_str()), "ble_svc_dis_firmware_revision_set");
+        abortOnBleError(ble_svc_dis_serial_number_set(this->serialNumber.c_str()), "ble_svc_dis_serial_number_set");
 
         // Burst-mode advertising restart — see startAdvertising() and the BLE_GAP_EVENT_ADV_COMPLETE
         // case in gapEventCallback() for why this exists. A ble_npl_callout (rather than an
         // esp_timer) runs its callback directly on the NimBLE host's own event queue, so the
         // restart needs no cross-task marshaling (contrast setWifiStatus/setScanResults, which
         // use postToHostTask because they're invoked from other drivers' tasks).
-        throwOnBleError(
+        abortOnBleError(
             ble_npl_callout_init(&advRestartCallout, nimble_port_get_dflt_eventq(), advRestartCalloutCb, this),
             "ble_npl_callout_init");
 
@@ -241,16 +240,16 @@ public:
 
 private:
     // NimBLE host functions return their own int error codes (BLE_HS_*), not esp_err_t, so
-    // ESP_ERROR_THROW (which calls esp_err_to_name()) doesn't apply. Used only for one-time
+    // ESP_ERROR_CHECK (which calls esp_err_to_name()) doesn't apply. Used only for one-time
     // initialization in the constructor: a failure there means the device can't function as
     // designed (no GATT server, no advertising, etc.), so fail fast at boot rather than limp
     // along silently — unlike runtime paths (notify, restart advertising after disconnect),
     // which log-and-continue since a transient failure there is expected and recoverable.
-    static void throwOnBleError(int rc, const char* what) {
+    static void abortOnBleError(int rc, const char* what) {
         if (rc != 0) {
             char message[80];
             (void) snprintf(message, sizeof(message), "%s failed: 0x%02x", what, rc);
-            throw std::runtime_error(message);
+            esp_system_abort(message);
         }
     }
 

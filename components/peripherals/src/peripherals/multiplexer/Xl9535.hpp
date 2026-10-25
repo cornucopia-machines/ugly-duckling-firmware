@@ -15,15 +15,15 @@ class Xl9535Settings
 class Xl9535 final
     : public Peripheral {
 public:
-    Xl9535(
+    static Result<std::shared_ptr<Xl9535>> create(
         const std::string& name,
         const std::shared_ptr<I2CManager>& i2c,
-        const I2CConfig& config)
-        : Peripheral(name)
-        , device(i2c->createDevice(name, config)) {
+        const I2CConfig& config) {
+        auto device = TRY(i2c->createDevice(name, config));
 
         LOGI("Initializing XL9535 multiplexer '%s' with %s",
             name.c_str(), config.toString().c_str());
+        return std::shared_ptr<Xl9535>(new Xl9535(name, device));
     }
 
     void pinMode(uint8_t pin, Pin::Mode mode) {
@@ -53,12 +53,33 @@ public:
         }
     }
 
+    /**
+     * @return the pin's level, or 0 if it could not be read.
+     */
     int digitalRead(uint8_t pin) {
-        uint8_t data = device->readRegByte(pin < 8 ? 0x00 : 0x01);
-        return (data >> (pin % 8)) & 1;
+        auto data = device->readRegByte(pin < 8 ? 0x00 : 0x01);
+        if (!data) {
+            LOGW("Failed to read pin %d of XL9535 multiplexer '%s': %s",
+                pin, name.c_str(), data.error().message.c_str());
+            return 0;
+        }
+        return (*data >> (pin % 8)) & 1;
     }
 
 private:
+    Xl9535(const std::string& name, const std::shared_ptr<I2CDevice>& device)
+        : Peripheral(name)
+        , device(device) {
+    }
+
+    void writeRegister(uint8_t reg, uint8_t value) {
+        auto written = device->writeRegByte(reg, value);
+        if (!written) {
+            LOGW("Failed to write register 0x%02x of XL9535 multiplexer '%s': %s",
+                reg, name.c_str(), written.error().message.c_str());
+        }
+    }
+
     static constexpr uint16_t bit(uint8_t pin) {
         return static_cast<uint16_t>(1U << pin);
     }
@@ -72,19 +93,19 @@ private:
     }
 
     void updateDirection1() {
-        device->writeRegByte(0x06, lowByte(direction));
+        writeRegister(0x06, lowByte(direction));
     }
 
     void updateDirection2() {
-        device->writeRegByte(0x07, highByte(direction));
+        writeRegister(0x07, highByte(direction));
     }
 
     void updateOutput1() {
-        device->writeRegByte(0x02, lowByte(output));
+        writeRegister(0x02, lowByte(output));
     }
 
     void updateOutput2() {
-        device->writeRegByte(0x03, highByte(output));
+        writeRegister(0x03, highByte(output));
     }
 
     std::shared_ptr<I2CDevice> device;
@@ -122,11 +143,8 @@ inline PeripheralFactory makeFactoryForXl9535() {
     return makePeripheralFactory<Xl9535, Xl9535Settings>(
         "multiplexer:xl9535",
         "multiplexer",
-        [](PeripheralInitParameters& params, const std::shared_ptr<Xl9535Settings>& settings) {
-            auto multiplexer = std::make_shared<Xl9535>(
-                params.name,
-                params.services.i2c,
-                settings->parse());
+        [](PeripheralInitParameters& params, const std::shared_ptr<Xl9535Settings>& settings) -> Result<std::shared_ptr<Xl9535>> {
+            auto multiplexer = TRY(Xl9535::create(params.name, params.services.i2c, settings->parse()));
 
             // Register external pins
             for (int i = 0; i < 16; i++) {

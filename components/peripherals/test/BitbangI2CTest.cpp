@@ -146,7 +146,7 @@ TEST_CASE("BitbangI2CBus: write 0x00 sends eight low bits") {
     // Default: SCL getLevel() returns 1 (line released immediately), so no stretching.
     BitbangI2CBus bus(sda, scl);
 
-    bool ack = bus.writeByteGetAck(0x00);
+    bool ack = *bus.writeByteGetAck(0x00);
 
     // ACK: SDA is left high (released) by default → NACK
     REQUIRE_FALSE(ack);
@@ -200,7 +200,7 @@ TEST_CASE("BitbangI2CBus: write byte returns true when slave ACKs") {
     // Queue SDA=0 for the ACK bit read (slave drives SDA low = ACK).
     sda.queueReads({ 0 });
 
-    bool ack = bus.writeByteGetAck(0x42);
+    bool ack = *bus.writeByteGetAck(0x42);
     REQUIRE(ack);
 }
 
@@ -209,7 +209,7 @@ TEST_CASE("BitbangI2CBus: write byte returns false when slave NACKs") {
     BitbangI2CBus bus(sda, scl);
 
     // Default: SDA floats high (1) during ACK phase → NACK
-    bool ack = bus.writeByteGetAck(0x42);
+    bool ack = *bus.writeByteGetAck(0x42);
     REQUIRE_FALSE(ack);
 }
 
@@ -242,7 +242,7 @@ TEST_CASE("BitbangI2CBus: read 0x00 when slave drives SDA low for all bits") {
     // Slave drives SDA=0 for all 8 data bits; SDA=1 for the master ACK phase (ignored as input).
     sda.queueReads({ 0, 0, 0, 0, 0, 0, 0, 0 });
 
-    uint8_t byte = bus.readByteAndAck(true);    // send NACK
+    uint8_t byte = *bus.readByteAndAck(true);    // send NACK
     REQUIRE(byte == 0x00);
 }
 
@@ -251,7 +251,7 @@ TEST_CASE("BitbangI2CBus: read 0xFF when slave drives SDA high for all bits") {
     // Default getLevel() returns 1 (currentLevel after setLevel(1) — the release writes).
     BitbangI2CBus bus(sda, scl);
 
-    uint8_t byte = bus.readByteAndAck(true);
+    uint8_t byte = *bus.readByteAndAck(true);
     REQUIRE(byte == 0xFF);
 }
 
@@ -262,7 +262,7 @@ TEST_CASE("BitbangI2CBus: read byte reconstructs value MSB first") {
     // 0b10110100 = 1,0,1,1,0,1,0,0 (MSB first)
     sda.queueReads({ 1, 0, 1, 1, 0, 1, 0, 0 });
 
-    uint8_t byte = bus.readByteAndAck(false);
+    uint8_t byte = *bus.readByteAndAck(false);
     REQUIRE(byte == 0b10110100);
 }
 
@@ -307,11 +307,11 @@ TEST_CASE("BitbangI2CBus: clock stretching — SCL polls until released") {
         scl.queueReads({ 0, 0, 1 });
     }
 
-    // Should not throw — slave released SCL before timeout.
-    REQUIRE_NOTHROW(bus.writeByteGetAck(0x00));
+    // Should succeed — slave released SCL before timeout.
+    REQUIRE(bus.writeByteGetAck(0x00).has_value());
 }
 
-TEST_CASE("BitbangI2CBus: clock stretch timeout throws") {
+TEST_CASE("BitbangI2CBus: clock stretch timeout fails") {
     MockPin sda("SDA"), scl("SCL");
     BitbangI2CBus bus(sda, scl, /*stretchTimeout=*/3);
 
@@ -320,5 +320,7 @@ TEST_CASE("BitbangI2CBus: clock stretch timeout throws") {
         scl.queueReads({ 0 });
     }
 
-    REQUIRE_THROWS_AS(bus.writeByteGetAck(0x42), std::runtime_error);
+    auto result = bus.writeByteGetAck(0x42);
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(result.error().message == "BitbangI2C: clock stretch timeout");
 }

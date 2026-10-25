@@ -82,17 +82,16 @@ public:
 class AnalogBatteryDriver
     : public BatteryDriver {
 public:
-    AnalogBatteryDriver(const InternalPinPtr& pin, double voltageDividerRatio, const BatteryParameters& parameters)
-        : BatteryDriver(parameters)
-        , analogPin(pin)
-        , voltageDividerRatio(voltageDividerRatio) {
+    static Result<std::shared_ptr<AnalogBatteryDriver>> create(const InternalPinPtr& pin, double voltageDividerRatio, const BatteryParameters& parameters) {
         LOGTI(BATTERY, "Initializing analog battery driver on pin %s",
-            analogPin.getName().c_str());
+            pin->getName().c_str());
+        auto analogPin = TRY(AnalogPin::create(pin));
+        return std::shared_ptr<AnalogBatteryDriver>(new AnalogBatteryDriver(std::move(analogPin), voltageDividerRatio, parameters));
     }
 
     int getVoltage() override {
         for (int trial = 0; trial < 5; trial++) {
-            auto mv = analogPin.tryAnalogReadMillivolts();
+            auto mv = analogPin->tryAnalogReadMillivolts();
             if (!mv.has_value()) {
                 LOGTE(BATTERY, "Failed to read battery level");
                 continue;
@@ -103,7 +102,13 @@ public:
     }
 
 private:
-    AnalogPin analogPin;
+    AnalogBatteryDriver(std::unique_ptr<AnalogPin> analogPin, double voltageDividerRatio, const BatteryParameters& parameters)
+        : BatteryDriver(parameters)
+        , analogPin(std::move(analogPin))
+        , voltageDividerRatio(voltageDividerRatio) {
+    }
+
+    const std::unique_ptr<AnalogPin> analogPin;
     const double voltageDividerRatio;
 };
 

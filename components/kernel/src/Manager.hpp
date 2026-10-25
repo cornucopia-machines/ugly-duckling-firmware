@@ -1,5 +1,6 @@
 #pragma once
 #include <Log.hpp>
+#include <Result.hpp>
 #include <config/Configuration.hpp>
 
 #include <concepts>
@@ -7,7 +8,6 @@
 #include <map>
 #include <memory>
 #include <mutex>
-#include <stdexcept>
 #include <string>
 #include <type_traits>
 #include <unordered_map>
@@ -91,7 +91,7 @@ private:
 };
 
 // A lightweight, generic factory descriptor. The CreateFn is the concrete callable type
-// (often a std::function) that returns a Handle from domain-specific parameters.
+// (often a std::function) that returns a Result<Handle> from domain-specific parameters.
 template <typename CreateFn>
 struct Factory {
     std::string factoryType;    // key used for registration
@@ -112,17 +112,17 @@ public:
     }
 
     template <typename T>
-    std::shared_ptr<T> getInstance(const std::string& name) const {
+    Result<std::shared_ptr<T>> getInstance(const std::string& name) const {
         std::scoped_lock lock(mutex);
         auto it = instances.find(name);
         if (it != instances.end()) {
             auto instance = it->second.template tryGet<T>();
             if (instance == nullptr) {
-                throw std::runtime_error("Instance '" + name + "' is not of the required type");
+                return failure("Instance '" + name + "' is not of the required type");
             }
             return instance;
         }
-        throw std::runtime_error("Instance '" + name + "' not found");
+        return failure("Instance '" + name + "' not found");
     }
 
     void shutdown() {
@@ -137,33 +137,29 @@ public:
         for (auto& [name, instance] : instances) {
             LOGI("Shutting down %s '%s'",
                 managed.c_str(), name.c_str());
-            try {
-                instance.shutdown(parameters);
-            } catch (const std::exception& e) {
-                LOGE("Shutdown of %s '%s' failed: %s",
-                    managed.c_str(), name.c_str(), e.what());
-            }
+            instance.shutdown(parameters);
         }
     }
 
-    void createWithFactory(
+    Result<> createWithFactory(
         const std::string& name,
         const std::string& type,
-        const std::function<Handle(const FactoryT&)>& make) {
+        const std::function<Result<Handle>(const FactoryT&)>& make) {
         std::scoped_lock lock(mutex);
         if (state == State::Stopped) {
-            throw std::runtime_error("Not creating " + managed + " because the manager is stopped");
+            return failure("Not creating " + managed + " because the manager is stopped");
         }
 
         LOGD("Creating %s '%s' with factory '%s'",
             managed.c_str(), name.c_str(), type.c_str());
         auto it = factories.find(type);
         if (it == factories.end()) {
-            throw std::runtime_error("Factory for '" + type + "' not found");
+            return failure("Factory for '" + type + "' not found");
         }
         const auto& factory = it->second;
-        Handle instance = make(factory);
+        Handle instance = TRY(make(factory));
         instances.emplace(name, std::move(instance));
+        return {};
     }
 
 protected:
@@ -190,31 +186,30 @@ public:
         : Manager<FactoryT>(std::move(managed)) {
     }
 
-    void createFromSettings(
+    Result<> createFromSettings(
         const std::string& settingsAsString,
         JsonObject initJson,
-        const std::function<Handle(const std::string&, const FactoryT&, const std::string&)>& make) {
+        const std::function<Result<Handle>(const std::string&, const FactoryT&, const std::string&)>& make) {
         LOGI("Creating %s with settings: %s",
             this->managed.c_str(), settingsAsString.c_str());
         std::shared_ptr<ProductSettings> settings = std::make_shared<ProductSettings>();
-        try {
-            settings->loadFromString(settingsAsString);
-        } catch (const std::exception& e) {
-            throw std::runtime_error(
-                "Failed to parse " + this->managed + " settings because " + e.what() + ":\n" + settingsAsString);
+        auto loaded = settings->loadFromString(settingsAsString);
+        if (!loaded) {
+            return failure(
+                "Failed to parse " + this->managed + " settings because " + loaded.error().message + ":\n" + settingsAsString);
         }
 
         const auto& name = settings->name.get();
         initJson["name"] = name;
         initJson["type"] = settings->type.get();
-        try {
-            this->createWithFactory(name, settings->type.get(), [&](const FactoryT& factory) {
-                initJson["factory"] = factory.factoryType;
-                return make(name, factory, settings->params.get().get());
-            });
-        } catch (const std::exception& e) {
-            throw std::runtime_error("Failed to create " + this->managed + " '" + name + "' because: " + e.what());
+        auto created = this->createWithFactory(name, settings->type.get(), [&](const FactoryT& factory) {
+            initJson["factory"] = factory.factoryType;
+            return make(name, factory, settings->params.get().get());
+        });
+        if (!created) {
+            return failure("Failed to create " + this->managed + " '" + name + "' because: " + created.error().message);
         }
+        return {};
     }
 
 private:

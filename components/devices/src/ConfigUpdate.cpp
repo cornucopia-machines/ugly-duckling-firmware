@@ -15,7 +15,6 @@
 #include <config/ConfigState.hpp>
 #include <config/StoredConfig.hpp>
 
-#include <exception>
 #include <memory>
 #include <optional>
 #include <string>
@@ -108,10 +107,9 @@ ConfigUpdateResult applyConfigUpdate(
 
     bool success = true;
     for (const auto& entry : update.changed) {
-        try {
-            functionRegistry->applyLive(entry.name, entry.envelope);
-        } catch (const std::exception& e) {
-            LOGE("Failed to apply configuration update for '%s': %s", entry.name.c_str(), e.what());
+        auto applied = functionRegistry->applyLive(entry.name, entry.envelope);
+        if (!applied) {
+            LOGE("Failed to apply configuration update for '%s': %s", entry.name.c_str(), applied.error().message.c_str());
             success = false;
             break;
         }

@@ -1,7 +1,8 @@
 #pragma once
 #include <State.hpp>
 
-#include <stdexcept>
+#include <esp_system.h>
+
 #include <string>
 #include <vector>
 
@@ -24,7 +25,8 @@ public:
         LOGV("Creating state: %s",
             name.c_str());
         if (nextEventBit > 31) {
-            throw std::runtime_error("Too many states");
+            // States are created by the firmware, never from configuration
+            esp_system_abort("Too many states");
         }
         EventBits_t eventBits = 1 << nextEventBit++;
         return { name, eventGroup, eventBits };

@@ -1,19 +1,21 @@
 #pragma once
 
-#include <EspException.hpp>
 #include <Log.hpp>
 #include <Pin.hpp>
 
 #include <driver/ledc.h>
 #include <esp_err.h>
+#include <esp_system.h>
 
 #include <cinttypes>
 #include <cstdint>
 #include <list>
-#include <stdexcept>
 #include <string>
 
 namespace cornucopia::ugly_duckling::kernel {
+
+// PWM pins are only registered by drivers the board definition creates, never from configuration,
+// so failing to set them up means the firmware itself is broken: we abort instead of reporting it.
 
 // TODO Figure out what to do with low/high speed modes
 //      See https://docs.espressif.com/projects/esp-idf/en/release-v4.2/esp32/api-reference/peripherals/ledc.html#ledc-high-and-low-speed-mode
@@ -34,7 +36,7 @@ public:
             .clk_cfg = clkSrc,
             .deconfigure = false,
         };
-        ESP_ERROR_THROW(ledc_timer_config(&config));
+        ESP_ERROR_CHECK(ledc_timer_config(&config));
     }
 
     ~LedcTimer() {
@@ -79,7 +81,7 @@ public:
             .flags = {},
             .deconfigure = false,
         };
-        ESP_ERROR_THROW(ledc_channel_config(&config));
+        ESP_ERROR_CHECK(ledc_channel_config(&config));
     }
 
     uint32_t constexpr maxValue() const {
@@ -87,12 +89,12 @@ public:
     }
 
     void write(uint32_t value) const {
-        ESP_ERROR_THROW(ledc_set_duty(timer.speedMode, channel, value));
-        ESP_ERROR_THROW(ledc_update_duty(timer.speedMode, channel));
+        ESP_ERROR_CHECK(ledc_set_duty(timer.speedMode, channel, value));
+        ESP_ERROR_CHECK(ledc_update_duty(timer.speedMode, channel));
     }
 
     /**
-     * @brief Like write(), but returns the error instead of throwing, so it can be used in a critical section.
+     * @brief Like write(), but returns the error instead of aborting, so it can be used in a critical section.
      */
     esp_err_t tryWrite(uint32_t value) const noexcept {
         esp_err_t err = ledc_set_duty(timer.speedMode, channel, value);
@@ -127,7 +129,7 @@ public:
 
         auto channel = static_cast<ledc_channel_t>(pins.size());
         if (channel >= LEDC_CHANNEL_MAX) {
-            throw std::runtime_error("No more LEDC channels available");
+            esp_system_abort("No more LEDC channels available");
         }
 
         pins.emplace_back(pin, timer, channel);
@@ -145,7 +147,7 @@ private:
         }
         auto timerNum = static_cast<ledc_timer_t>(timers.size());
         if (timerNum >= LEDC_TIMER_MAX) {
-            throw std::runtime_error("No more LEDC timers available");
+            esp_system_abort("No more LEDC timers available");
         }
 
         timers.emplace_back(speedMode, dutyResolution, timerNum, freqHz, clkSrc);

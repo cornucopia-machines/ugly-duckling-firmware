@@ -1,7 +1,7 @@
 #include "Motors.hpp"
 
-#include "PeripheralException.hpp"
 #include "drivers/MotorDriver.hpp"
+#include <Result.hpp>
 
 #include <map>
 #include <memory>
@@ -9,7 +9,7 @@
 
 namespace cornucopia::ugly_duckling::peripherals {
 
-std::shared_ptr<PwmMotorDriver> findMotor(
+Result<std::shared_ptr<PwmMotorDriver>> findMotor(
     const std::map<std::string, std::shared_ptr<PwmMotorDriver>>& motors,
     const std::string& motorName) {
 
@@ -21,7 +21,7 @@ std::shared_ptr<PwmMotorDriver> findMotor(
             return m.second;
         }
     }
-    throw PeripheralCreationException("failed to find motor: " + motorName);
+    return failure("failed to find motor: " + motorName);
 }
 
 }    // namespace cornucopia::ugly_duckling::peripherals
