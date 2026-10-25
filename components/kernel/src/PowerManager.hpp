@@ -167,7 +167,7 @@ public:
 #endif
     }
 
-    static PowerManagementLock noLightSleep;
+    inline static PowerManagementLock noLightSleep { "no-light-sleep", ESP_PM_NO_LIGHT_SLEEP };
 
 private:
     static bool shouldSleepWhenIdle(bool requestedSleepWhenIdle) {

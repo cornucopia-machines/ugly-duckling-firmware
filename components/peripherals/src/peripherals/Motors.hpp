@@ -12,8 +12,19 @@ using namespace cornucopia::ugly_duckling::kernel::drivers;
 
 namespace cornucopia::ugly_duckling::peripherals {
 
-Result<std::shared_ptr<PwmMotorDriver>> findMotor(
+inline Result<std::shared_ptr<PwmMotorDriver>> findMotor(
     const std::map<std::string, std::shared_ptr<PwmMotorDriver>>& motors,
-    const std::string& motorName);
+    const std::string& motorName) {
+
+    if (motorName.empty() && motors.size() == 1) {
+        return motors.begin()->second;
+    }
+    for (const auto& m : motors) {
+        if (m.first == motorName) {
+            return m.second;
+        }
+    }
+    return failure("failed to find motor: " + motorName);
+}
 
 }    // namespace cornucopia::ugly_duckling::peripherals

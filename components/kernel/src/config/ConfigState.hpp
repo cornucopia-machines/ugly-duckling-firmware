@@ -66,7 +66,7 @@ struct RequestedConfig {
  * Default-constructed (every field absent) represents a virgin `config-state` namespace (fresh
  * device or pre-Phase-3 firmware). `loadDeviceBootConfig()` guarantees `confirmed` is always set
  * before any downstream code runs -- a missing confirmed is initialized to slot A at boot (see
- * BootConfig.cpp), so downstream code never sees `confirmed == nullopt`.
+ * BootConfig.hpp), so downstream code never sees `confirmed == nullopt`.
  */
 struct ConfigState {
     std::optional<ConfigSlot> confirmed;

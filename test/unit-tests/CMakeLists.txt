@@ -60,17 +60,10 @@ file(GLOB_RECURSE TEST_SOURCES CONFIGURE_DEPENDS
     ${COMPONENTS_DIR}/scheduling/test/*.cpp
 )
 
-# Collect component source files (excluding tests and ESP-IDF specific code)
-set(COMPONENT_SOURCES
-
-    # kernel/State.cpp excluded as it depends on FreeRTOS
-)
-
 # Create the test executable
 add_executable(ugly-duckling-unit-tests
     main/test_main.cpp
     ${TEST_SOURCES}
-    ${COMPONENT_SOURCES}
 )
 
 # Link libraries
