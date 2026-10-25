@@ -110,23 +110,12 @@ public:
     virtual void configure(const std::shared_ptr<TConfig>&) = 0;
 };
 
-template <std::derived_from<ConfigurationEntry> TDelegateEntry>
-class NamedConfigurationEntry : public ConfigurationEntry {
+// The type-independent part of NamedConfigurationEntry, so it exists once in flash instead of once
+// per delegate type: loading and hasValue() only go through ConfigurationEntry's virtual methods.
+class NamedConfigurationEntryBase : public ConfigurationEntry {
 public:
-    NamedConfigurationEntry(ConfigurationSection* parent, const std::string& name, std::shared_ptr<TDelegateEntry> delegate)
-        : name(name)
-        , delegate(std::move(delegate)) {
-        parent->add(*this);
-    }
-
-    template <typename... Args>
-        requires std::constructible_from<TDelegateEntry, Args...>
-    NamedConfigurationEntry(ConfigurationSection* parent, const std::string& name, Args&&... args)
-        : NamedConfigurationEntry(parent, name, std::make_shared<TDelegateEntry>(std::forward<Args>(args)...)) {
-    }
-
     Result<> load(const JsonObject& json) override {
-        if (json[name].template is<JsonObject>()) {
+        if (json[name].is<JsonObject>()) {
             namePresentAtLoad = true;
             auto loaded = delegate->load(json[name]);
             if (!loaded) {
@@ -140,14 +129,40 @@ public:
         return namePresentAtLoad || delegate->hasValue();
     }
 
-    std::shared_ptr<TDelegateEntry> get() const {
+protected:
+    NamedConfigurationEntryBase(ConfigurationSection* parent, const std::string& name, std::shared_ptr<ConfigurationEntry> delegate)
+        : name(name)
+        , delegate(std::move(delegate)) {
+        parent->add(*this);
+    }
+
+    const std::shared_ptr<ConfigurationEntry>& getDelegate() const {
         return delegate;
     }
 
 private:
     const std::string name;
-    const std::shared_ptr<TDelegateEntry> delegate;
+    const std::shared_ptr<ConfigurationEntry> delegate;
     bool namePresentAtLoad = false;
+};
+
+template <std::derived_from<ConfigurationEntry> TDelegateEntry>
+class NamedConfigurationEntry : public NamedConfigurationEntryBase {
+public:
+    NamedConfigurationEntry(ConfigurationSection* parent, const std::string& name, std::shared_ptr<TDelegateEntry> delegate)
+        : NamedConfigurationEntryBase(parent, name, std::move(delegate)) {
+    }
+
+    template <typename... Args>
+        requires std::constructible_from<TDelegateEntry, Args...>
+    NamedConfigurationEntry(ConfigurationSection* parent, const std::string& name, Args&&... args)
+        : NamedConfigurationEntry(parent, name, std::make_shared<TDelegateEntry>(std::forward<Args>(args)...)) {
+    }
+
+    std::shared_ptr<TDelegateEntry> get() const {
+        // The delegate is always a TDelegateEntry: the constructors only accept one
+        return std::static_pointer_cast<TDelegateEntry>(getDelegate());
+    }
 };
 
 template <typename T>
