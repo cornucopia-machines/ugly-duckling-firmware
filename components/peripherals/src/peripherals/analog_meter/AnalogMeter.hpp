@@ -28,20 +28,20 @@ class AnalogMeter final
 public:
     AnalogMeter(
         const std::string& name,
-        const InternalPinPtr& pin,
+        std::unique_ptr<AnalogPin> pin,
         double offset,
         double multiplier,
         milliseconds measurementFrequency,
         std::size_t windowSize)
         : Peripheral(name)
-        , pin(pin)
+        , pin(std::move(pin))
         , value(windowSize) {
 
         LOGTI(ANALOG_METER, "Initializing analog meter on pin %s",
-            pin->getName().c_str());
+            this->pin->getName().c_str());
 
         Task::loop(name, 3072, [this, measurementFrequency, offset, multiplier](Task& task) {
-            auto measurement = this->pin.tryAnalogRead();
+            auto measurement = this->pin->tryAnalogRead();
             if (measurement.has_value()) {
                 auto rawValue = *measurement;
                 double value = offset + (rawValue * multiplier);
@@ -58,7 +58,7 @@ public:
     }
 
 private:
-    AnalogPin pin;
+    const std::unique_ptr<AnalogPin> pin;
     MovingAverage<double> value;
 };
 
@@ -77,10 +77,11 @@ inline PeripheralFactory makeFactory() {
     return makePeripheralFactory<AnalogMeter, AnalogMeterSettings>(
         "analog-meter",
         "analog-meter",
-        [](PeripheralInitParameters& params, const std::shared_ptr<AnalogMeterSettings>& settings) {
+        [](PeripheralInitParameters& params, const std::shared_ptr<AnalogMeterSettings>& settings) -> Result<std::shared_ptr<AnalogMeter>> {
+            auto pin = TRY(AnalogPin::create(settings->pin.get()));
             auto meter = std::make_shared<AnalogMeter>(
                 params.name,
-                settings->pin.get(),
+                std::move(pin),
                 settings->offset.get(),
                 settings->multiplier.get(),
                 settings->measurementFrequency.get(),

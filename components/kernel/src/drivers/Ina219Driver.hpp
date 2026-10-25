@@ -1,5 +1,7 @@
 #pragma once
+#include <EspError.hpp>
 #include <I2CManager.hpp>
+#include <Result.hpp>
 
 #include <ina219.h>
 
@@ -22,86 +24,58 @@ class Ina219Driver final {
 public:
     static constexpr uint8_t DEFAULT_ADDRESS = 0x40;
 
-    Ina219Driver(
+    static Result<std::shared_ptr<Ina219Driver>> create(
         const std::shared_ptr<I2CManager>& i2c,
         const I2CConfig& config,
-        const Ina219Parameters params)
-        : initParams(params) {
+        const Ina219Parameters params) {
         LOGI("Initializing INA219 driver, %s", config.toString().c_str());
 
-        auto bus = i2c->getBusFor(config.sda, config.scl);
-        ESP_ERROR_THROW(ina219_init_desc(&device, config.address,
+        auto bus = TRY(i2c->getBusFor(config.sda, config.scl));
+        auto driver = std::shared_ptr<Ina219Driver>(new Ina219Driver(params));
+        auto& device = driver->device;
+        ESP_TRY(ina219_init_desc(&device, config.address,
             bus->port, bus->sda->getGpio(), bus->scl->getGpio()));
-        ESP_ERROR_THROW(ina219_init(&device));
+        ESP_TRY(ina219_init(&device));
 
         LOGD("Configuring INA219");
-        ESP_ERROR_THROW(ina219_configure(&device,
+        ESP_TRY(ina219_configure(&device,
             params.uRange, params.gain, params.uResolution, params.iResolution, params.mode));
-        enabled = true;
+        driver->enabled = true;
 
         LOGD("Calibrating INA219");
-        ESP_ERROR_THROW(ina219_calibrate(&device, (float) params.shuntMilliOhm / 1000.0F));
+        ESP_TRY(ina219_calibrate(&device, (float) params.shuntMilliOhm / 1000.0F));
 
         LOGD("Finished calibrating, disabling INA219 until needed");
-        setEnabled(false);
+        TRY(driver->setEnabled(false));
+        return driver;
     }
 
-    void setEnabled(bool enable) {
-        if (enabled != enable) {
-            enabled = enable;
-            ESP_ERROR_THROW(ina219_configure(&device,
-                initParams.uRange, initParams.gain, initParams.uResolution, initParams.iResolution, enabled ? initParams.mode : INA219_MODE_POWER_DOWN));
-        }
+    ~Ina219Driver() {
+        ina219_free_desc(&device);
     }
 
-    double getBusVoltage() {
-        if (!enabled) {
-            LOGW("INA219 is disabled");
-            return 0.0;
-        }
-
-        float voltage;
-        ESP_ERROR_THROW(ina219_get_bus_voltage(&device, &voltage));
-        return static_cast<double>(voltage);
-    }
-
-    double getShuntVoltage() {
-        if (!enabled) {
-            LOGW("INA219 is disabled");
-            return 0.0;
-        }
-
-        float voltage;
-        ESP_ERROR_THROW(ina219_get_shunt_voltage(&device, &voltage));
-        return static_cast<double>(voltage);
-    }
-
-    double getCurrent() {
-        if (!enabled) {
-            LOGW("INA219 is disabled");
-            return 0.0;
-        }
-
-        float current;
-        ESP_ERROR_THROW(ina219_get_current(&device, &current));
-        return static_cast<double>(current);
-    }
-
-    double getPower() {
-        if (!enabled) {
-            LOGW("INA219 is disabled");
-            return 0.0;
-        }
-
-        float power;
-        ESP_ERROR_THROW(ina219_get_power(&device, &power));
-        return static_cast<double>(power);
-    }
+    Ina219Driver(const Ina219Driver&) = delete;
+    Ina219Driver& operator=(const Ina219Driver&) = delete;
+    Ina219Driver(Ina219Driver&&) = delete;
+    Ina219Driver& operator=(Ina219Driver&&) = delete;
 
 private:
+    Result<> setEnabled(bool enable) {
+        if (enabled != enable) {
+            enabled = enable;
+            ESP_TRY(ina219_configure(&device,
+                initParams.uRange, initParams.gain, initParams.uResolution, initParams.iResolution, enabled ? initParams.mode : INA219_MODE_POWER_DOWN));
+        }
+        return {};
+    }
+
     ina219_t device {};
     const Ina219Parameters initParams;
-    bool enabled;
+    bool enabled = false;
+
+    explicit Ina219Driver(const Ina219Parameters& params)
+        : initParams(params) {
+    }
 };
 
 }    // namespace cornucopia::ugly_duckling::kernel::drivers

@@ -152,11 +152,12 @@ struct NoOpLightSensor : virtual ILightSensor, Named {
 inline FunctionFactory makeFactory() {
     return makeFunctionFactory<ChickenDoor, ChickenDoorSettings, ChickenDoorConfig>(
         "chicken-door",
-        [](const FunctionInitParameters& params, const std::shared_ptr<ChickenDoorSettings>& settings) {
-            auto door = params.peripheral<IDoor>(settings->door.get());
-            auto lightSensor = settings->lightSensor.hasValue()
-                ? params.peripheral<ILightSensor>(settings->lightSensor.get())
-                : std::make_shared<NoOpLightSensor>(params.name + ":light");
+        [](const FunctionInitParameters& params, const std::shared_ptr<ChickenDoorSettings>& settings) -> Result<std::shared_ptr<ChickenDoor>> {
+            auto door = TRY(params.peripheral<IDoor>(settings->door.get()));
+            std::shared_ptr<ILightSensor> lightSensor = std::make_shared<NoOpLightSensor>(params.name + ":light");
+            if (settings->lightSensor.hasValue()) {
+                lightSensor = TRY(params.peripheral<ILightSensor>(settings->lightSensor.get()));
+            }
             return std::make_shared<ChickenDoor>(
                 params.name,
                 door,

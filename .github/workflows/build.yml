@@ -159,13 +159,15 @@ jobs:
           if-no-files-found: error
 
   unit-test:
-    runs-on: ubuntu-latest
+    # std::expected needs Clang 19+ with libstdc++; ubuntu-24.04 only has up to Clang 18
+    runs-on: ubuntu-26.04
 
     steps:
       - uses: actions/checkout@v7
 
       - name: Configure
-        run: cmake -G Ninja -DCMAKE_CXX_COMPILER=clang++ -S test/unit-tests -B test/unit-tests/build-native
+        # The same Clang version as the esp-clang clang-tidy runs on
+        run: cmake -G Ninja -DCMAKE_CXX_COMPILER=clang++-21 -S test/unit-tests -B test/unit-tests/build-native
 
       - name: Build Project
         run: cmake --build test/unit-tests/build-native

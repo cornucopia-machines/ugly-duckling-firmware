@@ -25,7 +25,7 @@ struct FunctionServices {
 
 struct FunctionInitParameters {
     template <typename T>
-    std::shared_ptr<T> peripheral(const std::string& name) const {
+    Result<std::shared_ptr<T>> peripheral(const std::string& name) const {
         return services.peripherals->getPeripheral<T>(name);
     }
 
@@ -40,13 +40,14 @@ struct FunctionCreationResult {
     std::string requestedAt;    // empty if no config, or none was found in NVS at boot
 };
 
-using FunctionCreateFn = std::function<FunctionCreationResult(
+using FunctionCreateFn = std::function<Result<FunctionCreationResult>(
     FunctionInitParameters& params,
     const std::shared_ptr<NvsStore>& nvs,
     const std::string& jsonSettings)>;
 using FunctionFactory = kernel::Factory<FunctionCreateFn>;
 
-// Helper to build a FunctionFactory while keeping strong types for settings/config
+// Helper to build a FunctionFactory while keeping strong types for settings/config.
+// makeImpl may return either the function, or a Result of it when creating it can fail.
 template <
     typename Impl,
     std::derived_from<ConfigurationSection> TSettings,
@@ -54,7 +55,7 @@ template <
     typename... TSettingsArgs>
 FunctionFactory makeFunctionFactory(
     const std::string& type,
-    std::function<std::shared_ptr<Impl>(const FunctionInitParameters&, const std::shared_ptr<TSettings>&)> makeImpl,
+    std::function<Result<std::shared_ptr<Impl>>(const FunctionInitParameters&, const std::shared_ptr<TSettings>&)> makeImpl,
     TSettingsArgs... settingsArgs) {
     auto settingsTuple = std::make_tuple(std::forward<TSettingsArgs>(settingsArgs)...);
 
@@ -65,13 +66,13 @@ FunctionFactory makeFunctionFactory(
         .create = [settingsTuple, makeImpl = std::move(makeImpl)](
                       FunctionInitParameters& params,
                       const std::shared_ptr<NvsStore>& nvs,
-                      const std::string& jsonSettings) -> FunctionCreationResult {
+                      const std::string& jsonSettings) -> Result<FunctionCreationResult> {
             // Construct and load settings
             auto settings = std::apply([](auto&&... a) {
                 return std::make_shared<TSettings>(std::forward<decltype(a)>(a)...);
             },
                 settingsTuple);
-            settings->loadFromString(jsonSettings);
+            TRY(settings->loadFromString(jsonSettings));
 
             constexpr bool hasConfig = std::is_base_of_v<HasConfig<TConfig>, Impl>;
 
@@ -83,12 +84,12 @@ FunctionFactory makeFunctionFactory(
                 storedConfig = std::make_shared<StoredConfig>(nvs, params.name);
                 if (storedConfig->hasValue()) {
                     JsonDocument dataCopy = storedConfig->data();
-                    config->load(dataCopy.as<JsonObject>());
+                    TRY(config->load(dataCopy.as<JsonObject>()));
                 }
             }
 
             // Create concrete implementation via user-provided callable
-            auto impl = makeImpl(params, settings);
+            auto impl = TRY(makeImpl(params, settings));
 
             FunctionCreationResult result;
             if constexpr (hasConfig) {
@@ -98,12 +99,13 @@ FunctionFactory makeFunctionFactory(
                     result.requestedAt = storedConfig->requestedAt();
                 }
 
-                result.configureFn = [impl](JsonObjectConst data) {
+                result.configureFn = [impl](JsonObjectConst data) -> Result<> {
                     auto parsed = std::make_shared<TConfig>();
                     JsonDocument copy;
                     copy.set(data);
-                    parsed->load(copy.as<JsonObject>());
+                    TRY(parsed->load(copy.as<JsonObject>()));
                     std::static_pointer_cast<HasConfig<TConfig>>(impl)->configure(parsed);
+                    return {};
                 };
             }
 
@@ -140,39 +142,38 @@ public:
 
     bool createFunction(const std::string& functionSettings, JsonArray functionsInitJson) {
         auto initJson = functionsInitJson.add<JsonObject>();
-        try {
-            manager.createFromSettings(
-                functionSettings,
-                initJson,
-                [&](const std::string& name, const FunctionFactory& factory, const std::string& settings) {
-                    FunctionInitParameters params = {
-                        .name = name,
-                        .services = services,
-                    };
-                    FunctionCreationResult result = factory.create(params, nvs, settings);
-                    tracker.record(name, std::move(result.configureFn), result.fingerprint, result.requestedAt);
-                    return result.handle;
-                });
-            return true;
-        } catch (const std::exception& e) {
+        auto created = manager.createFromSettings(
+            functionSettings,
+            initJson,
+            [&](const std::string& name, const FunctionFactory& factory, const std::string& settings) -> Result<Handle> {
+                FunctionInitParameters params = {
+                    .name = name,
+                    .services = services,
+                };
+                FunctionCreationResult result = TRY(factory.create(params, nvs, settings));
+                tracker.record(name, std::move(result.configureFn), result.fingerprint, result.requestedAt);
+                return result.handle;
+            });
+        if (!created) {
             LOGE("%s",
-                e.what());
-            initJson["error"] = std::string(e.what());
+                created.error().message.c_str());
+            initJson["error"] = created.error().message;
             return false;
         }
+        return true;
     }
 
     // Hot-reload entry point: applies the envelope to the running function and records the
     // fingerprint via the tracker, only once configureFn succeeds (proof-of-apply). The envelope
     // itself is already persisted -- by the caller, once, as part of writing the whole staged slot
-    // (docs/Configuration.md, "Applying a functions-only UPDATE") -- so a faulty body throwing here
+    // (docs/Configuration.md, "Applying a functions-only UPDATE") -- so a faulty body failing here
     // leaves NVS on the not-yet-committed staged slot and the in-memory fingerprint on the last-good
-    // one; the caller reacts to the throw by marking the attempt rejected and rebooting to revert.
-    // Throws on any failure (unknown function name, a function without configuration, or a faulty
-    // body) -- there is no cause-classified rejection yet, so this is unhandled exactly like any
+    // one; the caller reacts to the failure by marking the attempt rejected and rebooting to revert.
+    // Fails on any error (unknown function name, a function without configuration, or a faulty
+    // body) -- there is no cause-classified rejection yet, so this is handled exactly like any
     // other faulty configuration today.
-    void applyLive(const std::string& name, const ConfigEnvelope& envelope) {
-        tracker.apply(name, envelope.getData().template as<JsonObjectConst>(), envelope.getFingerprint(), envelope.getRequestedAt());
+    Result<> applyLive(const std::string& name, const ConfigEnvelope& envelope) {
+        return tracker.apply(name, envelope.getData().template as<JsonObjectConst>(), envelope.getFingerprint(), envelope.getRequestedAt());
     }
 
     // name -> {fingerprint, requestedAt} for every live function, straight from in-memory state --

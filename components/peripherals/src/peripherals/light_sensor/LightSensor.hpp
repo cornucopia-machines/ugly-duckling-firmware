@@ -10,6 +10,7 @@
 #include <chrono>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <utility>
 
@@ -45,14 +46,17 @@ public:
     }
 
 protected:
-    virtual double readLightLevel() = 0;
+    /**
+     * @return std::nullopt if reading the sensor failed.
+     */
+    virtual std::optional<double> readLightLevel() = 0;
 
     void runLoop() {
         Task::loop(name, 3072, [this](Task& task) {
             auto currentLevel = readLightLevel();
-            {
+            if (currentLevel) {
                 std::scoped_lock lock(updateAverageMutex);
-                level.record(currentLevel);
+                level.record(*currentLevel);
             }
             task.delayUntil(measurementFrequency);
         });

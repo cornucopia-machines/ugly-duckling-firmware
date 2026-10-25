@@ -23,13 +23,12 @@ class Sht2xSensor final
     : public EnvironmentSensor,
       public Peripheral {
 public:
-    Sht2xSensor(
+    static Result<std::shared_ptr<Sht2xSensor>> create(
         const std::string& name,
         const std::string& sensorType,
         const std::shared_ptr<I2CManager>& i2c,
-        const I2CConfig& config)
-        : Peripheral(name)
-        , bus(i2c->getBusFor(config)) {
+        const I2CConfig& config) {
+        auto bus = TRY(i2c->getBusFor(config));
 
         // TODO Add commands to soft/hard reset the sensor
         // TODO Add configuration for fast / slow measurement
@@ -38,8 +37,19 @@ public:
         LOGTI(ENV, "Initializing %s environment sensor '%s' with %s",
             sensorType.c_str(), name.c_str(), config.toString().c_str());
 
-        ESP_ERROR_THROW(si7021_init_desc(&sensor, bus->port, bus->sda->getGpio(), bus->scl->getGpio()));
+        auto sensor = std::shared_ptr<Sht2xSensor>(new Sht2xSensor(name, bus));
+        ESP_TRY(si7021_init_desc(&sensor->sensor, bus->port, bus->sda->getGpio(), bus->scl->getGpio()));
+        return sensor;
     }
+
+    ~Sht2xSensor() override {
+        si7021_free_desc(&sensor);
+    }
+
+    Sht2xSensor(const Sht2xSensor&) = delete;
+    Sht2xSensor& operator=(const Sht2xSensor&) = delete;
+    Sht2xSensor(Sht2xSensor&&) = delete;
+    Sht2xSensor& operator=(Sht2xSensor&&) = delete;
 
     double getTemperature() override {
         float value;
@@ -62,6 +72,11 @@ public:
     }
 
 private:
+    Sht2xSensor(const std::string& name, const std::shared_ptr<I2CBus>& bus)
+        : Peripheral(name)
+        , bus(bus) {
+    }
+
     std::shared_ptr<I2CBus> bus;
     i2c_dev_t sensor {};
 };
@@ -71,14 +86,10 @@ inline PeripheralFactory makeFactoryForSht2x(const std::string& sensorKey) {
     return makePeripheralFactory<Sht2xSensor, I2CSettings>(
         "environment:" + sensorKey,
         "environment",
-        [sensorKey](PeripheralInitParameters& params, const std::shared_ptr<I2CSettings>& settings) {
+        [sensorKey](PeripheralInitParameters& params, const std::shared_ptr<I2CSettings>& settings) -> Result<std::shared_ptr<Sht2xSensor>> {
             // Address is fixed to 0x40 for these devices
             I2CConfig i2cConfig = settings->parse(0x40);
-            auto sensor = std::make_shared<Sht2xSensor>(
-                params.name,
-                sensorKey,
-                params.services.i2c,
-                i2cConfig);
+            auto sensor = TRY(Sht2xSensor::create(params.name, sensorKey, params.services.i2c, i2cConfig));
             params.registerFeature("temperature", [sensor](JsonObject& telemetryJson) {
                 telemetryJson["value"] = sensor->getTemperature();
             });

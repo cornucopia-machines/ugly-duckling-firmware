@@ -1,6 +1,5 @@
 #pragma once
 
-#include <EspException.hpp>
 #include <Log.hpp>
 #include <Pin.hpp>
 #include <PwmManager.hpp>
@@ -8,8 +7,11 @@
 #include <drivers/PulseTimer.hpp>
 #include <drivers/SharedEnable.hpp>
 
+#include <esp_system.h>
+
 #include <chrono>
 #include <memory>
+#include <string>
 
 namespace cornucopia::ugly_duckling::kernel::drivers {
 
@@ -115,7 +117,8 @@ private:
                 reverseChannel.getName().c_str(),
                 (int) (duty * 100));
 
-            ESP_ERROR_THROW(writeDrive(phase, dutyValue));
+            // Only fails for invalid arguments, i.e. a broken board definition
+            ESP_ERROR_CHECK(writeDrive(phase, dutyValue));
         }
 
         void brake() override {
@@ -143,10 +146,17 @@ private:
             PulseTimer pulseTimer(forwardChannel, reverseChannel);
             // The timer's alarm brakes the bridge (both inputs held high) exactly `duration` after the drive starts
             esp_err_t writeResult = ESP_OK;
-            pulseTimer.run(duration, [&]() {
+            auto ran = pulseTimer.run(duration, [&]() {
                 writeResult = writeDrive(phase, dutyValue);
             });
-            ESP_ERROR_THROW(writeResult);
+            if (!ran) {
+                // The pulse hasn't started. Failing the switch would leave a latching valve in its old
+                // state until the next schedule evaluation, possibly hours later: a failed close could
+                // keep water flowing. A reboot retries much sooner.
+                LOGE("Cannot time motor pulse: %s", ran.error().message.c_str());
+                esp_system_abort(("Cannot time motor pulse: " + ran.error().message).c_str());
+            }
+            ESP_ERROR_CHECK(writeResult);
         }
 
     private:
@@ -155,7 +165,7 @@ private:
         }
 
         /**
-         * @brief Set the inputs to drive in `phase`; doesn't throw, so it can run in a critical section.
+         * @brief Set the inputs to drive in `phase`; returns the error instead of aborting, so it can run in a critical section.
          */
         esp_err_t writeDrive(MotorPhase phase, uint32_t dutyValue) const noexcept {
             const PwmPin& active = phase == MotorPhase::Forward ? forwardChannel : reverseChannel;

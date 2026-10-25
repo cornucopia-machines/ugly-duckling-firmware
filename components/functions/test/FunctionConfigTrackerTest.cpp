@@ -1,6 +1,4 @@
 #include <catch2/catch_test_macros.hpp>
-#include <catch2/matchers/catch_matchers.hpp>
-#include <catch2/matchers/catch_matchers_exception.hpp>
 #include <functions/FunctionConfigTracker.hpp>
 
 #include <string>
@@ -14,8 +12,8 @@ TEST_CASE("manifest is empty before anything is recorded") {
 
 TEST_CASE("manifest reports fingerprints and requestedAt recorded at creation") {
     FunctionConfigTracker tracker;
-    tracker.record("valve1", [](JsonObjectConst) { }, "fp-1", "2026-07-30T12:00:00Z");
-    tracker.record("valve2", [](JsonObjectConst) { }, "fp-2", "2026-07-30T13:00:00Z");
+    tracker.record("valve1", [](JsonObjectConst) -> Result<> { return {}; }, "fp-1", "2026-07-30T12:00:00Z");
+    tracker.record("valve2", [](JsonObjectConst) -> Result<> { return {}; }, "fp-2", "2026-07-30T13:00:00Z");
 
     auto manifest = tracker.manifest();
     REQUIRE(manifest.size() == 2);
@@ -28,58 +26,58 @@ TEST_CASE("manifest reports fingerprints and requestedAt recorded at creation") 
 TEST_CASE("apply invokes the configureFn with the given data") {
     FunctionConfigTracker tracker;
     JsonObjectConst received;
-    tracker.record("valve1", [&](JsonObjectConst data) { received = data; }, "fp-1", "2026-07-30T12:00:00Z");
+    tracker.record("valve1", [&](JsonObjectConst data) -> Result<> { received = data; return {}; }, "fp-1", "2026-07-30T12:00:00Z");
 
     JsonDocument body;
     body["openDuration"] = 30;
-    tracker.apply("valve1", body.as<JsonObjectConst>(), "fp-2", "2026-07-30T13:00:00Z");
+    REQUIRE(tracker.apply("valve1", body.as<JsonObjectConst>(), "fp-2", "2026-07-30T13:00:00Z"));
 
     REQUIRE(received["openDuration"].as<int>() == 30);
 }
 
 TEST_CASE("apply records the new fingerprint and requestedAt only after a successful configureFn") {
     FunctionConfigTracker tracker;
-    tracker.record("valve1", [](JsonObjectConst) { }, "fp-1", "2026-07-30T12:00:00Z");
+    tracker.record("valve1", [](JsonObjectConst) -> Result<> { return {}; }, "fp-1", "2026-07-30T12:00:00Z");
 
     JsonDocument body;
-    tracker.apply("valve1", body.as<JsonObjectConst>(), "fp-2", "2026-07-30T13:00:00Z");
+    REQUIRE(tracker.apply("valve1", body.as<JsonObjectConst>(), "fp-2", "2026-07-30T13:00:00Z"));
 
     auto entry = tracker.manifest().at("valve1");
     REQUIRE(entry.fingerprint == "fp-2");
     REQUIRE(entry.requestedAt == "2026-07-30T13:00:00Z");
 }
 
-TEST_CASE("apply does not update the fingerprint or requestedAt when configureFn throws") {
+TEST_CASE("apply does not update the fingerprint or requestedAt when configureFn fails") {
     FunctionConfigTracker tracker;
-    tracker.record("valve1", [](JsonObjectConst) { throw std::runtime_error("bad config"); }, "fp-1", "2026-07-30T12:00:00Z");
+    tracker.record("valve1", [](JsonObjectConst) -> Result<> { return failure("bad config"); }, "fp-1", "2026-07-30T12:00:00Z");
 
     JsonDocument body;
-    REQUIRE_THROWS_WITH(tracker.apply("valve1", body.as<JsonObjectConst>(), "fp-2", "2026-07-30T13:00:00Z"), "bad config");
+    auto result = tracker.apply("valve1", body.as<JsonObjectConst>(), "fp-2", "2026-07-30T13:00:00Z");
+    REQUIRE_FALSE(result);
+    REQUIRE(result.error().message == "bad config");
 
     auto entry = tracker.manifest().at("valve1");
     REQUIRE(entry.fingerprint == "fp-1");
     REQUIRE(entry.requestedAt == "2026-07-30T12:00:00Z");
 }
 
-TEST_CASE("apply throws for an unknown function name") {
+TEST_CASE("apply fails for an unknown function name") {
     FunctionConfigTracker tracker;
 
     JsonDocument body;
-    REQUIRE_THROWS_MATCHES(
-        tracker.apply("unknown", body.as<JsonObjectConst>(), "fp-1", "2026-07-30T12:00:00Z"),
-        std::runtime_error,
-        Catch::Matchers::Message("Cannot reconfigure unknown function 'unknown'"));
+    auto result = tracker.apply("unknown", body.as<JsonObjectConst>(), "fp-1", "2026-07-30T12:00:00Z");
+    REQUIRE_FALSE(result);
+    REQUIRE(result.error().message == "Cannot reconfigure unknown function 'unknown'");
 }
 
-TEST_CASE("apply throws for a function recorded without a configureFn") {
+TEST_CASE("apply fails for a function recorded without a configureFn") {
     FunctionConfigTracker tracker;
     tracker.record("valve1", nullptr, "", "");
 
     JsonDocument body;
-    REQUIRE_THROWS_MATCHES(
-        tracker.apply("valve1", body.as<JsonObjectConst>(), "fp-1", "2026-07-30T12:00:00Z"),
-        std::runtime_error,
-        Catch::Matchers::Message("Function 'valve1' does not support configuration"));
+    auto result = tracker.apply("valve1", body.as<JsonObjectConst>(), "fp-1", "2026-07-30T12:00:00Z");
+    REQUIRE_FALSE(result);
+    REQUIRE(result.error().message == "Function 'valve1' does not support configuration");
 }
 
 TEST_CASE("writeSyncManifest writes nothing for an empty manifest") {

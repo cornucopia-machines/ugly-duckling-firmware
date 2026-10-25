@@ -21,13 +21,13 @@ class NtcTemperatureSensor final
 public:
     NtcTemperatureSensor(
         const std::string& name,
-        const InternalPinPtr& pin,
+        std::unique_ptr<AnalogPin> pin,
         double beta)
         : Peripheral(name)
-        , pin(pin)
+        , pin(std::move(pin))
         , beta(beta) {
         LOGTI(ENV, "Initializing NTC temperature sensor on pin '%s' with beta = %.1f",
-            pin->getName().c_str(), beta);
+            this->pin->getName().c_str(), beta);
     }
 
     Celsius getTemperature() override {
@@ -35,12 +35,16 @@ public:
     }
 
 private:
-    AnalogPin pin;
+    const std::unique_ptr<AnalogPin> pin;
     double beta;
 
     utils::DebouncedMeasurement<Celsius> measurement {
-        [this](const utils::DebouncedParams<Celsius> _params) {
-            const auto analogValue = pin.analogRead();
+        [this](const utils::DebouncedParams<Celsius> _params) -> std::optional<Celsius> {
+            const auto reading = pin->tryAnalogRead();
+            if (!reading) {
+                return std::nullopt;
+            }
+            const auto analogValue = *reading;
             double celsius = (1.0 / (std::log(1.0 / (4095.0 / analogValue - 1.0)) / beta + 1.0 / 298.15)) - 273.15;
             LOGTV(ENV, "NTC temperature sensor '%s' reading: %.2f °C (raw: %d)",
                 getName().c_str(), celsius, analogValue);
@@ -62,10 +66,11 @@ inline PeripheralFactory makeFactoryForNtcTemperatureSensor() {
     return makePeripheralFactory<NtcTemperatureSensor, NtcTemperatureSensorSettings, ITemperatureSensor>(
         "environment:ntc-temperature-sensor",
         "environment",
-        [](PeripheralInitParameters& params, const std::shared_ptr<NtcTemperatureSensorSettings>& settings) {
+        [](PeripheralInitParameters& params, const std::shared_ptr<NtcTemperatureSensorSettings>& settings) -> Result<std::shared_ptr<NtcTemperatureSensor>> {
+            auto pin = TRY(AnalogPin::create(settings->pin.get()));
             auto sensor = std::make_shared<NtcTemperatureSensor>(
                 params.name,
-                settings->pin.get(),
+                std::move(pin),
                 settings->beta.get());
 
             params.registerFeature("temperature", [sensor](JsonObject& telemetryJson) {

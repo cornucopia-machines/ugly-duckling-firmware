@@ -13,7 +13,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
-#include <stdexcept>
 #include <utility>
 
 #ifdef CONFIG_ULP_COPROC_ENABLED
@@ -44,8 +43,9 @@ extern const uint8_t ulp_pulse_counter_bin_start[] asm("_binary_ulp_pulse_counte
 extern const uint8_t ulp_pulse_counter_bin_end[] asm("_binary_ulp_pulse_counter_bin_end");        // NOLINT(hicpp-no-assembler)
 #endif
 
-#include <EspException.hpp>
+#include <EspError.hpp>
 #include <Log.hpp>
+#include <Result.hpp>
 
 using namespace std::chrono;
 
@@ -151,7 +151,7 @@ private:
 // PulseCounterManager
 // ============================================================================
 
-std::shared_ptr<PulseCounter> PulseCounterManager::create(const PulseCounterConfig& config) {
+Result<std::shared_ptr<PulseCounter>> PulseCounterManager::create(const PulseCounterConfig& config) {
     auto gpio = config.pin->getGpio();
 
 #ifdef CONFIG_ULP_COPROC_ENABLED
@@ -171,18 +171,19 @@ void PulseCounterManager::start() {
     // NOLINTNEXTLINE(clang-analyzer-security.PointerSub) -- linker-emitted symbols, not a real array
     auto size = static_cast<size_t>(ulp_pulse_counter_bin_end - ulp_pulse_counter_bin_start);
     LOGTD(PULSE, "Loading ULP binary (%zu bytes from %p to %p)", size, ulp_pulse_counter_bin_start, ulp_pulse_counter_bin_end);
+    // The binary is built into the firmware, so failing to load or run it means the firmware is broken
 #ifdef CONFIG_ULP_COPROC_TYPE_RISCV
     // Stop any ULP timer still running from a previous boot (the RTC domain
     // survives software resets).  If the timer fires while load_binary() is
     // zeroing/copying RTC memory the ULP executes illegal instructions and traps.
     ulp_riscv_timer_stop();
     ulp_riscv_reset();
-    ESP_ERROR_THROW(ulp_riscv_load_binary(ulp_pulse_counter_bin_start, size));
+    ESP_ERROR_CHECK(ulp_riscv_load_binary(ulp_pulse_counter_bin_start, size));
     // The timer triggers the very first ULP start; after that the ULP runs
     // continuously and never halts, so the period value doesn't matter much.
-    ESP_ERROR_THROW(ulp_set_wakeup_period(0, 1000));
+    ESP_ERROR_CHECK(ulp_set_wakeup_period(0, 1000));
 #elifdef CONFIG_ULP_COPROC_TYPE_LP_CORE
-    ESP_ERROR_THROW(ulp_lp_core_load_binary(ulp_pulse_counter_bin_start, size));
+    ESP_ERROR_CHECK(ulp_lp_core_load_binary(ulp_pulse_counter_bin_start, size));
 #endif
 
     ulp_channel_count = ulpNextChannel;
@@ -197,7 +198,7 @@ void PulseCounterManager::start() {
     ulpStarted->store(true);
 
 #ifdef CONFIG_ULP_COPROC_TYPE_RISCV
-    ESP_ERROR_THROW(ulp_riscv_run());
+    ESP_ERROR_CHECK(ulp_riscv_run());
 #ifdef UD_DEBUG
     // Give the ULP a moment to run and halt; then check registers to see if it actually executed.
     Task::delay(100ms);
@@ -219,7 +220,7 @@ void PulseCounterManager::start() {
         .wakeup_source = ULP_LP_CORE_WAKEUP_SOURCE_HP_CPU,
         .lp_timer_sleep_duration_us = 0,    // Not used with HP CPU wakeup source
     };
-    ESP_ERROR_THROW(ulp_lp_core_run(&cfg));
+    ESP_ERROR_CHECK(ulp_lp_core_run(&cfg));
 #endif
     LOGTD(PULSE, "ULP pulse counter started with %" PRIu32 " channel(s)", ulpNextChannel);
 #endif
@@ -227,18 +228,18 @@ void PulseCounterManager::start() {
 
 #ifdef CONFIG_ULP_COPROC_ENABLED
 
-std::shared_ptr<PulseCounter> PulseCounterManager::createUlp(const PulseCounterConfig& config) {
+Result<std::shared_ptr<PulseCounter>> PulseCounterManager::createUlp(const PulseCounterConfig& config) {
     if (ulpNextChannel >= ULP_MAX_CHANNELS) {
-        throw std::runtime_error("PulseCounterManager: ULP channel limit exceeded");
+        return failure("PulseCounterManager: ULP channel limit exceeded");
     }
 
     auto gpio = config.pin->getGpio();
 
     // Route pin to RTC/LP domain with pull-down.
-    ESP_ERROR_THROW(rtc_gpio_init(gpio));
-    ESP_ERROR_THROW(rtc_gpio_set_direction(gpio, RTC_GPIO_MODE_INPUT_ONLY));
-    ESP_ERROR_THROW(rtc_gpio_pulldown_en(gpio));
-    ESP_ERROR_THROW(rtc_gpio_pullup_dis(gpio));
+    ESP_TRY(rtc_gpio_init(gpio));
+    ESP_TRY(rtc_gpio_set_direction(gpio, RTC_GPIO_MODE_INPUT_ONLY));
+    ESP_TRY(rtc_gpio_pulldown_en(gpio));
+    ESP_TRY(rtc_gpio_pullup_dis(gpio));
 
     uint32_t index = ulpNextChannel++;
 
@@ -260,10 +261,8 @@ std::shared_ptr<PulseCounter> PulseCounterManager::createUlp(const PulseCounterC
 
 #endif    // CONFIG_ULP_COPROC_ENABLED
 
-std::shared_ptr<PulseCounter> PulseCounterManager::createGpio(const PulseCounterConfig& config) {
+Result<std::shared_ptr<PulseCounter>> PulseCounterManager::createGpio(const PulseCounterConfig& config) {
     if (!gpioInitialized) {
-        gpioInitialized = true;
-
 #ifdef CONFIG_PM_LIGHT_SLEEP_CALLBACKS
         // Make sure we handle any state changes when the device wakes up due to a GPIO interrupt
         esp_pm_sleep_cbs_register_config_t sleepCallbackConfig = {
@@ -284,14 +283,16 @@ std::shared_ptr<PulseCounter> PulseCounterManager::createGpio(const PulseCounter
             .enter_cb_prior = 0,
             .exit_cb_prior = 0,
         };
-        ESP_ERROR_THROW(esp_pm_light_sleep_register_cbs(&sleepCallbackConfig));
+        ESP_TRY(esp_pm_light_sleep_register_cbs(&sleepCallbackConfig));
 #endif
+        // Only once the callbacks are registered, so that a failure is retried with the next counter
+        gpioInitialized = true;
     }
 
     auto counter = std::make_shared<GpioPulseCounter>(config.pin, config.debounceTime);
 
     // Attach the ISR handler to the GPIO pin
-    ESP_ERROR_THROW(gpio_isr_handler_add(config.pin->getGpio(), handleGpioPulseCounterInterrupt, counter.get()));
+    ESP_TRY(gpio_isr_handler_add(config.pin->getGpio(), handleGpioPulseCounterInterrupt, counter.get()));
 
     // Keep the counter alive in the manager
     gpioCounters.push_back(counter.get());

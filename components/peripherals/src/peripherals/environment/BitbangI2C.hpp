@@ -16,11 +16,15 @@
  *      SpadefootToadSensorWithBitbangI2C uses these two classes directly.
  */
 
+#include <Result.hpp>
+
 #include <cstdint>
-#include <stdexcept>
 #include <string>
 
 namespace cornucopia::ugly_duckling::peripherals::environment {
+
+using cornucopia::ugly_duckling::kernel::failure;
+using cornucopia::ugly_duckling::kernel::Result;
 
 // ---------------------------------------------------------------------------
 // Minimal GPIO interface for SDA / SCL lines.
@@ -91,8 +95,8 @@ public:
     // Write one byte (MSB first) and read the ACK/NACK bit.
     // Critical sections are per-byte (8 data bits + ACK = ≤90 µs at 100 kHz).
     // Returns true on ACK (slave drove SDA low), false on NACK.
-    // Throws std::runtime_error on clock-stretch timeout.
-    bool writeByteGetAck(uint8_t byte) {
+    // Fails on clock-stretch timeout.
+    Result<bool> writeByteGetAck(uint8_t byte) {
         enterCritical();
 
         for (int i = 7; i >= 0; i--) {
@@ -100,7 +104,7 @@ public:
             halfBitDelay();
             if (!sclRelease()) {
                 exitCritical();
-                throw std::runtime_error("BitbangI2C: clock stretch timeout");
+                return failure("BitbangI2C: clock stretch timeout");
             }
             halfBitDelay();
             scl.setLevel(0);
@@ -111,7 +115,7 @@ public:
         halfBitDelay();
         if (!sclRelease()) {
             exitCritical();
-            throw std::runtime_error("BitbangI2C: clock stretch timeout on ACK");
+            return failure("BitbangI2C: clock stretch timeout on ACK");
         }
         halfBitDelay();
         bool ack = (sda.getLevel() == 0);    // ACK = slave drives SDA low
@@ -122,8 +126,8 @@ public:
     }
 
     // Read one byte (MSB first) and send ACK (nack=false) or NACK (nack=true).
-    // Throws std::runtime_error on clock-stretch timeout.
-    uint8_t readByteAndAck(bool nack) {
+    // Fails on clock-stretch timeout.
+    Result<uint8_t> readByteAndAck(bool nack) {
         uint8_t byte = 0;
         enterCritical();
 
@@ -132,7 +136,7 @@ public:
             halfBitDelay();
             if (!sclRelease()) {
                 exitCritical();
-                throw std::runtime_error("BitbangI2C: clock stretch timeout");
+                return failure("BitbangI2C: clock stretch timeout");
             }
             halfBitDelay();
             if (sda.getLevel() != 0) {
@@ -146,7 +150,7 @@ public:
         halfBitDelay();
         if (!sclRelease()) {
             exitCritical();
-            throw std::runtime_error("BitbangI2C: clock stretch timeout on ACK/NACK");
+            return failure("BitbangI2C: clock stretch timeout on ACK/NACK");
         }
         halfBitDelay();
         scl.setLevel(0);

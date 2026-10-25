@@ -115,7 +115,7 @@ a crashed strict boot).
 
 Only the entries an `UPDATE` actually named are applied via `FunctionRegistry::applyLive` — every
 other function in the staged slot is already correct (copied verbatim by `stageDeviceUpdate`) and
-needs no live action. A faulty function body throws, which stops the apply loop, marks the slot
+needs no live action. A faulty function body fails to apply, which stops the apply loop, marks the slot
 `rejected`, and reboots; the functions that already applied live in this attempt are discarded too,
 since the reboot reloads everything fresh from the untouched old `confirmed` slot — all-or-nothing,
 matching the device-changed path's semantics.

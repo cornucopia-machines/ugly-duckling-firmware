@@ -1,6 +1,8 @@
 #pragma once
+#include <EspError.hpp>
 #include <Pin.hpp>
 #include <Queue.hpp>
+#include <Result.hpp>
 #include <Task.hpp>
 
 #include <driver/gpio.h>
@@ -101,7 +103,7 @@ public:
         });
     }
 
-    std::shared_ptr<Switch> registerSwitch(const SwitchConfig& config) {
+    Result<std::shared_ptr<Switch>> registerSwitch(const SwitchConfig& config) {
         LOGTI(SWITCH, "Registering switch %s on pin %s, mode %s, debounce %lld ms",
             config.name.c_str(), config.pin->getName().c_str(),
             config.mode == SwitchMode::PullUp ? "pull-up" : "pull-down",
@@ -124,8 +126,15 @@ public:
         }
 
         // Install GPIO ISR
-        ESP_ERROR_THROW(gpio_set_intr_type(config.pin->getGpio(), GPIO_INTR_ANYEDGE));
-        ESP_ERROR_THROW(gpio_isr_handler_add(config.pin->getGpio(), handleSwitchInterrupt, switchState.get()));
+        esp_err_t err = gpio_set_intr_type(config.pin->getGpio(), GPIO_INTR_ANYEDGE);
+        if (err == ESP_OK) {
+            err = gpio_isr_handler_add(config.pin->getGpio(), handleSwitchInterrupt, switchState.get());
+        }
+        if (err != ESP_OK) {
+            std::scoped_lock lock(switchStatesMutex);
+            switchStates.erase(config.pin->getGpio());
+            return failure("Cannot register switch " + config.name + " on pin " + config.pin->getName() + ": " + esp_err_to_name(err));
+        }
 
         return switchState;
     }

@@ -33,12 +33,10 @@ class Ds18B20SoilSensor final
     : public ITemperatureSensor,
       public Peripheral {
 public:
-    Ds18B20SoilSensor(
+    static Result<std::shared_ptr<Ds18B20SoilSensor>> create(
         const std::string& name,
         const InternalPinPtr& pin,
-        const std::string& address)
-        : Peripheral(name)
-        , pin(pin) {
+        const std::string& address) {
 
         LOGTI(ENV, "Initializing DS18B20 soil temperature sensor '%s' on pin %s",
             name.c_str(), pin->getName().c_str());
@@ -46,6 +44,7 @@ public:
         // We rely on the external resistor for pull-up
         gpio_set_pull_mode(pin->getGpio(), GPIO_FLOATING);
 
+        onewire_addr_t sensor {};
         if (!address.empty()) {
             uint64_t parsedAddress = std::strtoull(address.c_str(), nullptr, 16);
             sensor = std::byteswap(parsedAddress);
@@ -58,14 +57,15 @@ public:
             esp_err_t searchResult = ds18x20_scan_devices(pin->getGpio(), &sensor, maxSensors, &sensorCount);
             if (searchResult == ESP_OK) {
                 if (sensorCount == 0U) {
-                    throw PeripheralCreationException("No DS18B20 sensors found on bus");
+                    return failure("No DS18B20 sensors found on bus");
                 }
             } else {
-                throw PeripheralCreationException("Error searching for DS18B20 devices: " + std::string(esp_err_to_name(searchResult)));
+                return failure("Error searching for DS18B20 devices: " + std::string(esp_err_to_name(searchResult)));
             }
         }
 
         LOGTD(ENV, "Using DS18B20 sensor at address: %016llX", sensor);
+        return std::shared_ptr<Ds18B20SoilSensor>(new Ds18B20SoilSensor(name, pin, sensor));
     }
 
     Celsius getTemperature() override {
@@ -73,8 +73,17 @@ public:
     }
 
 private:
+    Ds18B20SoilSensor(
+        const std::string& name,
+        const InternalPinPtr& pin,
+        onewire_addr_t sensor)
+        : Peripheral(name)
+        , pin(pin)
+        , sensor(sensor) {
+    }
+
     const InternalPinPtr pin;
-    onewire_addr_t sensor {};
+    const onewire_addr_t sensor;
     utils::DebouncedMeasurement<Celsius> measurement {
         [this](const utils::DebouncedParams<Celsius> _params) -> std::optional<Celsius> {
             float temperature;
@@ -101,11 +110,8 @@ inline PeripheralFactory makeFactoryForDs18b20() {
     return makePeripheralFactory<Ds18B20SoilSensor, Ds18B20Settings, ITemperatureSensor>(
         "environment:ds18b20",
         "environment",
-        [](PeripheralInitParameters& params, const std::shared_ptr<Ds18B20Settings>& settings) {
-            auto sensor = std::make_shared<Ds18B20SoilSensor>(
-                params.name,
-                settings->pin.get(),
-                settings->address.get());
+        [](PeripheralInitParameters& params, const std::shared_ptr<Ds18B20Settings>& settings) -> Result<std::shared_ptr<Ds18B20SoilSensor>> {
+            auto sensor = TRY(Ds18B20SoilSensor::create(params.name, settings->pin.get(), settings->address.get()));
             params.registerFeature("temperature", [sensor](JsonObject& telemetryJson) {
                 telemetryJson["value"] = sensor->getTemperature();
             });

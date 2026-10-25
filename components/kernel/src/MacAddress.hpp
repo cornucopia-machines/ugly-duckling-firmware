@@ -1,7 +1,6 @@
 #pragma once
 
-#include <EspException.hpp>
-
+#include <esp_err.h>
 #include <esp_mac.h>
 
 #include <string>
@@ -15,7 +14,7 @@ inline std::array<uint8_t, MAC_ADDRESS_LENGTH> getRawMacAddress() {
     static bool queried;
     static std::array<uint8_t, MAC_ADDRESS_LENGTH> mac {};
     if (!queried) {
-        ESP_ERROR_THROW(esp_read_mac(mac.data(), ESP_MAC_WIFI_STA));
+        ESP_ERROR_CHECK(esp_read_mac(mac.data(), ESP_MAC_WIFI_STA));
         queried = true;
     }
     return mac;

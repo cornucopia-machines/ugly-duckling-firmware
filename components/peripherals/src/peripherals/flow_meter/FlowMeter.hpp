@@ -35,20 +35,15 @@ class FlowMeter final
 public:
     FlowMeter(
         const std::string& name,
-        const std::shared_ptr<PulseCounterManager>& pulseCounterManager,
-        const InternalPinPtr& pin,
+        const std::shared_ptr<PulseCounter>& counter,
         double qFactor,
         milliseconds measurementFrequency)
         : Peripheral(name)
+        , counter(counter)
         , qFactor(qFactor) {
 
         LOGI("Initializing flow meter on pin %s with Q = %.2f",
-            pin->getName().c_str(), qFactor);
-
-        counter = pulseCounterManager->create({
-            .pin = pin,
-            .debounceTime = 1ms,
-        });
+            counter->getPin()->getName().c_str(), qFactor);
 
         auto startTime = steady_clock::now();
         lastMeasurement = startTime;
@@ -61,7 +56,7 @@ public:
             if (elapsed.count() > 0) {
                 lastMeasurement = now;
 
-                uint32_t pulses = counter->resetCount();
+                uint32_t pulses = this->counter->resetCount();
 
                 if (pulses > 0) {
                     std::scoped_lock lock(updateMutex);
@@ -125,11 +120,14 @@ inline PeripheralFactory makeFactory() {
     return makePeripheralFactory<FlowMeter, FlowMeterSettings, IFlowMeter>(
         "flow-meter",
         "flow-meter",
-        [](PeripheralInitParameters& params, const std::shared_ptr<FlowMeterSettings>& settings) {
+        [](PeripheralInitParameters& params, const std::shared_ptr<FlowMeterSettings>& settings) -> Result<std::shared_ptr<FlowMeter>> {
+            auto counter = TRY(params.services.pulseCounterManager->create({
+                .pin = settings->pin.get(),
+                .debounceTime = 1ms,
+            }));
             auto meter = std::make_shared<FlowMeter>(
                 params.name,
-                params.services.pulseCounterManager,
-                settings->pin.get(),
+                counter,
                 settings->qFactor.get(),
                 settings->measurementFrequency.get());
             params.registerFeature("flow", [meter](JsonObject& telemetry) {

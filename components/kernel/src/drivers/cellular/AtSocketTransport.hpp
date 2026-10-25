@@ -4,6 +4,7 @@
 #include <drivers/cellular/AtSocket.hpp>
 #include <drivers/cellular/CellularModuleDriver.hpp>
 
+#include <esp_system.h>
 #include <esp_transport.h>
 #include <freertos/FreeRTOS.h>    // NOLINT(misc-header-include-cycle)
 #include <freertos/semphr.h>
@@ -18,7 +19,6 @@
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <stdexcept>
 #include <utility>
 #include <vector>
 
@@ -49,7 +49,8 @@ public:
         : handle(esp_transport_init())
         , dataSignal(xSemaphoreCreateBinary()) {
         if (handle == nullptr || dataSignal == nullptr) {
-            throw std::runtime_error("could not create AT socket transport");
+            // Only fails when out of memory, at boot
+            esp_system_abort("could not create AT socket transport");
         }
         esp_transport_set_context_data(handle, this);
         esp_transport_set_func(handle, &AtSocketTransport::connect, &AtSocketTransport::read, &AtSocketTransport::write,

@@ -20,13 +20,12 @@ class Sht3xSensor final
     : public EnvironmentSensor,
       public Peripheral {
 public:
-    Sht3xSensor(
+    static Result<std::shared_ptr<Sht3xSensor>> create(
         const std::string& name,
         const std::string& sensorType,
         const std::shared_ptr<I2CManager>& i2c,
-        const I2CConfig& config)
-        : Peripheral(name)
-        , bus(i2c->getBusFor(config)) {
+        const I2CConfig& config) {
+        auto bus = TRY(i2c->getBusFor(config));
 
         // TODO Add commands to soft/hard reset the sensor
         // TODO Add configuration for fast / slow measurement
@@ -35,9 +34,20 @@ public:
         LOGTI(ENV, "Initializing %s environment sensor '%s' with %s",
             sensorType.c_str(), name.c_str(), config.toString().c_str());
 
-        ESP_ERROR_THROW(sht3x_init_desc(&sensor, config.address, bus->port, bus->sda->getGpio(), bus->scl->getGpio()));
-        ESP_ERROR_THROW(sht3x_init(&sensor));
+        auto sensor = std::shared_ptr<Sht3xSensor>(new Sht3xSensor(name, bus));
+        ESP_TRY(sht3x_init_desc(&sensor->sensor, config.address, bus->port, bus->sda->getGpio(), bus->scl->getGpio()));
+        ESP_TRY(sht3x_init(&sensor->sensor));
+        return sensor;
     }
+
+    ~Sht3xSensor() override {
+        sht3x_free_desc(&sensor);
+    }
+
+    Sht3xSensor(const Sht3xSensor&) = delete;
+    Sht3xSensor& operator=(const Sht3xSensor&) = delete;
+    Sht3xSensor(Sht3xSensor&&) = delete;
+    Sht3xSensor& operator=(Sht3xSensor&&) = delete;
 
     double getTemperature() override {
         return measurement.getValue().first;
@@ -48,6 +58,11 @@ public:
     }
 
 private:
+    Sht3xSensor(const std::string& name, const std::shared_ptr<I2CBus>& bus)
+        : Peripheral(name)
+        , bus(bus) {
+    }
+
     using Reading = std::pair<double, double>;
     static constexpr double NaN = std::numeric_limits<double>::quiet_NaN();
 
@@ -76,13 +91,9 @@ inline PeripheralFactory makeFactoryForSht3x() {
     return makePeripheralFactory<Sht3xSensor, I2CSettings>(
         "environment:sht3x",
         "environment",
-        [](PeripheralInitParameters& params, const std::shared_ptr<I2CSettings>& settings) {
+        [](PeripheralInitParameters& params, const std::shared_ptr<I2CSettings>& settings) -> Result<std::shared_ptr<Sht3xSensor>> {
             I2CConfig i2cConfig = settings->parse(0x44 /* Also supports 0x45 */);
-            auto sensor = std::make_shared<Sht3xSensor>(
-                params.name,
-                "sht3x",
-                params.services.i2c,
-                i2cConfig);
+            auto sensor = TRY(Sht3xSensor::create(params.name, "sht3x", params.services.i2c, i2cConfig));
             params.registerFeature("temperature", [sensor](JsonObject& telemetryJson) {
                 telemetryJson["value"] = sensor->getTemperature();
             });

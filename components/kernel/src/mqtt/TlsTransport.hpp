@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Log.hpp>
+#include <Result.hpp>
 
 #include <esp_crt_bundle.h>
 #include <esp_transport.h>
@@ -14,8 +15,8 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <optional>
-#include <stdexcept>
 #include <string>
 #include <utility>
 
@@ -49,57 +50,78 @@ public:
      * std::nullopt verifies the server against the CA bundle built into the firmware instead,
      * without a client certificate, for servers we don't pin a certificate for (the OTA image host)
      */
-    TlsTransport(esp_transport_handle_t parent, std::optional<Credentials> tlsCredentials)
-        : parent(parent)
-        , credentials(std::move(tlsCredentials))
-        , handle(esp_transport_init()) {
+    static Result<std::unique_ptr<TlsTransport>> create(esp_transport_handle_t parent, std::optional<Credentials> tlsCredentials) {
+        auto transport = std::unique_ptr<TlsTransport>(new TlsTransport(parent, std::move(tlsCredentials)));
+        auto* handle = transport->handle;
         if (handle == nullptr) {
-            throw std::runtime_error("could not create TLS transport");
+            return failure("could not create TLS transport");
         }
-        initConfig();
-        mbedtls_ssl_init(&ssl);
-        esp_transport_set_context_data(handle, this);
+        TRY(transport->initConfig());
+        esp_transport_set_context_data(handle, transport.get());
         esp_transport_set_func(handle, &TlsTransport::connect, &TlsTransport::read, &TlsTransport::write,
             &TlsTransport::close, &TlsTransport::pollRead, &TlsTransport::pollWrite, &TlsTransport::destroy);
         esp_transport_set_default_port(handle, 8883);
+        return transport;
     }
 
-    // The handle goes to esp-mqtt, which keeps it for as long as the client lives: forever
+    // The handle goes to esp-mqtt, which keeps it for as long as the client lives: forever. esp-mqtt
+    // would destroy the handle along with its client, so this must only be destroyed before the
+    // handle is handed over, or when it never is (the HTTP client only borrows it)
+    ~TlsTransport() {
+        if (handle != nullptr) {
+            esp_transport_destroy(handle);
+        }
+        mbedtls_ssl_free(&ssl);
+        mbedtls_pk_free(&clientKey);
+        mbedtls_x509_crt_free(&clientCert);
+        mbedtls_x509_crt_free(&serverCert);
+        mbedtls_ssl_config_free(&config);
+    }
+
     TlsTransport(const TlsTransport&) = delete;
     TlsTransport& operator=(const TlsTransport&) = delete;
+    TlsTransport(TlsTransport&&) = delete;
+    TlsTransport& operator=(TlsTransport&&) = delete;
 
     esp_transport_handle_t getHandle() const {
         return handle;
     }
 
 private:
-    void initConfig() {
+    TlsTransport(esp_transport_handle_t parent, std::optional<Credentials> tlsCredentials)
+        : parent(parent)
+        , credentials(std::move(tlsCredentials))
+        , handle(esp_transport_init()) {
         mbedtls_ssl_config_init(&config);
         mbedtls_x509_crt_init(&serverCert);
         mbedtls_x509_crt_init(&clientCert);
         mbedtls_pk_init(&clientKey);
+        mbedtls_ssl_init(&ssl);
+    }
 
-        check("mbedtls_ssl_config_defaults", mbedtls_ssl_config_defaults(&config, MBEDTLS_SSL_IS_CLIENT, MBEDTLS_SSL_TRANSPORT_STREAM, MBEDTLS_SSL_PRESET_DEFAULT));
+    Result<> initConfig() {
+        TRY(check("mbedtls_ssl_config_defaults", mbedtls_ssl_config_defaults(&config, MBEDTLS_SSL_IS_CLIENT, MBEDTLS_SSL_TRANSPORT_STREAM, MBEDTLS_SSL_PRESET_DEFAULT)));
 
         mbedtls_ssl_conf_authmode(&config, MBEDTLS_SSL_VERIFY_REQUIRED);
 
         if (!credentials) {
             // Looks the issuer up in the bundle during the handshake
             if (esp_crt_bundle_attach(&config) != ESP_OK) {
-                throw std::runtime_error("TLS setup failed: attaching the CA bundle");
+                return failure("TLS setup failed: attaching the CA bundle");
             }
-            return;
+            return {};
         }
 
         // PEM parsing wants the terminating NUL counted in the length
-        check("parsing the server certificate", mbedtls_x509_crt_parse(&serverCert, asBytes(credentials->serverCert), credentials->serverCert.size() + 1));
+        TRY(check("parsing the server certificate", mbedtls_x509_crt_parse(&serverCert, asBytes(credentials->serverCert), credentials->serverCert.size() + 1)));
         mbedtls_ssl_conf_ca_chain(&config, &serverCert, nullptr);
 
         if (!credentials->clientCert.empty() && !credentials->clientKey.empty()) {
-            check("parsing the client certificate", mbedtls_x509_crt_parse(&clientCert, asBytes(credentials->clientCert), credentials->clientCert.size() + 1));
-            check("parsing the client key", mbedtls_pk_parse_key(&clientKey, asBytes(credentials->clientKey), credentials->clientKey.size() + 1, nullptr, 0));
-            check("mbedtls_ssl_conf_own_cert", mbedtls_ssl_conf_own_cert(&config, &clientCert, &clientKey));
+            TRY(check("parsing the client certificate", mbedtls_x509_crt_parse(&clientCert, asBytes(credentials->clientCert), credentials->clientCert.size() + 1)));
+            TRY(check("parsing the client key", mbedtls_pk_parse_key(&clientKey, asBytes(credentials->clientKey), credentials->clientKey.size() + 1, nullptr, 0)));
+            TRY(check("mbedtls_ssl_conf_own_cert", mbedtls_ssl_conf_own_cert(&config, &clientCert, &clientKey)));
         }
+        return {};
     }
 
     static TlsTransport& from(esp_transport_handle_t transport) {
@@ -266,11 +288,12 @@ private:
         LOGTE(TLS, "%s failed: -0x%04x %s", what, static_cast<unsigned>(-ret), message);
     }
 
-    static void check(const char* what, int ret) {
+    static Result<> check(const char* what, int ret) {
         if (ret != 0) {
             logError(what, ret);
-            throw std::runtime_error(std::string("TLS setup failed: ") + what);
+            return failure(std::string("TLS setup failed: ") + what);
         }
+        return {};
     }
 
     static const unsigned char* asBytes(const std::string& text) {

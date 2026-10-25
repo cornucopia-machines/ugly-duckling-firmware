@@ -45,17 +45,12 @@ public:
             .name = "buzzer",
             .skip_unhandled_events = true,
         };
-        ESP_ERROR_THROW(esp_timer_create(&timerArgs, &stopTimer));
+        ESP_ERROR_CHECK(esp_timer_create(&timerArgs, &stopTimer));
     }
 
     ~BuzzerDriver() {
         esp_timer_stop(stopTimer);
-        try {
-            stop();
-        } catch (...) {
-            LOGE("Failed to stop buzzer: %s",
-                std::current_exception().__cxa_exception_type()->name());
-        }
+        stop();
         esp_timer_delete(stopTimer);
     }
 
@@ -83,7 +78,7 @@ public:
             static_cast<long long>(duration.count()),
             duty * 100);
 
-        ESP_ERROR_THROW(esp_timer_start_once(stopTimer,
+        ESP_ERROR_CHECK(esp_timer_start_once(stopTimer,
             duration_cast<std::chrono::duration<uint64_t, std::micro>>(duration).count()));
     }
 

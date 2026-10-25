@@ -36,27 +36,30 @@ class AnalogLightSensor final
 public:
     AnalogLightSensor(
         const std::string& name,
-        const InternalPinPtr& pin,
+        std::unique_ptr<AnalogPin> pin,
         double gamma,
         double rl10,
         seconds measurementFrequency,
         seconds latencyInterval)
         : LightSensor(name, measurementFrequency, latencyInterval)
-        , pin(pin)
+        , pin(std::move(pin))
         , gamma(gamma)
         , rl10(rl10) {
 
         LOGI("Initializing analog light sensor on pin %s",
-            pin->getName().c_str());
+            this->pin->getName().c_str());
 
         runLoop();
     }
 
 protected:
-    double readLightLevel() override {
+    std::optional<double> readLightLevel() override {
         // Convert the analog value into lux value:
-        auto analogValue = pin.analogReadAsDouble();
-        auto voltage = analogValue * REFERENCE_VOLTAGE;
+        auto analogValue = pin->tryAnalogReadAsDouble();
+        if (!analogValue) {
+            return std::nullopt;
+        }
+        auto voltage = *analogValue * REFERENCE_VOLTAGE;
         auto resistance = 2000 * voltage / (1 - voltage / REFERENCE_VOLTAGE);
         auto lux = pow(rl10 * 1e3 * pow(10, gamma) / resistance, (1 / gamma));
 
@@ -64,7 +67,7 @@ protected:
     }
 
 private:
-    AnalogPin pin;
+    const std::unique_ptr<AnalogPin> pin;
     const double gamma;
     const double rl10;
 
@@ -75,10 +78,11 @@ inline PeripheralFactory makeFactoryForAnalogLightSensor() {
     return makePeripheralFactory<AnalogLightSensor, AnalogLightSensorSettings, ILightSensor>(
         "light-sensor:analog",
         "light-sensor",
-        [](PeripheralInitParameters& params, const std::shared_ptr<AnalogLightSensorSettings>& settings) {
+        [](PeripheralInitParameters& params, const std::shared_ptr<AnalogLightSensorSettings>& settings) -> Result<std::shared_ptr<AnalogLightSensor>> {
+            auto pin = TRY(AnalogPin::create(settings->pin.get()));
             auto sensor = std::make_shared<AnalogLightSensor>(
                 params.name,
-                settings->pin.get(),
+                std::move(pin),
                 settings->gamma.get(),
                 settings->rl10.get(),
                 settings->measurementFrequency.get(),

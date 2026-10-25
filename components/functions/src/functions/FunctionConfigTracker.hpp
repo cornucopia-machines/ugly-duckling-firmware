@@ -1,22 +1,24 @@
 #pragma once
 
+#include <Result.hpp>
 #include <config/ConfigManifestEntry.hpp>
 
 #include <ArduinoJson.h>
 
 #include <functional>
-#include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <utility>
 
 namespace cornucopia::ugly_duckling::functions {
 
+using cornucopia::ugly_duckling::kernel::failure;
+using cornucopia::ugly_duckling::kernel::Result;
 using cornucopia::ugly_duckling::kernel::config::ConfigManifestEntry;
 
 // Applies a verbatim config body (already parsed out of a ConfigEnvelope) to a live function
 // instance. Empty for functions that don't implement HasConfig<TConfig>.
-using ConfigureFn = std::function<void(JsonObjectConst)>;
+using ConfigureFn = std::function<Result<>(JsonObjectConst)>;
 
 /**
  * @brief In-memory name -> {configureFn, fingerprint} bookkeeping at the heart of FunctionRegistry
@@ -31,21 +33,22 @@ public:
     }
 
     // Applies data via the named entry's configureFn and records the fingerprint/requestedAt only
-    // once configureFn succeeds (proof-of-apply, not proof-of-receipt). Throws if the name is
-    // unknown or was recorded without a configureFn -- a protocol violation, unhandled in Phase 1
+    // once configureFn succeeds (proof-of-apply, not proof-of-receipt). Fails if the name is
+    // unknown or was recorded without a configureFn -- a protocol violation, handled in Phase 1
     // exactly like any other faulty configuration.
-    void apply(const std::string& name, JsonObjectConst data, const std::string& fingerprint, const std::string& requestedAt) {
+    Result<> apply(const std::string& name, JsonObjectConst data, const std::string& fingerprint, const std::string& requestedAt) {
         auto it = entries.find(name);
         if (it == entries.end()) {
-            throw std::runtime_error("Cannot reconfigure unknown function '" + name + "'");
+            return failure("Cannot reconfigure unknown function '" + name + "'");
         }
         Entry& entry = it->second;
         if (!entry.configureFn) {
-            throw std::runtime_error("Function '" + name + "' does not support configuration");
+            return failure("Function '" + name + "' does not support configuration");
         }
-        entry.configureFn(data);
+        TRY(entry.configureFn(data));
         entry.fingerprint = fingerprint;
         entry.requestedAt = requestedAt;
+        return {};
     }
 
     // name -> {fingerprint, requestedAt} for every recorded entry, straight from in-memory state.

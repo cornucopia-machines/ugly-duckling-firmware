@@ -6,6 +6,7 @@
 #include <PwmManager.hpp>
 #include <devices/DeviceConfiguration.hpp>
 #include <drivers/BatteryDriver.hpp>
+#include <drivers/Ina219Driver.hpp>
 #include <drivers/LedDriver.hpp>
 #include <drivers/cellular/CellularModemPins.hpp>
 #include <functions/chicken_door/ChickenDoor.hpp>
@@ -108,7 +109,7 @@ public:
         registerDeviceSpecificFunctionFactories(functionRegistry);
     }
 
-    virtual std::shared_ptr<BatteryDriver> createBatteryDriver(const std::shared_ptr<I2CManager>& _i2c) {
+    virtual Result<std::shared_ptr<BatteryDriver>> createBatteryDriver(const std::shared_ptr<I2CManager>& _i2c) {
         return nullptr;
     }
 
@@ -132,6 +133,35 @@ protected:
     }
 
     virtual void registerDeviceSpecificFunctionFactories(const std::shared_ptr<FunctionRegistry>& _functionRegistry) {
+    }
+
+    /**
+     * @brief Calibrates the on-board INA219 current sensor (MK8 to MK10) and powers it down until needed.
+     *
+     * @return nullptr if the sensor doesn't respond: a current sensor we cannot talk to must not keep
+     * the device from booting.
+     */
+    static std::shared_ptr<Ina219Driver> createOnboardIna219(const std::shared_ptr<I2CManager>& i2c, const InternalPinPtr& sda, const InternalPinPtr& scl) {
+        auto ina219 = Ina219Driver::create(
+            i2c,
+            I2CConfig {
+                .address = Ina219Driver::DEFAULT_ADDRESS,
+                .sda = sda,
+                .scl = scl,
+            },
+            Ina219Parameters {
+                .uRange = INA219_BUS_RANGE_16V,
+                .gain = INA219_GAIN_0_125,
+                .uResolution = INA219_RES_12BIT_1S,
+                .iResolution = INA219_RES_12BIT_1S,
+                .mode = INA219_MODE_CONT_SHUNT_BUS,
+                .shuntMilliOhm = 50,
+            });
+        if (!ina219) {
+            LOGE("Failed to initialize INA219, continuing without it: %s", ina219.error().message.c_str());
+            return nullptr;
+        }
+        return *ina219;
     }
 };
 

@@ -107,7 +107,7 @@ class Door final
       public Peripheral,
       public HasShutdown {
 public:
-    Door(
+    static Result<std::shared_ptr<Door>> create(
         const std::string& name,
         const std::shared_ptr<SwitchManager>& switches,
         const std::shared_ptr<PwmMotorDriver>& motor,
@@ -115,28 +115,49 @@ public:
         const InternalPinPtr& closedPin,
         bool invertSwitches,
         ticks movementTimeout,
+        const std::shared_ptr<TelemetryPublisher>& telemetryPublisher) {
+        auto door = std::shared_ptr<Door>(new Door(name, motor, movementTimeout, telemetryPublisher));
+        TRY(door->start(switches, openPin, closedPin, invertSwitches));
+        return door;
+    }
+
+private:
+    Door(
+        const std::string& name,
+        const std::shared_ptr<PwmMotorDriver>& motor,
+        ticks movementTimeout,
         const std::shared_ptr<TelemetryPublisher>& telemetryPublisher)
         : Peripheral(name)
         , motor(motor)
-        , openSwitch(switches->registerSwitch({
-              .name = name + ":open",
-              .pin = openPin,
-              .mode = invertSwitches ? SwitchMode::PullDown : SwitchMode::PullUp,
-              .onEngaged = [this](const SwitchEvent& event) { enqueueSwitchEvent(event); },
-              .onDisengaged = [this](const SwitchEvent& event) { enqueueSwitchEvent(event); },
-          }))
-        , closedSwitch(switches->registerSwitch({
-              .name = name + ":closed",
-              .pin = closedPin,
-              .mode = invertSwitches ? SwitchMode::PullDown : SwitchMode::PullUp,
-              .onEngaged = [this](const SwitchEvent& event) { enqueueSwitchEvent(event); },
-              .onDisengaged = [this](const SwitchEvent& event) { enqueueSwitchEvent(event); },
-          }))
         , watchdog(name + ":watchdog", movementTimeout, false, [this](WatchdogState state) {
             handleWatchdogEvent(state);
         })
         , motorController(motor, watchdog)
         , telemetryPublisher(telemetryPublisher) {
+    }
+
+    /**
+     * @brief Register the end switches and start operating the door.
+     */
+    Result<> start(
+        const std::shared_ptr<SwitchManager>& switches,
+        const InternalPinPtr& openPin,
+        const InternalPinPtr& closedPin,
+        bool invertSwitches) {
+        openSwitch = TRY(switches->registerSwitch({
+            .name = name + ":open",
+            .pin = openPin,
+            .mode = invertSwitches ? SwitchMode::PullDown : SwitchMode::PullUp,
+            .onEngaged = [this](const SwitchEvent& event) { enqueueSwitchEvent(event); },
+            .onDisengaged = [this](const SwitchEvent& event) { enqueueSwitchEvent(event); },
+        }));
+        closedSwitch = TRY(switches->registerSwitch({
+            .name = name + ":closed",
+            .pin = closedPin,
+            .mode = invertSwitches ? SwitchMode::PullDown : SwitchMode::PullUp,
+            .onEngaged = [this](const SwitchEvent& event) { enqueueSwitchEvent(event); },
+            .onDisengaged = [this](const SwitchEvent& event) { enqueueSwitchEvent(event); },
+        }));
 
         LOGTI(DOOR, "Initializing door %s, open switch %s, closed switch %s%s",
             name.c_str(), openSwitch->getPin()->getName().c_str(), closedSwitch->getPin()->getName().c_str(),
@@ -147,8 +168,10 @@ public:
         Task::run(name, 4096, 2, [this](Task& _task) {
             runLoop();
         });
+        return {};
     }
 
+public:
     bool transitionTo(std::optional<TargetState> target) override {
         std::scoped_lock lock(stateMutex);
         if (this->targetState == target) {
@@ -348,8 +371,8 @@ private:
 
     const std::shared_ptr<PwmMotorDriver> motor;
 
-    const std::shared_ptr<Switch> openSwitch;
-    const std::shared_ptr<Switch> closedSwitch;
+    std::shared_ptr<Switch> openSwitch;
+    std::shared_ptr<Switch> closedSwitch;
 
     Watchdog watchdog;
     DoorMotorController motorController;
@@ -380,18 +403,10 @@ inline PeripheralFactory makeFactory(const std::map<std::string, std::shared_ptr
     return makePeripheralFactory<Door, DoorSettings, IDoor>(
         "door",
         "door",
-        [motors](PeripheralInitParameters& params, const std::shared_ptr<DoorSettings>& settings) {
-            auto motor = findMotor(motors, settings->motor.get());
+        [motors](PeripheralInitParameters& params, const std::shared_ptr<DoorSettings>& settings) -> Result<std::shared_ptr<Door>> {
+            auto motor = TRY(findMotor(motors, settings->motor.get()));
 
-            auto door = std::make_shared<Door>(
-                params.name,
-                params.services.switches,
-                motor,
-                settings->openPin.get(),
-                settings->closedPin.get(),
-                settings->invertSwitches.get(),
-                settings->movementTimeout.get(),
-                params.services.telemetryPublisher);
+            auto door = TRY(Door::create(params.name, params.services.switches, motor, settings->openPin.get(), settings->closedPin.get(), settings->invertSwitches.get(), settings->movementTimeout.get(), params.services.telemetryPublisher));
 
             params.registerFeature("door", [door](JsonObject& telemetryJson) {
                 door->populateTelemetry(telemetryJson);

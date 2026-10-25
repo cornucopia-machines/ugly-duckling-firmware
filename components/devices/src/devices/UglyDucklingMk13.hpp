@@ -38,16 +38,12 @@ public:
         BUZZER->parkOutput(0);
     }
 
-    std::shared_ptr<BatteryDriver> createBatteryDriver(const std::shared_ptr<I2CManager>& i2c) override {
-        auto driver = std::make_shared<Bq27220Driver>(
-            i2c,
-            LP_SDA,
-            LP_SCL,
-            BatteryParameters {
-                .maximumVoltage = 4100,
-                .bootThreshold = 3600,
-                .shutdownThreshold = 3500,
-            });
+    Result<std::shared_ptr<BatteryDriver>> createBatteryDriver(const std::shared_ptr<I2CManager>& i2c) override {
+        auto driver = TRY(Bq27220Driver::create(i2c, LP_SDA, LP_SCL, BatteryParameters {
+                                                                         .maximumVoltage = 4100,
+                                                                         .bootThreshold = 3600,
+                                                                         .shutdownThreshold = 3500,
+                                                                     }));
         driver->useExternalThermistor();
         return driver;
     }
