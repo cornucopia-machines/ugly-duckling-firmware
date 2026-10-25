@@ -1,5 +1,6 @@
 #pragma once
 
+#include <FunctionRef.hpp>
 #include <PwmManager.hpp>
 #include <Result.hpp>
 
@@ -9,7 +10,6 @@
 #include <freertos/semphr.h>      // NOLINT(misc-header-include-cycle)
 
 #include <chrono>
-#include <functional>
 
 namespace cornucopia::ugly_duckling::kernel::drivers {
 
@@ -51,7 +51,7 @@ public:
      * An error if the timer could not be set up, e.g. because every GPTimer is in use; `start` has
      * not run then.
      */
-    Result<bool> run(std::chrono::microseconds duration, const std::function<void()>& start);
+    Result<bool> run(std::chrono::microseconds duration, FunctionRef<void()> start);
 
 private:
     Result<> allocate();

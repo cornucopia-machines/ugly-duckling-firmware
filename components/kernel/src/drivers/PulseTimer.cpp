@@ -1,6 +1,7 @@
 #include "PulseTimer.hpp"
 
 #include <EspError.hpp>
+#include <FunctionRef.hpp>
 #include <Log.hpp>
 #include <PwmManager.hpp>
 #include <Result.hpp>
@@ -20,7 +21,6 @@
 
 #include <chrono>
 #include <cstdint>
-#include <functional>
 
 namespace cornucopia::ugly_duckling::kernel::drivers {
 
@@ -76,7 +76,7 @@ Result<> PulseTimer::allocate() {
     return {};
 }
 
-Result<bool> PulseTimer::run(std::chrono::microseconds duration, const std::function<void()>& start) {
+Result<bool> PulseTimer::run(std::chrono::microseconds duration, FunctionRef<void()> start) {
     TRY(allocate());
 
     gptimer_alarm_config_t alarm = {

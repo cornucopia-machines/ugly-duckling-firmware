@@ -1,4 +1,5 @@
 #pragma once
+#include <FunctionRef.hpp>
 #include <mqtt/MqttDriver.hpp>
 
 #include <chrono>
@@ -64,7 +65,7 @@ public:
         mqtt->publish(fullTopic(suffix), json, qos, log);
     }
 
-    void publish(const std::string& suffix, const std::function<void(JsonObject&)>& populate, QoS qos, LogPublish log = LogPublish::Log) {
+    void publish(const std::string& suffix, FunctionRef<void(JsonObject&)> populate, QoS qos, LogPublish log = LogPublish::Log) {
         JsonDocument doc;
         JsonObject root = doc.to<JsonObject>();
         populate(root);

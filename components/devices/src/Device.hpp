@@ -53,9 +53,16 @@ using namespace cornucopia::ugly_duckling::kernel;
 using namespace cornucopia::ugly_duckling::kernel::config;
 using namespace cornucopia::ugly_duckling::peripherals;
 
+static void startDevice(const std::shared_ptr<DeviceDefinition>& deviceDefinition);
+
 template <std::derived_from<DeviceDefinition> TDeviceDefinition>
 static void startDevice() {
-    auto deviceDefinition = std::make_shared<TDeviceDefinition>();
+    startDevice(std::make_shared<TDeviceDefinition>());
+}
+
+// Not a template: the device definition is only used through DeviceDefinition, and the boot sequence
+// is large enough that instantiating it per device model costs ~2.8 KB of flash per model.
+static void startDevice(const std::shared_ptr<DeviceDefinition>& deviceDefinition) {
     LOGD("Starting %s revision %d device",
         deviceDefinition->model.c_str(), deviceDefinition->revision);
 

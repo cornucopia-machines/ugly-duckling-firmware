@@ -1,10 +1,10 @@
 #pragma once
+#include <FunctionRef.hpp>
 #include <Time.hpp>
 
 #include <freertos/FreeRTOS.h>    // NOLINT(misc-header-include-cycle)
 
 #include <chrono>
-#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -39,6 +39,32 @@ protected:
         return queue;
     }
 
+    // The type-independent parts of Queue<T>, so they exist once in flash instead of once per message type
+
+    bool sendPointer(void* message, ticks timeout) {
+        bool sentWithoutDropping = xQueueSend(queue, reinterpret_cast<const void*>(&message), timeout.count()) == pdTRUE;
+        if (!sentWithoutDropping) {
+            printf("Overflow in queue '%s', dropping message\n",
+                name.c_str());
+        }
+        return sentWithoutDropping;
+    }
+
+    // Returns nullptr if no message arrived within the timeout
+    void* receivePointer(ticks timeout) {
+        void* message;
+        if (xQueueReceive(queue, reinterpret_cast<void*>(&message), timeout.count()) != pdTRUE) {
+            return nullptr;
+        }
+        return message;
+    }
+
+    void drainPointers(void (*destroy)(void*)) {
+        while (void* message = receivePointer(ticks::zero())) {
+            destroy(message);
+        }
+    }
+
 private:
     QueueHandle_t queue;
 };
@@ -71,22 +97,20 @@ public:
         requires std::constructible_from<TMessage, Args...>
     bool offerIn(ticks timeout, Args&&... args) {
         auto copy = new TMessage(std::forward<Args>(args)...);
-        bool sentWithoutDropping = xQueueSend(getQueueHandle(), reinterpret_cast<const void*>(&copy), timeout.count()) == pdTRUE;
+        bool sentWithoutDropping = sendPointer(copy, timeout);
         if (!sentWithoutDropping) {
-            printf("Overflow in queue '%s', dropping message\n",
-                this->name.c_str());
             delete copy;
         }
         return sentWithoutDropping;
     }
 
-    using MessageHandler = std::function<void(TMessage&)>;
+    using MessageHandler = FunctionRef<void(TMessage&)>;
 
-    size_t drain(const MessageHandler& handler) {
-        return drain(SIZE_MAX, std::move(handler));
+    size_t drain(MessageHandler handler) {
+        return drain(SIZE_MAX, handler);
     }
 
-    size_t drain(size_t maxItems, const MessageHandler& handler) {
+    size_t drain(size_t maxItems, MessageHandler handler) {
         size_t count = 0;
         while (count < maxItems) {
             if (!poll(handler)) {
@@ -101,15 +125,15 @@ public:
      * @brief Wait for the first item to appear within the given timeout,
      * then drain any items remaining in the queue.
      */
-    size_t drainIn(ticks timeout, const MessageHandler& handler) {
-        return drainIn(SIZE_MAX, timeout, std::move(handler));
+    size_t drainIn(ticks timeout, MessageHandler handler) {
+        return drainIn(SIZE_MAX, timeout, handler);
     }
 
     /**
      * @brief Wait for the first item to appear within the given timeout,
      * then drain no more than `maxItems` items remaining in the queue.
      */
-    size_t drainIn(size_t maxItems, ticks timeout, const MessageHandler& handler) {
+    size_t drainIn(size_t maxItems, ticks timeout, MessageHandler handler) {
         size_t count = 0;
         ticks nextTimeout = timeout;
         while (true) {
@@ -129,7 +153,7 @@ public:
         take([](const TMessage& message) { });
     }
 
-    void take(const MessageHandler& handler) {
+    void take(MessageHandler handler) {
         while (!pollIn(ticks::max(), handler)) { }
     }
 
@@ -137,17 +161,17 @@ public:
         return poll([](const TMessage& message) { });
     }
 
-    bool poll(const MessageHandler& handler) {
-        return pollIn(ticks::zero(), std::move(handler));
+    bool poll(MessageHandler handler) {
+        return pollIn(ticks::zero(), handler);
     }
 
     bool pollIn(ticks timeout) {
         return pollIn(timeout, [](const TMessage& message) { });
     }
 
-    bool pollIn(ticks timeout, const MessageHandler& handler) {
-        TMessage* message;
-        if (!xQueueReceive(getQueueHandle(), reinterpret_cast<void*>(&message), timeout.count())) {
+    bool pollIn(ticks timeout, MessageHandler handler) {
+        auto* message = static_cast<TMessage*>(receivePointer(timeout));
+        if (message == nullptr) {
             return false;
         }
         handler(*message);
@@ -156,7 +180,9 @@ public:
     }
 
     void clear() override {
-        this->drain([](const TMessage& message) { });
+        drainPointers([](void* message) {
+            delete static_cast<TMessage*>(message);
+        });
     }
 };
 

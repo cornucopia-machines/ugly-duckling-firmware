@@ -1,12 +1,12 @@
 #pragma once
 
+#include <FunctionRef.hpp>
 #include <Log.hpp>
 
 #include <ArduinoJson.h>
 #include <nvs.h>
 #include <nvs_flash.h>
 
-#include <functional>
 #include <string>
 #include <vector>
 
@@ -152,7 +152,7 @@ public:
     /**
      * @brief Enumerates all keys in this namespace.
      */
-    void list(const std::function<void(const std::string&)>& callback) {
+    void list(FunctionRef<void(const std::string&)> callback) {
         nvs_iterator_t it = nullptr;
         esp_err_t err = nvs_entry_find(NVS_DEFAULT_PART_NAME, ns.c_str(), NVS_TYPE_ANY, &it);
         while (err == ESP_OK) {
@@ -167,7 +167,7 @@ public:
     }
 
 private:
-    esp_err_t withPreferences(bool readOnly, const std::function<esp_err_t(nvs_handle_t)>& action) {
+    esp_err_t withPreferences(bool readOnly, FunctionRef<esp_err_t(nvs_handle_t)> action) {
         LOGTV(NVS, "%s '%s'", readOnly ? "read" : "write", ns.c_str());
 
         nvs_handle_t handle;

@@ -1,4 +1,5 @@
 #pragma once
+#include <FunctionRef.hpp>
 #include <Log.hpp>
 #include <Result.hpp>
 #include <config/Configuration.hpp>
@@ -63,12 +64,17 @@ public:
         return h;
     }
 
-    // Typed access without RTTI — linear scan over registered interfaces
+    // Typed access without RTTI
     template <typename T>
     std::shared_ptr<T> tryGet() const {
+        return std::static_pointer_cast<T>(tryGetByTag(&TypeTokenVar<T>));
+    }
+
+    // Linear scan over registered interfaces; kept out of tryGet<T>() so it exists once in flash
+    std::shared_ptr<void> tryGetByTag(const void* typeTag) const {
         for (const auto& entry : entries) {
-            if (entry.typeTag == &TypeTokenVar<T>) {
-                return std::static_pointer_cast<T>(entry.holder);
+            if (entry.typeTag == typeTag) {
+                return entry.holder;
             }
         }
         return {};
@@ -113,16 +119,8 @@ public:
 
     template <typename T>
     Result<std::shared_ptr<T>> getInstance(const std::string& name) const {
-        std::scoped_lock lock(mutex);
-        auto it = instances.find(name);
-        if (it != instances.end()) {
-            auto instance = it->second.template tryGet<T>();
-            if (instance == nullptr) {
-                return failure("Instance '" + name + "' is not of the required type");
-            }
-            return instance;
-        }
-        return failure("Instance '" + name + "' not found");
+        auto instance = TRY(getInstanceByTag(name, &TypeTokenVar<T>));
+        return std::static_pointer_cast<T>(std::move(instance));
     }
 
     void shutdown() {
@@ -144,7 +142,7 @@ public:
     Result<> createWithFactory(
         const std::string& name,
         const std::string& type,
-        const std::function<Result<Handle>(const FactoryT&)>& make) {
+        FunctionRef<Result<Handle>(const FactoryT&)> make) {
         std::scoped_lock lock(mutex);
         if (state == State::Stopped) {
             return failure("Not creating " + managed + " because the manager is stopped");
@@ -166,6 +164,20 @@ protected:
     const std::string managed;
 
 private:
+    // Kept out of getInstance<T>() so it exists once per manager in flash, not once per requested type
+    Result<std::shared_ptr<void>> getInstanceByTag(const std::string& name, const void* typeTag) const {
+        std::scoped_lock lock(mutex);
+        auto it = instances.find(name);
+        if (it != instances.end()) {
+            auto instance = it->second.tryGetByTag(typeTag);
+            if (instance == nullptr) {
+                return failure("Instance '" + name + "' is not of the required type");
+            }
+            return instance;
+        }
+        return failure("Instance '" + name + "' not found");
+    }
+
     std::map<std::string, FactoryT> factories;
     mutable std::recursive_mutex mutex;
     std::unordered_map<std::string, Handle> instances;
@@ -189,7 +201,7 @@ public:
     Result<> createFromSettings(
         const std::string& settingsAsString,
         JsonObject initJson,
-        const std::function<Result<Handle>(const std::string&, const FactoryT&, const std::string&)>& make) {
+        FunctionRef<Result<Handle>(const std::string&, const FactoryT&, const std::string&)> make) {
         LOGI("Creating %s with settings: %s",
             this->managed.c_str(), settingsAsString.c_str());
         std::shared_ptr<ProductSettings> settings = std::make_shared<ProductSettings>();
