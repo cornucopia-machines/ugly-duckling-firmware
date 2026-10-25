@@ -83,7 +83,9 @@ public:
 
     // The ISR variants defer the change to the timer daemon task, so they can only report whether the
     // request was queued, not the resulting bits.
-    bool IRAM_ATTR setFromISR() const;
+    bool IRAM_ATTR setFromISR() const {
+        return setBitsFromISR(eventBits | STATE_CHANGE_BIT_MASK) == pdPASS;
+    }
 
     bool clear() const {
         bool cleared = !hasAllBits(xEventGroupClearBits(eventGroup, eventBits));
@@ -91,7 +93,10 @@ public:
         return cleared;
     }
 
-    bool IRAM_ATTR clearFromISR() const;
+    bool IRAM_ATTR clearFromISR() const {
+        bool queued = xEventGroupClearBitsFromISR(eventGroup, eventBits) == pdPASS;
+        return setBitsFromISR(STATE_CHANGE_BIT_MASK) == pdPASS && queued;
+    }
 
 private:
     EventBits_t setBits(EventBits_t bits) const {

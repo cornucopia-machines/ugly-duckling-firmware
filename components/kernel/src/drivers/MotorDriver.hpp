@@ -12,7 +12,11 @@ enum class MotorPhase : int8_t {
     Reverse = -1
 };
 
-MotorPhase operator-(MotorPhase phase);
+inline MotorPhase operator-(MotorPhase phase) {
+    return phase == MotorPhase::Forward
+        ? MotorPhase::Reverse
+        : MotorPhase::Forward;
+}
 
 class PwmMotorDriver {
 public:

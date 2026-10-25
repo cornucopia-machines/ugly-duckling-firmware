@@ -103,6 +103,10 @@ Quick reference:
 
 - LF endings, 4-space indent (2 for JSON/YAML/Markdown). WebKit `.clang-format`, warnings-as-errors via `.clang-tidy`.
 - Types: `PascalCase` — functions/methods: `camelCase` — macros/constants: `UPPER_SNAKE`.
+- Prefer header-only code (`inline` functions in `.hpp`) over new `.cpp` files: clang-tidy re-parses
+  the ESP-IDF headers for every `.cpp`, which dominates CI time. See
+  [CodingStandards.md § Header-Only Code](docs/CodingStandards.md#header-only-code), including when
+  to revisit this.
 - Only remove existing comments if they became obsolete, outdated, or meaningless in the context of the new code. Preserve comments that explain intent, constraints, or non-obvious behavior.
 
 Quick reference — run clang-tidy locally (requires a prior build for the compile commands DB):

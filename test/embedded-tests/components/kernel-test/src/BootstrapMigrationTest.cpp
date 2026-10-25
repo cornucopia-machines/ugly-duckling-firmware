@@ -25,7 +25,7 @@ void ensureNvsFlashInitialized() {
 }    // namespace
 
 // Exercises the NVS half of the bootstrap migration (docs/specs/device-readdressing.md, "Bootstrap
-// migration"). The loadNetworkConfig() function in BootConfig.cpp performs these exact operations;
+// migration"). The loadNetworkConfig() function in BootConfig.hpp performs these exact operations;
 // testing them here at the kernel level avoids pulling in the full devices dependency tree while
 // covering the same real-NVS behavior.
 

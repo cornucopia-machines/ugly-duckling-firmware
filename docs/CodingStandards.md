@@ -20,6 +20,24 @@
 
 - CI runs clang-tidy on every build.
 
+## Header-Only Code
+
+- Put code in `.hpp` files and don't add new `.cpp` files unless one is needed. Mark free functions and
+  static data members defined in headers `inline`.
+- Why: clang-tidy runs once per `.cpp` file, and each run re-parses the whole ESP-IDF header tree
+  behind it, which costs ~6 s even for a trivial file and up to ~25 s for one in `devices/`. Almost
+  everything is included from `main.cpp` anyway, so a header-only function is checked there at
+  almost no extra cost. Folding 14 `.cpp` files back into their headers cut tidy's total time from
+  ~243 s to ~48 s, and shrank the release image by ~28 KB: fewer per-file static initializers, and
+  functions called from a single place get inlined.
+- Some files still need a `.cpp`:
+  - `PulseCounter.cpp` includes the ULP-generated header, which only kernel sources listed in
+    `ulp_exp_dep_srcs` wait for.
+  - `PulseTimer.cpp` keeps its `IRAM_ATTR` interrupt callbacks out of headers.
+- This may be revisited. If tidy gets cheaper per file (e.g. by caching results), or we move to a
+  setup that doesn't penalize separate `.cpp` files, splitting code back into `.hpp`/`.cpp` pairs
+  is fine.
+
 ## Binary Size
 
 - Don't call `std::to_string` or `std::to_chars` on a `float` or `double`. Either one links `libstdc++`'s `floating_to_chars.o`, which adds ~123 KB (mostly lookup tables) to the image ([#652](https://github.com/cornucopia-machines/ugly-duckling-firmware/issues/652)).

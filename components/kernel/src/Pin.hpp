@@ -73,7 +73,7 @@ protected:
 
     const std::string name;
 
-    static std::map<std::string, PinPtr> BY_NAME;
+    inline static std::map<std::string, PinPtr> BY_NAME;
 };
 
 /**
@@ -171,8 +171,8 @@ public:
 
 private:
     const gpio_num_t gpio;
-    static std::map<std::string, InternalPinPtr> INTERNAL_BY_NAME;
-    static std::map<gpio_num_t, InternalPinPtr> INTERNAL_BY_GPIO;
+    inline static std::map<std::string, InternalPinPtr> INTERNAL_BY_NAME;
+    inline static std::map<gpio_num_t, InternalPinPtr> INTERNAL_BY_GPIO;
 };
 
 class AnalogPin {
@@ -307,7 +307,7 @@ private:
     }
 
     // Created on first use, and kept for good: there are at most two units
-    static std::vector<adc_oneshot_unit_handle_t> ANALOG_UNITS;
+    inline static std::vector<adc_oneshot_unit_handle_t> ANALOG_UNITS { 2 };
 
     const InternalPinPtr pin;
     const adc_channel_t channel;

@@ -86,7 +86,7 @@ carries the device's client key, so every change to `links` comes with a freshly
 certificate and key. A link change is confirmed as soon as the device boots with it, so switching a
 device without coverage to `cellular` leaves it unreachable until someone gets to it.
 
-`initConnectivity()` (`Connectivity.cpp`) starts the chosen link's driver, along with an `RtcDriver`
+`initConnectivity()` (`Connectivity.hpp`) starts the chosen link's driver, along with an `RtcDriver`
 set up for that link. The result is a `ConnectivityDrivers` struct. In it, the other link's driver
 is `nullptr`, and `modemTransport` holds the transport that MQTT and updates use over NB-IoT
 (`nullptr` on WiFi, meaning lwIP). The BOOT message reports the link in use as `connectivity`.
