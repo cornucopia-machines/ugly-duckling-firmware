@@ -86,31 +86,46 @@ struct PeripheralInitParameters {
     std::shared_ptr<mqtt::MqttRoot> mqttPeripheralRoot = nullptr;
 };
 
+// Default for makePeripheralFactory's makeSettings: default-constructed settings.
+template <typename TSettings>
+struct MakeDefaultSettings {
+    std::shared_ptr<TSettings> operator()() const {
+        return std::make_shared<TSettings>();
+    }
+};
+
 // Helper to build a PeripheralFactory while keeping strong types for settings/config.
 // RegisterAs... lists the interface types to register the peripheral under. If empty,
 // the peripheral is registered under its concrete Impl type.
 // makeImpl may return either the peripheral, or a Result of it when creating it can fail.
+// makeImpl and makeSettings are captured as-is rather than as std::functions: wrapping them would
+// add a second type-erasure layer inside `create`, costing a few hundred bytes of flash per factory.
 template <
     typename Impl,
     std::derived_from<ConfigurationSection> TSettings,
-    typename... RegisterAs>
+    typename... RegisterAs,
+    typename MakeImpl,
+    typename MakeSettings = MakeDefaultSettings<TSettings>>
     requires(sizeof...(RegisterAs) == 0 || (std::derived_from<Impl, RegisterAs> && ...))
-PeripheralFactory makePeripheralFactory(const std::string& factoryType, const std::string& peripheralType, std::function<Result<std::shared_ptr<Impl>>(PeripheralInitParameters&, const std::shared_ptr<TSettings>&)> makeImpl, std::function<std::shared_ptr<TSettings>()> makeSettings = [] { return std::make_shared<TSettings>(); }) {
+    && std::is_convertible_v<std::invoke_result_t<const MakeImpl&, PeripheralInitParameters&, const std::shared_ptr<TSettings>&>, Result<std::shared_ptr<Impl>>>
+    && std::is_convertible_v<std::invoke_result_t<const MakeSettings&>, std::shared_ptr<TSettings>>
+PeripheralFactory makePeripheralFactory(const std::string& factoryType, const std::string& peripheralType, MakeImpl makeImpl, MakeSettings makeSettings = {}) {
 
     // Build the factory using designated initializers (C++20+)
     auto effectiveType = peripheralType.empty() ? factoryType : peripheralType;
     return PeripheralFactory {
-        .factoryType = std::move(factoryType),
+        .factoryType = factoryType,
         .productType = std::move(effectiveType),
         .create = [makeImpl = std::move(makeImpl), makeSettings = std::move(makeSettings)](
                       PeripheralInitParameters& params,
                       const std::string& jsonSettings) -> Result<Handle> {
             // Construct and load settings
-            auto settings = makeSettings();
+            std::shared_ptr<TSettings> settings = makeSettings();
             TRY(settings->loadFromString(jsonSettings));
 
             // Create concrete implementation via user-provided callable
-            auto impl = TRY(makeImpl(params, settings));
+            Result<std::shared_ptr<Impl>> created = makeImpl(params, settings);
+            auto impl = TRY(std::move(created));
             return Handle::wrap<RegisterAs...>(std::move(impl));
         },
     };

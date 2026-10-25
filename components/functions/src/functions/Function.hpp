@@ -48,14 +48,18 @@ using FunctionFactory = kernel::Factory<FunctionCreateFn>;
 
 // Helper to build a FunctionFactory while keeping strong types for settings/config.
 // makeImpl may return either the function, or a Result of it when creating it can fail.
+// makeImpl is captured as-is rather than as a std::function: wrapping it would add a second
+// type-erasure layer inside `create`, costing a few hundred bytes of flash per factory.
 template <
     typename Impl,
     std::derived_from<ConfigurationSection> TSettings,
     std::derived_from<ConfigurationSection> TConfig = EmptyConfiguration,
+    typename MakeImpl,
     typename... TSettingsArgs>
+    requires std::is_convertible_v<std::invoke_result_t<const MakeImpl&, const FunctionInitParameters&, const std::shared_ptr<TSettings>&>, Result<std::shared_ptr<Impl>>>
 FunctionFactory makeFunctionFactory(
     const std::string& type,
-    std::function<Result<std::shared_ptr<Impl>>(const FunctionInitParameters&, const std::shared_ptr<TSettings>&)> makeImpl,
+    MakeImpl makeImpl,
     TSettingsArgs... settingsArgs) {
     auto settingsTuple = std::make_tuple(std::forward<TSettingsArgs>(settingsArgs)...);
 
@@ -89,7 +93,8 @@ FunctionFactory makeFunctionFactory(
             }
 
             // Create concrete implementation via user-provided callable
-            auto impl = TRY(makeImpl(params, settings));
+            Result<std::shared_ptr<Impl>> created = makeImpl(params, settings);
+            auto impl = TRY(std::move(created));
 
             FunctionCreationResult result;
             if constexpr (hasConfig) {
