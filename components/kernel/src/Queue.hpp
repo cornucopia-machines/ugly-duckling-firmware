@@ -39,6 +39,32 @@ protected:
         return queue;
     }
 
+    // The type-independent parts of Queue<T>, so they exist once in flash instead of once per message type
+
+    bool sendPointer(void* message, ticks timeout) {
+        bool sentWithoutDropping = xQueueSend(queue, reinterpret_cast<const void*>(&message), timeout.count()) == pdTRUE;
+        if (!sentWithoutDropping) {
+            printf("Overflow in queue '%s', dropping message\n",
+                name.c_str());
+        }
+        return sentWithoutDropping;
+    }
+
+    // Returns nullptr if no message arrived within the timeout
+    void* receivePointer(ticks timeout) {
+        void* message;
+        if (xQueueReceive(queue, reinterpret_cast<void*>(&message), timeout.count()) != pdTRUE) {
+            return nullptr;
+        }
+        return message;
+    }
+
+    void drainPointers(void (*destroy)(void*)) {
+        while (void* message = receivePointer(ticks::zero())) {
+            destroy(message);
+        }
+    }
+
 private:
     QueueHandle_t queue;
 };
@@ -71,10 +97,8 @@ public:
         requires std::constructible_from<TMessage, Args...>
     bool offerIn(ticks timeout, Args&&... args) {
         auto copy = new TMessage(std::forward<Args>(args)...);
-        bool sentWithoutDropping = xQueueSend(getQueueHandle(), reinterpret_cast<const void*>(&copy), timeout.count()) == pdTRUE;
+        bool sentWithoutDropping = sendPointer(copy, timeout);
         if (!sentWithoutDropping) {
-            printf("Overflow in queue '%s', dropping message\n",
-                this->name.c_str());
             delete copy;
         }
         return sentWithoutDropping;
@@ -146,8 +170,8 @@ public:
     }
 
     bool pollIn(ticks timeout, MessageHandler handler) {
-        TMessage* message;
-        if (!xQueueReceive(getQueueHandle(), reinterpret_cast<void*>(&message), timeout.count())) {
+        auto* message = static_cast<TMessage*>(receivePointer(timeout));
+        if (message == nullptr) {
             return false;
         }
         handler(*message);
@@ -156,7 +180,9 @@ public:
     }
 
     void clear() override {
-        this->drain([](const TMessage& message) { });
+        drainPointers([](void* message) {
+            delete static_cast<TMessage*>(message);
+        });
     }
 };
 

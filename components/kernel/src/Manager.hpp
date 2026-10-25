@@ -64,12 +64,17 @@ public:
         return h;
     }
 
-    // Typed access without RTTI — linear scan over registered interfaces
+    // Typed access without RTTI
     template <typename T>
     std::shared_ptr<T> tryGet() const {
+        return std::static_pointer_cast<T>(tryGetByTag(&TypeTokenVar<T>));
+    }
+
+    // Linear scan over registered interfaces; kept out of tryGet<T>() so it exists once in flash
+    std::shared_ptr<void> tryGetByTag(const void* typeTag) const {
         for (const auto& entry : entries) {
-            if (entry.typeTag == &TypeTokenVar<T>) {
-                return std::static_pointer_cast<T>(entry.holder);
+            if (entry.typeTag == typeTag) {
+                return entry.holder;
             }
         }
         return {};
@@ -114,16 +119,8 @@ public:
 
     template <typename T>
     Result<std::shared_ptr<T>> getInstance(const std::string& name) const {
-        std::scoped_lock lock(mutex);
-        auto it = instances.find(name);
-        if (it != instances.end()) {
-            auto instance = it->second.template tryGet<T>();
-            if (instance == nullptr) {
-                return failure("Instance '" + name + "' is not of the required type");
-            }
-            return instance;
-        }
-        return failure("Instance '" + name + "' not found");
+        auto instance = TRY(getInstanceByTag(name, &TypeTokenVar<T>));
+        return std::static_pointer_cast<T>(std::move(instance));
     }
 
     void shutdown() {
@@ -167,6 +164,20 @@ protected:
     const std::string managed;
 
 private:
+    // Kept out of getInstance<T>() so it exists once per manager in flash, not once per requested type
+    Result<std::shared_ptr<void>> getInstanceByTag(const std::string& name, const void* typeTag) const {
+        std::scoped_lock lock(mutex);
+        auto it = instances.find(name);
+        if (it != instances.end()) {
+            auto instance = it->second.tryGetByTag(typeTag);
+            if (instance == nullptr) {
+                return failure("Instance '" + name + "' is not of the required type");
+            }
+            return instance;
+        }
+        return failure("Instance '" + name + "' not found");
+    }
+
     std::map<std::string, FactoryT> factories;
     mutable std::recursive_mutex mutex;
     std::unordered_map<std::string, Handle> instances;
