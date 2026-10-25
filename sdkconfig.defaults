@@ -17,8 +17,9 @@ CONFIG_SECURE_FLASH_ENC_ENABLED=n
 # See docs/specs/firmware-update-via-sync-update.md, "OTA rollback".
 CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
 
-# We want to use exceptions
-CONFIG_COMPILER_CXX_EXCEPTIONS=y
+# No C++ exceptions: their unwind tables cost >100 KB of flash. Fallible operations return a
+# Result (std::expected, see components/kernel/src/Result.hpp) instead.
+CONFIG_COMPILER_CXX_EXCEPTIONS=n
 CONFIG_COMPILER_OPTIMIZATION_SIZE=y
 
 # Reduce binary size
