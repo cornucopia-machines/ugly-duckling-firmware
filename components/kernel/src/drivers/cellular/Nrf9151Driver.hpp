@@ -120,6 +120,10 @@ public:
         logSimResponse("AT+CIMI");
         // Which RATs are enabled, and which is preferred
         logResponse("AT%XSYSTEMMODE?");
+        // Bands locked out: permanent, runtime and erase-protected masks first (bit strings, band
+        // 1 last), all "" without a lock; mfw 2.0.4 answers with three more, undocumented. A permanent lock survives in the modem's flash, and we
+        // never set one, so one left from earlier testing would hide every cell outside it
+        logResponse("AT%XBANDLOCK?");
     }
 
     std::optional<ServingCell> logRadioStatus() override {
