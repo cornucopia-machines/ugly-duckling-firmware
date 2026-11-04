@@ -200,8 +200,11 @@ the power handling.
 - [x] Two hours of telemetry every 5 minutes with no MQTT disconnects and no modem restarts
 - [x] DTR gating and RI wake-ups work: announcements and URCs arrive while the modem's UART is off
 - [ ] ICCID and IMSI logged at startup with the retry
-- [ ] Firmware update over cellular, end to end, with MQTT connected and logs published during the
-  download; check the free internal RAM with both TLS sessions up
+- [x] Firmware update over cellular, end to end, with MQTT connected during the download
+  (2026-11-04, debug build, LTE-M): 2132 KB in 184 s, about 11.8 KB/s, and the new image booted.
+  The modem announced 2694 times; 95 KB (4%) came in through reads it hadn't announced (see "Lost
+  announcements"), and no UART errors
+- [ ] The free internal RAM during an update over cellular, with both TLS sessions up
 - [ ] Modem reset through nRESET: pulse it from a debug build and watch the driver recover
 - [ ] A release build (`UD_DEBUG` off, `sleepWhenIdle` on): `pm.sleep-ratio`, battery current,
   `rrc-idle-ratio` and `rrc-longest-connected`. Debug builds keep the ESP32 awake and publish logs,
@@ -219,6 +222,27 @@ POLLHUP and a clean end of stream. Curl over the wired network never truncated. 
 NAT or modem? Updates survive it (TLS catches the gap and the download resumes from what reached
 flash), but it costs a TLS handshake each time. To narrow down: the same download over HTTPS, from
 another server, and on another operator.
+
+### Lost announcements
+
+The first update over cellular with MQTT connected (MK14, LTE-M) ran at about 2 KB/s. Every 30 s
+the safety poll found 2 KB that `#XAPOLL` never announced, so the download stalled for most of each
+30 s. That's about one stall per 32 KB, which looks like the modem's TCP window filling up.
+
+Serial Modem 2.0 (`app/src/sm_at_socket.c`) doesn't announce a socket event that comes while
+its AT host is busy, meaning running a command or within its idle timer after one. It saves the
+event, and once the host is idle it re-registers the socket's one-shot poll callback "to see which
+ones are still valid" instead of announcing it. With the download and MQTT (debug logs on every
+line) sending commands back to back, the host is rarely idle. Most likely the re-registered
+callback doesn't fire for data that's already waiting, and with the window full nothing new
+arrives to fire it. The single-socket bench downloads had far less command traffic.
+
+The download transport now reads every 250 ms for as long as data flowed in the last 10 s,
+announced or not. The UART is on throughout an update, so the reads cost nothing. With that, the
+same download ran at 11–14 KB/s (128 KB every 9–12 s), close to the 115–125 kbit/s of the bench
+downloads; the whole 2132 KB image took 184 s, with 4% of it found without an announcement. MQTT keeps relying on announcements and the 30 s safety poll. To confirm the cause: count the bytes "found
+without an announcement" in the download's closing log line, and see whether they drop with
+`publishLogs` at `Info`.
 
 ### Slow sends during cell changes
 

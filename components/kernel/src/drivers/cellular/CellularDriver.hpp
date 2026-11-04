@@ -499,9 +499,14 @@ private:
     const std::string ntpServer;
     const TimeHandler onNetworkTime;
 
+    // A stall this long costs little at LTE-M rates, which fill the modem's TCP window in seconds
+    static constexpr milliseconds BUSY_POLL_INTERVAL = 250ms;
+
     std::shared_ptr<CellularModuleDriver> module;
     AtSocketTransport mqttTransport { "MQTT" };
-    AtSocketTransport downloadTransport { "Download" };
+    // Polls while the image flows, as Serial Modem loses announcements while it's busy (see
+    // AtSocketTransport). The UART stays on during an update anyway, so the reads cost nothing
+    AtSocketTransport downloadTransport { "Download", BUSY_POLL_INTERVAL };
 
     // Cuts the wait between registration checks short
     CopyQueue<bool> networkChanged { "cellular-network", 1 };

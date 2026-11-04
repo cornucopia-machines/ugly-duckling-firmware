@@ -34,15 +34,22 @@ namespace cornucopia::ugly_duckling::kernel::drivers::cellular {
  *
  * Received data stays in the modem until read. The modem announces it once, and again only after
  * a read has found it drained, so reads pull it over until one comes back empty. A read also goes
- * to the modem every SAFETY_POLL_INTERVAL even without an announcement, in case one got lost.
+ * to the modem every SAFETY_POLL_INTERVAL even without an announcement, in case one got lost. A
+ * transport with a busy poll interval reads that often while data is flowing: Serial Modem holds
+ * back announcements while it's busy with commands, and with two connections at once it often is,
+ * so a download would otherwise stall until the next safety poll every time it lost one
+ * (docs/specs/Desert-Lark-MK2.md, "Lost announcements").
  */
 class AtSocketTransport {
 public:
     /**
      * @param name what the connection is for, for the log
+     * @param busyPollInterval how often to read while data is flowing, whether or not the modem
+     * announces any; nullopt to rely on announcements and the safety poll alone
      */
-    explicit AtSocketTransport(const char* name)
+    explicit AtSocketTransport(const char* name, std::optional<milliseconds> busyPollInterval = std::nullopt)
         : name(name)
+        , busyPollInterval(busyPollInterval)
         , handle(esp_transport_init())
         , dataSignal(xSemaphoreCreateBinary()) {
         if (handle == nullptr || dataSignal == nullptr) {
@@ -205,6 +212,8 @@ private:
                 if (reason == ReceiveReason::SafetyPoll) {
                     // Tells how often announcements get lost, which bounds how late such data is
                     LOGTD(CELLULAR, "Found %zu bytes the modem didn't announce", bufferEnd - bufferStart);
+                }
+                if (reason == ReceiveReason::SafetyPoll || reason == ReceiveReason::BusyPoll) {
                     bytesFoundBySafetyPoll += bufferEnd - bufferStart;
                 }
                 return 1;
@@ -227,6 +236,8 @@ private:
         Draining,
         // It's been SAFETY_POLL_INTERVAL since the last read
         SafetyPoll,
+        // Data is flowing, and it's been busyPollInterval since the last read
+        BusyPoll,
     };
 
     /**
@@ -249,10 +260,14 @@ private:
             if (now - lastReceive >= SAFETY_POLL_INTERVAL) {
                 return ReceiveReason::SafetyPoll;
             }
+            bool busy = busyPollInterval && now - lastActivity < BUSY_PERIOD;
+            if (busy && now - lastReceive >= *busyPollInterval) {
+                return ReceiveReason::BusyPoll;
+            }
             if (now >= deadline) {
                 return ReceiveReason::None;
             }
-            auto wakeAt = std::min(deadline, lastReceive + SAFETY_POLL_INTERVAL);
+            auto wakeAt = std::min(deadline, lastReceive + (busy ? *busyPollInterval : SAFETY_POLL_INTERVAL));
             if (releaseDue) {
                 wakeAt = std::min(wakeAt, lastActivity + RELEASE_AFTER);
             }
@@ -348,7 +363,7 @@ private:
         connected = false;
         closeSocket(*module);
         LOGTI(CELLULAR, "%s connection closed after %lld s, %zu bytes sent, %zu bytes received "
-                        "(%zu found by the safety poll), %" PRIu32 " data announcements, %" PRIu32 " UART errors",
+                        "(%zu found without an announcement), %" PRIu32 " data announcements, %" PRIu32 " UART errors",
             name, static_cast<long long>(duration_cast<seconds>(steady_clock::now() - connectedAt).count()),
             bytesSent, bytesReceived, bytesFoundBySafetyPoll,
             announcements.load() - announcementsAtConnect,
@@ -383,11 +398,15 @@ private:
     // an announcement got lost: one that came just as the modem's UART powered down, say. A read
     // costs a UART wake-up, not a radio one
     static constexpr milliseconds SAFETY_POLL_INTERVAL = 30s;
+    // How long after the last data sent or received the busy poll keeps going: covers a request's
+    // round trip, and the gap between the ranges of a download
+    static constexpr milliseconds BUSY_PERIOD = 10s;
     // How long after the last data received the exchange counts as over (see releaseIfDone()).
     // Covers a round trip even on NB-IoT
     static constexpr milliseconds RELEASE_AFTER = 5s;
 
     const char* const name;
+    const std::optional<milliseconds> busyPollInterval;
     esp_transport_handle_t handle;
     const SemaphoreHandle_t dataSignal;
     std::shared_ptr<CellularModuleDriver> module;

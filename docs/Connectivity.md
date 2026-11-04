@@ -264,6 +264,9 @@ restart took away can't close a newer one that got the same modem handle.
   (POLLIN). It announces again only once a read has found the socket drained, so the transport
   reads with `AT#XRECV=<handle>,1,64,0,2048` (hex, non-blocking) until a read comes back empty
   (`ERROR`, for EAGAIN). It also reads every 30 s without an announcement, in case one got lost.
+  The download transport also reads every 250 ms while data is flowing: Serial Modem doesn't announce
+  events that arrive while it's busy with commands, and with MQTT running alongside, it often is
+  (see `specs/Desert-Lark-MK2.md`, "Lost announcements").
   The modem's TCP stack holds what we haven't read and throttles the peer, so nothing is lost
   while the ESP32 is busy, e.g. writing flash during an update.
 - **Closing**: `#XAPOLL: <handle>,16` (POLLHUP) means the peer or the network closed it; a read
