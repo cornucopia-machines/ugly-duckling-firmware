@@ -163,7 +163,7 @@ private:
         if (!opened) {
             return -1;
         }
-        socket = *opened;
+        socket = opened;
         // Whatever arrived while connecting was for a connection before this one
         closedByPeer = false;
         connected = true;
