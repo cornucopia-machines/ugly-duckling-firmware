@@ -39,7 +39,7 @@ Tracking:
 | Power gating | Module sleeps on its own; ESP32 wakes on RX edges, losing the first bytes | DTR gates the modem's UART; RI wakes the ESP32; nothing is lost |
 | Reset | Tied to the ESP32's reset | nRESET on GPIO4, open-drain |
 | Socket receive | 2 KB buffer that drops data when full; push mode for downloads | TCP stack holds unread data and throttles the peer |
-| Time | `+CTZEU` NITZ, `AT+QNTP` | `%XTIME` NITZ, SNTP over the modem's UDP socket |
+| Time | `+CTZEU` NITZ, `AT+QNTP` | The modem's clock (`+CCLK`), `%XTIME` NITZ, SNTP over the modem's UDP socket |
 | AT layer | esp_modem, plus our own line splitting around it | `AtChannel`, ours |
 
 The BC660K's limits drove most of the complexity in the old driver: hex push mode for updates,
@@ -152,6 +152,20 @@ has a transport for MQTT and one for the download, and the update boot works as 
 connects first (up to 60 s over the modem, so the two TLS handshakes don't run at once), then the
 download starts.
 
+### Time from the modem's clock first
+
+NITZ only comes with an attach, and an ESP32 restart leaves the modem attached, so after an update
+or a `restart` no network time came. The driver waited 30 s for it, then up to another 30 s for
+the next registration check to ask NTP. On MK14 the time came about 50 s after MQTT connected, and
+peripherals are only set up once the time is set. Now:
+
+- At startup, the driver reads the modem's clock (`AT+CCLK?`). The modem sets it from NITZ and
+  keeps it while powered; until then it answers `ERROR` (nRF91x1 AT commands v1.4, 5.23).
+- An NTP result is written back with `AT+CCLK=`, so the next restart finds the time in the modem
+  even on networks without NITZ.
+- NTP is asked 10 s after the network is ready, not 30 s, and the network monitor wakes up when
+  that's due instead of at its next check.
+
 ## Plan
 
 ### Driver (#701)
@@ -200,6 +214,8 @@ the power handling.
 - [x] Two hours of telemetry every 5 minutes with no MQTT disconnects and no modem restarts
 - [x] DTR gating and RI wake-ups work: announcements and URCs arrive while the modem's UART is off
 - [ ] ICCID and IMSI logged at startup with the retry
+- [ ] Time from the modem's clock right after an ESP32 restart, and from NTP 10 s after network
+  ready on a cold boot without NITZ
 - [x] Firmware update over cellular, end to end, with MQTT connected during the download
   (2026-11-04, debug build, LTE-M): 2132 KB in 184 s, about 11.8 KB/s, and the new image booted.
   The modem announced 2694 times; 95 KB (4%) came in through reads it hadn't announced (see "Lost

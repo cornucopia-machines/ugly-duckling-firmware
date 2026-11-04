@@ -146,6 +146,20 @@ public:
     virtual std::optional<time_t> queryNtpTime(const std::string& server) = 0;
 
     /**
+     * @brief The modem's own clock, which it sets from the network time (NITZ) and keeps for as
+     * long as it's powered, across ESP32 restarts.
+     *
+     * @return the current time in UTC, or nullopt if the clock was never set
+     */
+    virtual std::optional<time_t> queryClock() = 0;
+
+    /**
+     * @brief Sets the modem's clock, so that queryClock() has the time after an ESP32 restart
+     * even on a network that doesn't send it.
+     */
+    virtual bool setClock(time_t utcTime) = 0;
+
+    /**
      * @brief Opens a TCP connection, waiting until it is either established or has failed.
      *
      * Several can be open at once: MQTT keeps its connection while a firmware update downloads.

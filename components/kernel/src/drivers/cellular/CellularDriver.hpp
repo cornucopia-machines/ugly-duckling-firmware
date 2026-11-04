@@ -193,6 +193,12 @@ private:
         if (rtcInSync.isSet()) {
             // Kept across a soft reset; still worth a fresh sync eventually
             lastTimeSync = steady_clock::now();
+        } else if (auto time = module->queryClock()) {
+            // An ESP32 restart leaves the modem attached, so no network time comes this boot, but
+            // the modem still has it from before (or from an NTP sync written back to it). Works
+            // before the network is up, too
+            lastTimeSync = steady_clock::now();
+            onNetworkTime(*time, "modem clock");
         }
         monitorNetwork();
         return {};
@@ -241,7 +247,12 @@ private:
             wasRegistered = registered;
             lastStatus = registration ? std::optional(registration->status) : std::nullopt;
             bool settled = networkReady.isSet() && rtcInSync.isSet();
-            networkChanged.pollIn(ticks(settled ? REGISTERED_POLL_INTERVAL : SEARCHING_POLL_INTERVAL));
+            auto wait = settled ? REGISTERED_POLL_INTERVAL : SEARCHING_POLL_INTERVAL;
+            // Ask NTP as soon as it's due, not on the next registration check after
+            if (auto ntpDue = timeUntilNtpDue()) {
+                wait = std::clamp(*ntpDue, MIN_POLL_INTERVAL, wait);
+            }
+            networkChanged.pollIn(ticks(wait));
         }
     }
 
@@ -278,28 +289,43 @@ private:
      * operators), and re-syncs once a day, since NITZ only comes with an attach.
      */
     void syncTimeIfDue() {
-        if (!networkReady.isSet()) {
+        auto due = timeUntilNtpDue();
+        if (!due || *due > 0ms) {
             return;
         }
-        auto now = steady_clock::now();
-        bool due;
-        if (rtcInSync.isSet()) {
-            due = now - lastTimeSync.load() >= TIME_RESYNC_INTERVAL;
-        } else {
-            due = now - networkReadySince >= NITZ_GRACE_PERIOD
-                && (!lastNtpAttempt || now - *lastNtpAttempt >= NTP_RETRY_INTERVAL);
-        }
-        if (!due) {
-            return;
-        }
-        lastNtpAttempt = now;
+        lastNtpAttempt = steady_clock::now();
         if (!rtcInSync.isSet()) {
             LOGTI(CELLULAR, "No time from the network, asking %s", ntpServer.c_str());
         }
         if (auto time = module->queryNtpTime(ntpServer)) {
             lastTimeSync = steady_clock::now();
             onNetworkTime(*time, "NTP via modem");
+            // For queryClock() after the next ESP32 restart
+            if (!module->setClock(*time)) {
+                LOGTD(CELLULAR, "Could not set the modem's clock");
+            }
         }
+    }
+
+    /**
+     * @brief How long until NTP is due: the network's time hasn't come within NITZ_GRACE_PERIOD,
+     * the last attempt failed NTP_RETRY_INTERVAL ago, or the daily re-sync.
+     *
+     * @return nullopt while there's no network to ask over; zero or less when due
+     */
+    std::optional<milliseconds> timeUntilNtpDue() const {
+        if (!networkReady.isSet()) {
+            return std::nullopt;
+        }
+        steady_clock::time_point dueAt;
+        if (rtcInSync.isSet()) {
+            dueAt = lastTimeSync.load() + TIME_RESYNC_INTERVAL;
+        } else if (lastNtpAttempt) {
+            dueAt = std::max(networkReadySince + NITZ_GRACE_PERIOD, *lastNtpAttempt + NTP_RETRY_INTERVAL);
+        } else {
+            dueAt = networkReadySince + NITZ_GRACE_PERIOD;
+        }
+        return duration_cast<milliseconds>(dueAt - steady_clock::now());
     }
 
     /**
@@ -478,8 +504,12 @@ private:
     static constexpr milliseconds SEARCHING_POLL_INTERVAL = 30s;
     static constexpr milliseconds REGISTERED_POLL_INTERVAL = 5min;
 
-    // How long to wait for NITZ after the network comes up before asking NTP
-    static constexpr milliseconds NITZ_GRACE_PERIOD = 30s;
+    // How long to wait for NITZ after the network comes up before asking NTP. It comes with the
+    // attach, within seconds of registering, and the network is only ready once the modem also
+    // has an IP address
+    static constexpr milliseconds NITZ_GRACE_PERIOD = 10s;
+    // Keeps a due NTP request from spinning the loop
+    static constexpr milliseconds MIN_POLL_INTERVAL = 1s;
     static constexpr milliseconds NTP_RETRY_INTERVAL = 5min;
     static constexpr milliseconds TIME_RESYNC_INTERVAL = 24h;
 

@@ -224,6 +224,24 @@ public:
         return time;
     }
 
+    std::optional<time_t> queryClock() override {
+        std::scoped_lock lock(commandMutex);
+        recoverIfRestarted();
+        // ERROR until the network sent its time, or AT+CCLK set it
+        auto response = at("AT+CCLK?", DEFAULT_TIMEOUT);
+        return response.ok() ? findDecoded(response, parseCclk) : std::nullopt;
+    }
+
+    bool setClock(time_t utcTime) override {
+        auto time = formatCclk(utcTime);
+        if (!time) {
+            return false;
+        }
+        std::scoped_lock lock(commandMutex);
+        recoverIfRestarted();
+        return apply("AT+CCLK=\"" + *time + "\"");
+    }
+
     std::optional<SocketId> openSocket(const std::string& host, int port, SocketEventHandler handler) override {
         std::scoped_lock lock(commandMutex);
         recoverIfRestarted();

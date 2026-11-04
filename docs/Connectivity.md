@@ -53,7 +53,7 @@ no certificate check.
 | Driver | `WiFiDriver` | `CellularDriver`, `Nrf9151Driver` |
 | IP stack | lwIP | The modem's own, through AT socket commands |
 | TLS | esp-tls | `TlsTransport`, mbedTLS over the AT socket |
-| Time | SNTP | NITZ from the network, SNTP over a modem socket as a fallback |
+| Time | SNTP | The modem's clock, NITZ from the network, SNTP over a modem socket as a fallback |
 | Telemetry section | `wifi` | `cellular` |
 
 ## Choosing the link
@@ -342,10 +342,14 @@ Service (Carrot).
 - **WiFi**: SNTP. The client starts once the network is ready and lives for the lifetime of the
   device. It uses the DHCP lease's server, then `ntp.host` from network-config, then
   `pool.ntp.org`.
-- **Cellular**: NITZ, which the network sends with an attach, as `%XTIME` (UTC, in semi-octets).
-  If none came 30 s after the network is ready, the driver asks `ntp.host` (or `pool.ntp.org`)
-  with SNTP over a UDP socket of the modem's (`AT#XSENDTO`, `AT#XRECVFROM`), since Serial Modem
-  has no NTP command. It retries every 5 minutes, then re-syncs once a day.
+- **Cellular**: at startup, the modem's own clock (`AT+CCLK?`: local time, with the time zone in
+  quarters of an hour). The modem keeps it while it's powered, so this covers an ESP32 restart,
+  which leaves the modem attached, so no new NITZ comes. It answers `ERROR` until the clock was set.
+  Otherwise NITZ, which the network sends with an attach, as `%XTIME` (UTC, in semi-octets). If
+  none came 10 s after the network is ready, the driver asks `ntp.host` (or `pool.ntp.org`) with
+  SNTP over a UDP socket of the modem's (`AT#XSENDTO`, `AT#XRECVFROM`), since Serial Modem has no
+  NTP command, and writes the result to the modem's clock (`AT+CCLK=`) for the next restart. It
+  retries every 5 minutes, then re-syncs once a day.
 
 ## MQTT over each link
 

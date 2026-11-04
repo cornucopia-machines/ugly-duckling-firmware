@@ -498,6 +498,33 @@ TEST_CASE("parseXtime rejects a URC without the time, and malformed times") {
     REQUIRE_FALSE(parseXtime(R"(%XTIME: "40","6211303A748340","00")").has_value());
 }
 
+TEST_CASE("parseCclk reads the local time, and takes the time zone off") {
+    // 2026-11-04T12:23:54Z, from a network at +1 h (four quarters)
+    REQUIRE(parseCclk(R"(+CCLK: "26/11/04,13:23:54+04")") == 1793795034);
+    REQUIRE(parseCclk(R"(+CCLK: "26/11/04,08:23:54-16")") == 1793795034);
+    REQUIRE(parseCclk(R"(+CCLK: "26/11/04,12:23:54+00")") == 1793795034);
+    // 00:30 local on New Year's Day at +1 h is still the old year in UTC
+    REQUIRE(parseCclk(R"(+CCLK: "26/01/01,00:30:00+04")") == 1767223800);
+}
+
+TEST_CASE("parseCclk rejects other lines and malformed times") {
+    REQUIRE_FALSE(parseCclk(R"(%CCLK: "26/11/04,13:23:54+04",0)").has_value());
+    // Month 13
+    REQUIRE_FALSE(parseCclk(R"(+CCLK: "26/13/04,13:23:54+04")").has_value());
+    REQUIRE_FALSE(parseCclk(R"(+CCLK: "26/11/04 13:23:54+04")").has_value());
+    // No time zone, and one beyond ±12 h
+    REQUIRE_FALSE(parseCclk(R"(+CCLK: "26/11/04,13:23:54")").has_value());
+    REQUIRE_FALSE(parseCclk(R"(+CCLK: "26/11/04,13:23:54+49")").has_value());
+    REQUIRE_FALSE(parseCclk(R"(+CCLK: "26/11/04,13:23:54*04")").has_value());
+}
+
+TEST_CASE("formatCclk writes UTC for AT+CCLK=") {
+    REQUIRE(formatCclk(1793795034) == "26/11/04,12:23:54+00");
+    REQUIRE(parseCclk(R"(+CCLK: ")" + *formatCclk(1767232800) + "\"") == 1767232800);
+    // The two-digit year only holds 2000–2099
+    REQUIRE_FALSE(formatCclk(0).has_value());
+}
+
 TEST_CASE("makeSntpRequest asks as an SNTP version 4 client") {
     auto request = makeSntpRequest();
 
