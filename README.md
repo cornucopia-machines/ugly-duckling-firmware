@@ -328,6 +328,12 @@ idf.py monitor
 On Carrot the console is on USB Serial/JTAG, not UART0: the UART0 pins (GPIO16/17) belong to
 the cellular modem on the Desert Lark daughter board.
 
+USB Serial/JTAG doesn't survive light sleep, so a Carrot board stays awake while a computer is
+connected to its USB port (`CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION`), and logs
+`USB host connected, staying awake while it is` at boot. Unplugged, it sleeps as usual, and
+logs (to MQTT) that it does. Plugging a sleeping board in doesn't bring the console back: press
+reset after connecting. Don't measure power with the computer connected.
+
 #### Console on UART0 (early-boot debugging)
 
 USB Serial/JTAG only starts carrying console output some time after boot, so it misses

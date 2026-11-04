@@ -84,3 +84,14 @@ CONFIG_ULP_COPROC_ENABLED=y
 CONFIG_ULP_COPROC_TYPE_LP_CORE=y
 # Reserve 4 KB of LP RAM for LP core firmware + shared variables
 CONFIG_ULP_COPROC_RESERVE_MEM=4096
+
+#
+# USB Serial/JTAG
+#
+
+# The USB Serial/JTAG console stops working at the first automatic light sleep, and doesn't come
+# back after it. With this, IDF holds a no-light-sleep lock while a USB host is sending frames
+# (start-of-frame every 1 ms), so a board on a computer keeps its console even with sleepWhenIdle.
+# IDF watches for the frames from the tick hook anyway; without a host (on battery, or on a plain
+# charger, which sends none) the lock goes a few milliseconds after boot and costs nothing.
+CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION=y
