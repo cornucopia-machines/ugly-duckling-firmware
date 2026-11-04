@@ -139,7 +139,18 @@ granted 81.92 s on LTE-M to an Onomondo SIM. A nonzero cycle is requested per RA
 
 `AT%RAI=1` at startup lets the transport send `AT#XSOCKETOPT=<h>,1,61,1` (`RAI_NO_DATA`) once an
 exchange ends with data received and 5 s of quiet, so the modem leaves RRC connected mode without
-waiting for the network's inactivity timer. `rrc-releases` in telemetry counts these.
+waiting for the network's inactivity timer. `rrc-releases` in telemetry counts these. It's only
+sent while a single socket is open, since it ends the RRC connection for all of them.
+
+### MQTT stays up during updates
+
+The BC660K driver had one socket, so an update boot downloaded before MQTT was started, with no
+logs but the serial console. That was our driver's choice, not a limit of the modem or of
+ESP-IDF: over WiFi, MQTT always ran during the download. Serial Modem has a handle per socket and
+a TCP stack that holds unread data, so serving two sockets in turn loses nothing. `CellularDriver`
+has a transport for MQTT and one for the download, and the update boot works as over WiFi: MQTT
+connects first (up to 60 s over the modem, so the two TLS handshakes don't run at once), then the
+download starts.
 
 ## Plan
 
@@ -161,6 +172,8 @@ waiting for the network's inactivity timer. `rrc-releases` in telemetry counts t
 - [x] Unit tests for every parser, against lines captured from the modem
 - [x] Retry the ICCID and IMSI reads: right after `CFUN=1` the SIM answers `+CME ERROR: 0` for a
   moment
+- [x] A socket per transport, and a second transport for firmware downloads: MQTT stays connected
+  during an update
 
 ### Bench (Desert Lark MK2 on a USB-UART adapter, Onomondo SIM)
 
@@ -187,7 +200,8 @@ the power handling.
 - [x] Two hours of telemetry every 5 minutes with no MQTT disconnects and no modem restarts
 - [x] DTR gating and RI wake-ups work: announcements and URCs arrive while the modem's UART is off
 - [ ] ICCID and IMSI logged at startup with the retry
-- [ ] Firmware update over cellular, end to end
+- [ ] Firmware update over cellular, end to end, with MQTT connected and logs published during the
+  download; check the free internal RAM with both TLS sessions up
 - [ ] Modem reset through nRESET: pulse it from a debug build and watch the driver recover
 - [ ] A release build (`UD_DEBUG` off, `sleepWhenIdle` on): `pm.sleep-ratio`, battery current,
   `rrc-idle-ratio` and `rrc-longest-connected`. Debug builds keep the ESP32 awake and publish logs,

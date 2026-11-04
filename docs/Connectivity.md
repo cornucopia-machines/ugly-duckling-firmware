@@ -227,7 +227,7 @@ lines captured from the modem.
 
 If the modem restarts later (Serial Modem says `Ready`), or stops answering (3 commands in a row
 time out, at most once every 10 minutes it's then reset through nRESET), the next command runs
-steps 1–5 again, and an open socket is reported closed. If the modem doesn't answer at startup,
+steps 1–5 again, and every open socket is reported closed. If the modem doesn't answer at startup,
 the driver logs an error and the device stays offline. It doesn't fall back to WiFi.
 
 ### Registration
@@ -252,7 +252,10 @@ address (`AT+CGPADDR=0`). The APN, DNS servers and MTU the network handed out ar
 ### Sockets
 
 `AtSocketTransport` is an `esp_transport` over the modem's TCP socket commands. Both esp-mqtt and
-the HTTP client accept it in place of lwIP. There's one connection at a time.
+the HTTP client accept it in place of lwIP. `CellularDriver` has two, each with a connection of its
+own: one for MQTT, one for firmware downloads, so MQTT stays connected while an update downloads.
+The driver numbers connections itself and never reuses a number, so a connection that a modem
+restart took away can't close a newer one that got the same modem handle.
 
 - **Connecting**: `AT#XSOCKET=1,1,0` (the handle it returns starts at 1), then
   `AT#XCONNECT=<handle>,"<host>",<port>` with the hostname directly; the modem resolves it.
@@ -270,7 +273,8 @@ the HTTP client accept it in place of lwIP. There's one connection at a time.
   `AT#XSOCKETOPT=<handle>,1,61,1` (`RAI_NO_DATA`), so the modem leaves RRC connected mode right
   away instead of when the network's inactivity timer runs out. After a send, it's left to the
   network's timer, since an answer is probably on its way. A wrong guess only costs a new
-  connection.
+  connection. The release ends the RRC connection for every socket, so it's skipped while
+  another socket is open: during an update, MQTT going quiet mustn't cut the download short.
 
 Socket data is hex in both directions, so it travels as ordinary text lines through the same
 command and URC handling as everything else. That doubles the bytes on the UART, which at 921600
@@ -397,7 +401,7 @@ started.
 
 | | WiFi | Cellular |
 | --- | --- | --- |
-| MQTT during the download | Running; the update waits up to 15 s for it, so logs are published | Not started: the download needs the modem's single socket. Only the serial console has logs |
+| MQTT during the download | Running; the update waits up to 15 s for it, so logs are published | Running, on a socket of its own; the update waits up to 60 s for it |
 | Waiting for the network | 15 s | 5 minutes |
 | Transport | lwIP, esp-tls | `AtSocketTransport`, `TlsTransport` on top for HTTPS |
 | Certificate check | CA bundle | CA bundle (`TlsTransport` without credentials) |

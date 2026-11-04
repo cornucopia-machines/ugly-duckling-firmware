@@ -45,9 +45,10 @@ struct ConnectivityDrivers {
     std::shared_ptr<cellular::CellularDriver> cellular;
 #endif
     std::shared_ptr<RtcDriver> rtc;
-    // The cellular modem's socket transport, which MQTT and the OTA download connect over;
-    // nullptr for lwIP's own
+    // The cellular modem's socket transports, one for MQTT and one for the OTA download, each
+    // with a connection of its own; nullptr for lwIP's own
     esp_transport_handle_t modemTransport = nullptr;
+    esp_transport_handle_t modemDownloadTransport = nullptr;
 };
 
 inline void initWiFi(ConnectivityDrivers& drivers, const std::shared_ptr<ModuleStates>& states, const std::shared_ptr<NetworkConfig>& networkConfig, const std::shared_ptr<BleDriver>& ble) {
@@ -99,7 +100,8 @@ inline void initCellular(ConnectivityDrivers& drivers, const std::shared_ptr<Mod
         // The download keeps the modem's UART on; the device reboots after it either way
         !updatePending);
     drivers.cellular = cellular;
-    drivers.modemTransport = cellular->getTransport();
+    drivers.modemTransport = cellular->getMqttTransport();
+    drivers.modemDownloadTransport = cellular->getDownloadTransport();
 }
 #endif
 

@@ -57,7 +57,7 @@ struct CellularStatus {
 
 /**
  * @brief Owns the cellular modem: its bring-up, registration, network time, and the socket
- * transport MQTT runs over (docs/Connectivity.md, "Cellular").
+ * transports MQTT and firmware downloads run over (docs/Connectivity.md, "Cellular").
  *
  * Reports the network the same way WiFiDriver does, through the networkConnecting and
  * networkReady states, so nothing downstream needs to know which link is in use. Everything
@@ -102,8 +102,16 @@ public:
     /**
      * @brief The transport for esp-mqtt; it can't connect until the modem has a network.
      */
-    esp_transport_handle_t getTransport() const {
-        return transport.getHandle();
+    esp_transport_handle_t getMqttTransport() const {
+        return mqttTransport.getHandle();
+    }
+
+    /**
+     * @brief The transport for firmware downloads, on a connection of its own, so that MQTT's
+     * stays up meanwhile.
+     */
+    esp_transport_handle_t getDownloadTransport() const {
+        return downloadTransport.getHandle();
     }
 
     /**
@@ -137,10 +145,11 @@ public:
             set("sinr", cell->sinr);
             set("ecl", cell->ecl);
         }
-        auto [sent, received] = transport.takeTrafficCounts();
-        json["bytes-sent"] = sent;
-        json["bytes-received"] = received;
-        json["rrc-releases"] = transport.takeReleaseRequests();
+        auto [mqttSent, mqttReceived] = mqttTransport.takeTrafficCounts();
+        auto [downloadSent, downloadReceived] = downloadTransport.takeTrafficCounts();
+        json["bytes-sent"] = mqttSent + downloadSent;
+        json["bytes-received"] = mqttReceived + downloadReceived;
+        json["rrc-releases"] = mqttTransport.takeReleaseRequests() + downloadTransport.takeReleaseRequests();
         populateRrcTelemetry(json);
     }
 
@@ -179,7 +188,8 @@ private:
         }
         module->logStatus();
         updateStatus([](CellularStatus& status) { status.modemUp = true; });
-        transport.attach(module);
+        mqttTransport.attach(module);
+        downloadTransport.attach(module);
         if (rtcInSync.isSet()) {
             // Kept across a soft reset; still worth a fresh sync eventually
             lastTimeSync = steady_clock::now();
@@ -490,7 +500,8 @@ private:
     const TimeHandler onNetworkTime;
 
     std::shared_ptr<CellularModuleDriver> module;
-    AtSocketTransport transport;
+    AtSocketTransport mqttTransport { "MQTT" };
+    AtSocketTransport downloadTransport { "Download" };
 
     // Cuts the wait between registration checks short
     CopyQueue<bool> networkChanged { "cellular-network", 1 };

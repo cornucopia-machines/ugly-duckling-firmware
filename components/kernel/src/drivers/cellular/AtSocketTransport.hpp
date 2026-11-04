@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <cstring>
 #include <memory>
+#include <optional>
 #include <utility>
 
 using namespace std::chrono;
@@ -28,7 +29,8 @@ namespace cornucopia::ugly_duckling::kernel::drivers::cellular {
  * @brief An esp_transport that carries a TCP connection over the modem's socket commands, so
  * esp-mqtt and the firmware download can run without lwIP (docs/Connectivity.md, "Sockets").
  *
- * Talks only to CellularModuleDriver, so it doesn't care which modem is behind it.
+ * Talks only to CellularModuleDriver, so it doesn't care which modem is behind it. Each transport
+ * has a connection of its own, so MQTT's stays up while a firmware update downloads on another.
  *
  * Received data stays in the modem until read. The modem announces it once, and again only after
  * a read has found it drained, so reads pull it over until one comes back empty. A read also goes
@@ -36,8 +38,12 @@ namespace cornucopia::ugly_duckling::kernel::drivers::cellular {
  */
 class AtSocketTransport {
 public:
-    AtSocketTransport()
-        : handle(esp_transport_init())
+    /**
+     * @param name what the connection is for, for the log
+     */
+    explicit AtSocketTransport(const char* name)
+        : name(name)
+        , handle(esp_transport_init())
         , dataSignal(xSemaphoreCreateBinary()) {
         if (handle == nullptr || dataSignal == nullptr) {
             // Only fails when out of memory, at boot
@@ -59,9 +65,6 @@ public:
      * Must happen before the network is reported ready, which is what lets esp-mqtt connect.
      */
     void attach(const std::shared_ptr<CellularModuleDriver>& module) {
-        module->onSocketEvent([this](const SocketEvent& event) {
-            onSocketEvent(event);
-        });
         this->module = module;
     }
 
@@ -70,7 +73,8 @@ public:
     }
 
     /**
-     * @brief Bytes sent and received over all connections since the last call, for telemetry.
+     * @brief Bytes sent and received over this transport's connections since the last call, for
+     * telemetry.
      *
      * TCP and IP headers, ACKs and retransmissions aren't included, so the data the operator
      * counts is somewhat more.
@@ -130,9 +134,11 @@ private:
     int connect(const char* host, int port) {
         auto module = this->module;
         if (module == nullptr) {
-            LOGTW(CELLULAR, "Cannot connect to %s:%d, the modem is not up", host, port);
+            LOGTW(CELLULAR, "Cannot connect %s to %s:%d, the modem is not up", name, host, port);
             return -1;
         }
+        // A connection left over from before (a reconnect after an error)
+        closeSocket(*module);
         bufferStart = 0;
         bufferEnd = 0;
         moreWaiting = false;
@@ -144,9 +150,13 @@ private:
         announcementsAtConnect = announcements.load();
         uartErrorsAtConnect = module->getUartErrorCount();
         connectedAt = steady_clock::now();
-        if (!module->openSocket(host, port)) {
+        auto opened = module->openSocket(host, port, [this](const SocketEvent& event) {
+            onSocketEvent(event);
+        });
+        if (!opened) {
             return -1;
         }
+        socket = *opened;
         // Whatever arrived while connecting was for a connection before this one
         closedByPeer = false;
         connected = true;
@@ -269,7 +279,7 @@ private:
     void releaseIfDone() {
         releaseDue = false;
         auto module = this->module;
-        if (module != nullptr && module->releaseRrc()) {
+        if (module != nullptr && socket && module->releaseRrc(*socket)) {
             releaseRequests++;
         }
     }
@@ -284,7 +294,11 @@ private:
         // Take the signal before reading: an announcement arriving after this belongs to newer data
         xSemaphoreTake(dataSignal, 0);
         lastReceive = steady_clock::now();
-        auto result = module->receive(receiveBuffer.data(), receiveBuffer.size());
+        if (!socket) {
+            closedByPeer = true;
+            return true;
+        }
+        auto result = module->receive(*socket, receiveBuffer.data(), receiveBuffer.size());
         if (!result) {
             return false;
         }
@@ -307,13 +321,13 @@ private:
 
     int write(const uint8_t* data, size_t length) {
         auto module = this->module;
-        if (!connected || module == nullptr) {
+        if (!connected || module == nullptr || !socket) {
             return -1;
         }
         size_t written = 0;
         while (written < length) {
             size_t chunk = std::min(length - written, module->getMaxSendSize());
-            if (!module->send(data + written, chunk)) {
+            if (!module->send(*socket, data + written, chunk)) {
                 return -1;
             }
             written += chunk;
@@ -332,14 +346,21 @@ private:
             return 0;
         }
         connected = false;
-        module->closeSocket();
-        LOGTI(CELLULAR, "Connection closed after %lld s, %zu bytes sent, %zu bytes received "
+        closeSocket(*module);
+        LOGTI(CELLULAR, "%s connection closed after %lld s, %zu bytes sent, %zu bytes received "
                         "(%zu found by the safety poll), %" PRIu32 " data announcements, %" PRIu32 " UART errors",
-            static_cast<long long>(duration_cast<seconds>(steady_clock::now() - connectedAt).count()),
+            name, static_cast<long long>(duration_cast<seconds>(steady_clock::now() - connectedAt).count()),
             bytesSent, bytesReceived, bytesFoundBySafetyPoll,
             announcements.load() - announcementsAtConnect,
             module->getUartErrorCount() - uartErrorsAtConnect);
         return 0;
+    }
+
+    void closeSocket(CellularModuleDriver& module) {
+        if (socket) {
+            module.closeSocket(*socket);
+            socket.reset();
+        }
     }
 
     // Runs on the UART's reader task, so only flags things for the next read
@@ -350,7 +371,7 @@ private:
                 break;
             case SocketEventType::Closed:
                 if (connected) {
-                    LOGTI(CELLULAR, "Connection closed by the peer or the network");
+                    LOGTI(CELLULAR, "%s connection closed by the peer or the network", name);
                 }
                 closedByPeer = true;
                 break;
@@ -366,6 +387,7 @@ private:
     // Covers a round trip even on NB-IoT
     static constexpr milliseconds RELEASE_AFTER = 5s;
 
+    const char* const name;
     esp_transport_handle_t handle;
     const SemaphoreHandle_t dataSignal;
     std::shared_ptr<CellularModuleDriver> module;
@@ -373,6 +395,8 @@ private:
     // Everything below is only touched from the task esp-mqtt runs the transport on, except for
     // closedByPeer and the counters, which the socket event handler and the telemetry touch
     bool connected = false;
+    // The modem's connection, while it has one for us
+    std::optional<SocketId> socket;
     std::atomic<bool> closedByPeer { false };
     bool moreWaiting = false;
     steady_clock::time_point lastReceive;

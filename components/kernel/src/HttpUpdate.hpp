@@ -127,7 +127,7 @@ private:
         // Full speed and no light sleep until the restart: over the modem, pushed data has to be
         // taken from the UART as fast as it arrives, as there's no flow control, and waking from
         // light sleep on UART edges loses the first bytes; at the lowest CPU frequency, decrypting
-        // and decoding it is slower too. Nothing else runs during the update
+        // and decoding it is slower too. Nothing but MQTT runs during the update
         PowerManagementLock cpuFrequencyMax("update:cpu", ESP_PM_CPU_FREQ_MAX);
         PowerManagementLockGuard fullSpeed(cpuFrequencyMax);
         PowerManagementLock noLightSleep("update:awake", ESP_PM_NO_LIGHT_SLEEP);
@@ -146,7 +146,7 @@ private:
         // unreachable broker should not block the update.
         if (network.mqttReady != nullptr) {
             LOGTD(UPDATE, "Waiting for MQTT...");
-            if (!network.mqttReady->awaitSet(15s)) {
+            if (!network.mqttReady->awaitSet(overModem ? MODEM_MQTT_READY_TIMEOUT : MQTT_READY_TIMEOUT)) {
                 LOGTW(UPDATE, "MQTT not ready, updating without it");
             }
         }
@@ -393,6 +393,10 @@ private:
     static constexpr std::chrono::milliseconds NETWORK_READY_TIMEOUT = std::chrono::seconds(15);
     // Registering on a cell can take minutes, especially from a cold start
     static constexpr std::chrono::milliseconds MODEM_NETWORK_READY_TIMEOUT = std::chrono::minutes(5);
+    static constexpr std::chrono::milliseconds MQTT_READY_TIMEOUT = std::chrono::seconds(15);
+    // MQTT over LTE-M connected about 5 s after the network was ready on MK14, TLS handshake
+    // included; give poor coverage, and NB-IoT's slower round trips, room on top
+    static constexpr std::chrono::milliseconds MODEM_MQTT_READY_TIMEOUT = std::chrono::seconds(60);
     // The same as MQTT's network timeout over the modem
     static constexpr std::chrono::milliseconds MODEM_HTTP_TIMEOUT = std::chrono::seconds(30);
     // About 30 s at NB-IoT rates; each range costs a round trip more

@@ -25,6 +25,15 @@ using UrcHandler = std::function<void(std::string_view line)>;
 using SocketEventHandler = std::function<void(const SocketEvent& event)>;
 
 /**
+ * @brief Identifies a connection opened with CellularModuleDriver::openSocket().
+ *
+ * Assigned by the driver and never reused, unlike the modem's own socket handles: a handle freed
+ * by a modem restart can come back for another connection, which a late close of the old one
+ * mustn't take down.
+ */
+using SocketId = uint32_t;
+
+/**
  * @brief What one read from the modem's socket returned.
  */
 struct SocketReceive {
@@ -117,13 +126,11 @@ public:
      * @brief Tells the network that no more data is expected, so it releases the RRC connection
      * now instead of when its inactivity timer runs out (release assistance).
      *
-     * @return false if there is no connection to say it on, or the modem refused
+     * @return false if the connection isn't open, another one is (whose data may still be on its
+     * way), or the modem refused
      */
-    virtual bool releaseRrc() = 0;
+    virtual bool releaseRrc(SocketId socket) = 0;
 
-    /**
-     * @brief The IP address of the default PDP context, if the network has assigned one.
-     */
     virtual std::optional<std::string> queryIpAddress() = 0;
 
     /**
@@ -139,22 +146,29 @@ public:
     virtual std::optional<time_t> queryNtpTime(const std::string& server) = 0;
 
     /**
-     * @brief Opens the TCP connection, waiting until it is either established or has failed.
+     * @brief Opens a TCP connection, waiting until it is either established or has failed.
      *
-     * One connection at a time: the one MQTT runs over, or the firmware download. Received data
-     * stays in the modem until read with receive(); a SocketEventType::DataAvailable event says
-     * when there is some.
+     * Several can be open at once: MQTT keeps its connection while a firmware update downloads.
+     * Received data stays in the modem until read with receive(); a SocketEventType::DataAvailable
+     * event says when there is some.
      *
      * @param host an IP address or a hostname, which the modem resolves itself
+     * @param handler called with this connection's events, from the UART's reader task: it must
+     * not send commands to the modem. Called from the start, as data can arrive as soon as the
+     * connection is up; never again once closeSocket() returns
+     * @return the connection, or nullopt if it couldn't be opened
      */
-    virtual bool openSocket(const std::string& host, int port) = 0;
+    virtual std::optional<SocketId> openSocket(const std::string& host, int port, SocketEventHandler handler) = 0;
 
-    virtual void closeSocket() = 0;
+    /**
+     * @brief Closes the connection; does nothing if the modem has dropped it already.
+     */
+    virtual void closeSocket(SocketId socket) = 0;
 
     /**
      * @brief Sends at most getMaxSendSize() bytes.
      */
-    virtual bool send(const uint8_t* data, size_t length) = 0;
+    virtual bool send(SocketId socket, const uint8_t* data, size_t length) = 0;
 
     virtual size_t getMaxSendSize() const = 0;
 
@@ -163,7 +177,7 @@ public:
      *
      * @return how much was read, 0 if nothing was waiting; nullopt if the modem failed to answer
      */
-    virtual std::optional<SocketReceive> receive(uint8_t* buffer, size_t length) = 0;
+    virtual std::optional<SocketReceive> receive(SocketId socket, uint8_t* buffer, size_t length) = 0;
 
     virtual size_t getMaxReceiveSize() const = 0;
 
@@ -172,13 +186,6 @@ public:
      * and framing or parity errors.
      */
     virtual uint32_t getUartErrorCount() const = 0;
-
-    /**
-     * @brief Registers the handler for socket events (data waiting, connection closed).
-     *
-     * Called from the UART's reader task: the handler must not send commands to the modem.
-     */
-    virtual void onSocketEvent(SocketEventHandler handler) = 0;
 };
 
 }    // namespace cornucopia::ugly_duckling::kernel::drivers::cellular

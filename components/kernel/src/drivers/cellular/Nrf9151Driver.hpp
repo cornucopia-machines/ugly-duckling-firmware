@@ -144,15 +144,24 @@ public:
         return findDecoded(command("AT+CSCON?", DEFAULT_TIMEOUT), parseCsconRead);
     }
 
-    bool releaseRrc() override {
+    bool releaseRrc(SocketId socket) override {
         std::scoped_lock lock(commandMutex);
         recoverIfRestarted();
-        int handle = socketHandle.load();
-        if (handle == NO_SOCKET) {
+        std::optional<int> handle;
+        {
+            std::scoped_lock socketLock(socketMutex);
+            // The release ends the RRC connection for every socket, and another one may still be
+            // waiting for data (MQTT while a firmware update downloads, or the other way round)
+            if (sockets.size() != 1) {
+                return false;
+            }
+            handle = findHandleLocked(socket);
+        }
+        if (!handle) {
             return false;
         }
         // RAI_NO_DATA: nothing more to send, so the modem can leave connected mode right away
-        auto response = at("AT#XSOCKETOPT=" + std::to_string(handle) + ",1,61,1", DEFAULT_TIMEOUT);
+        auto response = at("AT#XSOCKETOPT=" + std::to_string(*handle) + ",1,61,1", DEFAULT_TIMEOUT);
         if (!response.ok()) {
             LOGTD(CELLULAR, "Release assistance failed: %s %s", toString(response.result), response.error.c_str());
         }
@@ -215,19 +224,22 @@ public:
         return time;
     }
 
-    bool openSocket(const std::string& host, int port) override {
+    std::optional<SocketId> openSocket(const std::string& host, int port, SocketEventHandler handler) override {
         std::scoped_lock lock(commandMutex);
         recoverIfRestarted();
-        // A connection left over from before (a reconnect after an error)
-        closeSocketLocked();
         auto open = at("AT#XSOCKET=1,1,0", DEFAULT_TIMEOUT);
         auto handle = open.ok() ? findDecoded(open, parseXsocket) : std::nullopt;
         if (!handle) {
             LOGTW(CELLULAR, "Could not open a socket: %s %s", toString(open.result), open.error.c_str());
-            return false;
+            return std::nullopt;
         }
         // Announcements can come as soon as it connects
-        socketHandle = *handle;
+        SocketId socket;
+        {
+            std::scoped_lock socketLock(socketMutex);
+            socket = nextSocketId++;
+            sockets.push_back(OpenSocket { .id = socket, .handle = *handle, .handler = std::move(handler) });
+        }
         auto connect = "AT#XCONNECT=" + std::to_string(*handle) + ",\"" + host + "\"," + std::to_string(port);
         auto response = at(connect, CONNECT_TIMEOUT);
         bool connected = response.ok() && std::ranges::any_of(response.lines, [&](const std::string& line) {
@@ -236,28 +248,28 @@ public:
         if (!connected) {
             LOGTW(CELLULAR, "Could not connect to %s:%d: %s %s", host.c_str(), port, toString(response.result),
                 response.lines.empty() ? response.error.c_str() : response.lines.front().c_str());
-            closeSocketLocked();
-            return false;
+            closeSocketLocked(socket);
+            return std::nullopt;
         }
-        LOGTD(CELLULAR, "Connected to %s:%d", host.c_str(), port);
-        return true;
+        LOGTD(CELLULAR, "Connected to %s:%d on socket %d", host.c_str(), port, *handle);
+        return socket;
     }
 
-    void closeSocket() override {
+    void closeSocket(SocketId socket) override {
         std::scoped_lock lock(commandMutex);
-        closeSocketLocked();
+        closeSocketLocked(socket);
     }
 
-    bool send(const uint8_t* data, size_t length) override {
+    bool send(SocketId socket, const uint8_t* data, size_t length) override {
         std::scoped_lock lock(commandMutex);
         recoverIfRestarted();
-        int handle = socketHandle.load();
-        if (handle == NO_SOCKET) {
+        auto handle = findHandle(socket);
+        if (!handle) {
             return false;
         }
-        auto response = at("AT#XSEND=" + std::to_string(handle) + ",1,0,\"" + toHex(data, length) + "\"", SEND_TIMEOUT);
+        auto response = at("AT#XSEND=" + std::to_string(*handle) + ",1,0,\"" + toHex(data, length) + "\"", SEND_TIMEOUT);
         auto sent = response.ok() ? findDecoded(response, [&](std::string_view line) {
-            return parseXsend(line, "#XSEND:", handle);
+            return parseXsend(line, "#XSEND:", *handle);
         })
                                   : std::nullopt;
         if (sent != length) {
@@ -273,13 +285,15 @@ public:
         return 1400;
     }
 
-    std::optional<SocketReceive> receive(uint8_t* buffer, size_t length) override {
+    std::optional<SocketReceive> receive(SocketId socket, uint8_t* buffer, size_t length) override {
         std::scoped_lock lock(commandMutex);
         recoverIfRestarted();
-        int handle = socketHandle.load();
-        if (handle == NO_SOCKET) {
+        auto found = findHandle(socket);
+        if (!found) {
+            // Gone with a modem restart
             return SocketReceive { .length = 0, .more = false, .closed = true };
         }
+        int handle = *found;
         length = std::min(length, getMaxReceiveSize());
         // Hex string mode, non-blocking (flag 64)
         auto read = "AT#XRECV=" + std::to_string(handle) + ",1,64,0," + std::to_string(length);
@@ -317,11 +331,6 @@ public:
 
     uint32_t getUartErrorCount() const override {
         return channel->getErrorCount();
-    }
-
-    void onSocketEvent(SocketEventHandler handler) override {
-        std::scoped_lock lock(handlerMutex);
-        socketEventHandler = std::move(handler);
     }
 
 private:
@@ -389,9 +398,10 @@ private:
         for (const char* setting : SETTINGS) {
             success = apply(setting) && success;
         }
-        // Sockets left open by an earlier boot; there's only ever ours
+        // Sockets left open by an earlier boot, or by this one before the modem restarted: all of
+        // them are ours
         at("AT#XCLOSE", DEFAULT_TIMEOUT);
-        socketHandle = NO_SOCKET;
+        dropAllSockets();
 
         // Before the radio goes on: the system mode only changes with it off
         success = ensureSystemMode() && success;
@@ -463,12 +473,42 @@ private:
         return cell;
     }
 
-    void closeSocketLocked() {
-        int handle = socketHandle.exchange(NO_SOCKET);
-        if (handle != NO_SOCKET) {
-            // Answers ERROR when the modem has dropped the socket already, which is fine
-            at("AT#XCLOSE=" + std::to_string(handle), DEFAULT_TIMEOUT);
+    void closeSocketLocked(SocketId socket) {
+        std::optional<int> handle;
+        {
+            std::scoped_lock socketLock(socketMutex);
+            auto it = std::ranges::find(sockets, socket, &OpenSocket::id);
+            if (it != sockets.end()) {
+                handle = it->handle;
+                sockets.erase(it);
+            }
         }
+        if (handle) {
+            // Answers ERROR when the modem has dropped the socket already, which is fine
+            at("AT#XCLOSE=" + std::to_string(*handle), DEFAULT_TIMEOUT);
+        }
+    }
+
+    std::optional<int> findHandle(SocketId socket) {
+        std::scoped_lock socketLock(socketMutex);
+        return findHandleLocked(socket);
+    }
+
+    std::optional<int> findHandleLocked(SocketId socket) const {
+        auto it = std::ranges::find(sockets, socket, &OpenSocket::id);
+        return it != sockets.end() ? std::optional<int>(it->handle) : std::nullopt;
+    }
+
+    /**
+     * @brief Forgets every open socket, and tells each that it's closed: the modem restarted, or
+     * was told to close them all.
+     */
+    void dropAllSockets() {
+        std::scoped_lock socketLock(socketMutex);
+        for (const auto& open : sockets) {
+            open.handler(SocketEvent { .type = SocketEventType::Closed });
+        }
+        sockets.clear();
     }
 
     Nrf9151Driver(const CellularModemPins& pins, std::unique_ptr<AtChannel> channel, std::vector<Rat> rats)
@@ -756,17 +796,20 @@ private:
             if (started) {
                 LOGTW(CELLULAR, "%s restarted", getName());
                 restarted = true;
-                notifySocket(SocketEventType::Closed);
+                dropAllSockets();
             }
             return;
         }
         if (auto poll = parseXapoll(line)) {
-            if (poll->handle == socketHandle.load()) {
+            // Announcements for sockets that aren't ours (NTP's UDP socket) or not anymore are dropped
+            std::scoped_lock socketLock(socketMutex);
+            auto it = std::ranges::find(sockets, poll->handle, &OpenSocket::handle);
+            if (it != sockets.end()) {
                 if (poll->readable()) {
-                    notifySocket(SocketEventType::DataAvailable);
+                    it->handler(SocketEvent { .type = SocketEventType::DataAvailable });
                 }
                 if (poll->closed()) {
-                    notifySocket(SocketEventType::Closed);
+                    it->handler(SocketEvent { .type = SocketEventType::Closed });
                 }
             }
             return;
@@ -774,13 +817,6 @@ private:
         std::scoped_lock lock(handlerMutex);
         if (urcHandler) {
             urcHandler(line);
-        }
-    }
-
-    void notifySocket(SocketEventType type) {
-        std::scoped_lock lock(handlerMutex);
-        if (socketEventHandler) {
-            socketEventHandler(SocketEvent { .type = type });
         }
     }
 
@@ -862,7 +898,7 @@ private:
         if (!restartSeen) {
             LOGTW(CELLULAR, "%s did not say Ready after the reset", getName());
         }
-        socketHandle = NO_SOCKET;
+        dropAllSockets();
     }
 
     /**
@@ -895,10 +931,7 @@ private:
             LOGTD(CELLULAR, "%s answers again", getName());
             return;
         }
-        if (started) {
-            notifySocket(SocketEventType::Closed);
-        }
-        socketHandle = NO_SOCKET;
+        dropAllSockets();
         if (rate == DEFAULT_BAUD_RATE) {
             LOGTW(CELLULAR, "%s restarted (it's back at %d baud)", getName(), DEFAULT_BAUD_RATE);
         } else if (mayReset()) {
@@ -1103,8 +1136,6 @@ private:
     static constexpr milliseconds DTR_MIN_OFF_TIME = 10ms;
     static constexpr milliseconds RING_STUCK_POLL_INTERVAL = 10s;
 
-    static constexpr int NO_SOCKET = -1;
-
     const CellularModemPins pins;
     const std::unique_ptr<AtChannel> channel;
     const std::vector<Rat> rats;
@@ -1124,12 +1155,23 @@ private:
     std::atomic<bool> started { false };
     std::atomic<bool> restarted { false };
     std::atomic<bool> restartSeen { false };
-    std::atomic<int> socketHandle { NO_SOCKET };
 
-    // Guards the URC and socket event handlers
+    struct OpenSocket {
+        SocketId id;
+        // The modem's handle
+        int handle;
+        SocketEventHandler handler;
+    };
+
+    // Guards the open sockets, which the reader task looks up announcements in. Taken after
+    // commandMutex, never before
+    std::mutex socketMutex;
+    std::vector<OpenSocket> sockets;
+    SocketId nextSocketId = 1;
+
+    // Guards the URC handler
     std::mutex handlerMutex;
     UrcHandler urcHandler;
-    SocketEventHandler socketEventHandler;
 
     // Guards the UART power state below
     std::mutex powerMutex;
