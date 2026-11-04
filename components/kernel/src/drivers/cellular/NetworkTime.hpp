@@ -139,11 +139,14 @@ inline std::optional<std::string> formatCclk(time_t utc) {
     }
     hh_mm_ss clock { time - midnight };
     std::array<char, 24> buffer {};
-    std::snprintf(buffer.data(), buffer.size(), "%02d/%02u/%02u,%02d:%02d:%02d+00",
+    int length = std::snprintf(buffer.data(), buffer.size(), "%02d/%02u/%02u,%02d:%02d:%02d+00",
         yearValue - 2000, static_cast<unsigned>(date.month()), static_cast<unsigned>(date.day()),
         static_cast<int>(clock.hours().count()), static_cast<int>(clock.minutes().count()),
         static_cast<int>(clock.seconds().count()));
-    return std::string(buffer.data());
+    if (length < 0 || static_cast<size_t>(length) >= buffer.size()) {
+        return std::nullopt;
+    }
+    return std::string(buffer.data(), static_cast<size_t>(length));
 }
 
 // An SNTP packet: 48 bytes, client and server alike (RFC 4330)
