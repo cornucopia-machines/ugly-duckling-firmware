@@ -205,7 +205,7 @@ static void startDevice(const std::shared_ptr<DeviceDefinition>& deviceDefinitio
 #endif
 
     // Over the modem, a pending firmware update runs before MQTT is even started: the modem has a
-    // single socket, and the download needs it (docs/specs/NB-IoT.md, stage 5). So there are no
+    // single socket, and the download needs it (docs/specs/abandoned/NB-IoT.md, stage 5). So there are no
     // MQTT logs during the update; its outcome is reported in BOOT and SYNC after the reboot. If
     // an update is pending, this doesn't return
     std::optional<RejectionCode> firmwareDownloadRejection;

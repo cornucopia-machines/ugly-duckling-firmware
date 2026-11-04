@@ -54,12 +54,6 @@ public:
         }
     }
 
-    std::optional<cellular::CellularModemPins> getCellularModemPins() const override {
-        // JNBIOT1 has TX and RX swapped on MK13 (ugly-duckling-hardware#93): the modem's
-        // MAIN_RXD is wired to RXD0 and its MAIN_TXD to TXD0, so route UART TX out of GPIO17
-        return cellular::CellularModemPins { .tx = RXD0, .rx = TXD0 };
-    }
-
     std::shared_ptr<BuzzerDriver> buzzer;
 
 protected:
@@ -111,9 +105,9 @@ protected:
     DEFINE_PIN(GPIO_NUM_12, DMINUS, "D-")
     DEFINE_PIN(GPIO_NUM_13, DPLUS, "D+")
 
-    // UART0: shared between the pogo-pin factory header (JPOGO1)
-    // and the NB-IoT modem connector (JNBIOT1). The console is on USB Serial/JTAG so the
-    // modem can have them; UD_UART0_CONSOLE builds move the console back here instead.
+    // UART0: shared between the pogo-pin factory header (JPOGO1) and the connector of the
+    // BC660K-GL Desert Lark (JNBIOT1). The firmware no longer drives that modem, so MK13 is WiFi
+    // only. The console is on USB Serial/JTAG; UD_UART0_CONSOLE builds move it back here.
     DEFINE_PIN(GPIO_NUM_16, TXD0)
     DEFINE_PIN(GPIO_NUM_17, RXD0)
 

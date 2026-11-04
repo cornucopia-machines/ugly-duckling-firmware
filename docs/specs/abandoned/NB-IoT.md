@@ -1,5 +1,14 @@
 # NB-IoT connectivity (Desert Lark)
 
+> **Abandoned: superseded by the Desert Lark MK2 work.** This spec covers the cellular link on
+> the Quectel BC660K-GL (Desert Lark MK1, MK13 boards), whose driver has since been removed: MK13
+> is WiFi only now. MK14 uses Desert Lark MK2, an nRF9151 with Serial Modem (LTE-M and NB-IoT);
+> see [`../Desert-Lark-MK2.md`](../Desert-Lark-MK2.md) for that work and
+> [`../../Connectivity.md`](../../Connectivity.md) for how the link works now. The layers above the
+> module driver (MQTT over the AT socket transport, OTA, time) carried over, and the measurements
+> and reasoning here (keepalive, NAT, RRC tail, power budget) still apply; the BC660K-specific
+> parts (hex `QI*` sockets, push mode, RX-edge wakes, the dual-rate probe) are history.
+
 ## Summary
 
 Add NB-IoT as an alternative to WiFi, using the Quectel BC660K-GL on the Desert Lark daughter

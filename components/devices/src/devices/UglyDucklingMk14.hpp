@@ -55,9 +55,17 @@ public:
     }
 
     std::optional<cellular::CellularModemPins> getCellularModemPins() const override {
-        // JMODEM1 is wired straight (the MK13 TX/RX swap is fixed): GPIO16 (U0TXD) drives the
-        // modem's RX, GPIO17 (U0RXD) listens to its TX
-        return cellular::CellularModemPins { .tx = TXD0, .rx = RXD0 };
+        // JMODEM1 takes Desert Lark MK2 (nRF9151). It's wired straight (the MK13 TX/RX swap is
+        // fixed): GPIO16 (U0TXD) drives the modem's RX, GPIO17 (U0RXD) listens to its TX
+        return cellular::CellularModemPins {
+            .tx = TXD0,
+            .rx = RXD0,
+            .rts = MDM_CTS,
+            .cts = MDM_RTS,
+            .dtr = MDM_DTR,
+            .ri = MDM_RI,
+            .reset = MDM_RESET,
+        };
     }
 
     std::shared_ptr<BuzzerDriver> buzzer;

@@ -7,21 +7,19 @@
 #include <State.hpp>
 #include <Task.hpp>
 #include <drivers/cellular/AtSocketTransport.hpp>
-#include <drivers/cellular/Bc660KDriver.hpp>
 #include <drivers/cellular/CellularConfig.hpp>
 #include <drivers/cellular/CellularModemPins.hpp>
 #include <drivers/cellular/CellularModuleDriver.hpp>
 #include <drivers/cellular/Cereg.hpp>
 #include <drivers/cellular/Edrx.hpp>
-#include <drivers/cellular/EspModem.hpp>
 #include <drivers/cellular/NetworkTime.hpp>
+#include <drivers/cellular/Nrf9151Driver.hpp>
 #include <drivers/cellular/RadioStatus.hpp>
+#include <drivers/cellular/Rat.hpp>
 
 #include <ArduinoJson.h>
-#include <driver/uart_wakeup.h>
-#include <esp_sleep.h>
+#include <driver/uart.h>
 #include <sdkconfig.h>
-#include <soc/uart_pins.h>
 
 #include <algorithm>
 #include <atomic>
@@ -36,6 +34,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 using namespace std::chrono_literals;
 
@@ -57,8 +56,8 @@ struct CellularStatus {
 };
 
 /**
- * @brief Owns the cellular modem: its UART, bring-up, registration, network time, and the socket
- * transport MQTT runs over (docs/specs/NB-IoT.md).
+ * @brief Owns the cellular modem: its bring-up, registration, network time, and the socket
+ * transport MQTT runs over (docs/Connectivity.md, "Cellular").
  *
  * Reports the network the same way WiFiDriver does, through the networkConnecting and
  * networkReady states, so nothing downstream needs to know which link is in use. Everything
@@ -69,7 +68,7 @@ struct CellularStatus {
  */
 class CellularDriver {
 public:
-    // Called with UTC time from the network (NITZ) or the module's NTP client, and which it was
+    // Called with UTC time from the network (NITZ) or NTP, and which it was
     using TimeHandler = std::function<void(time_t utcTime, const char* source)>;
 
     CellularDriver(
@@ -80,12 +79,11 @@ public:
         const State& rtcInSync,
         std::string ntpServer,
         TimeHandler onNetworkTime,
-        bool allowModuleSleep,
-        bool pushSocketData)
+        bool allowModuleSleep)
         : pins(pins)
+        , rats(parseRats(config->rats.get()))
         , edrxCycle(toEdrxCycle(config->edrxCycle.get()))
         , allowModuleSleep(allowModuleSleep)
-        , pushSocketData(pushSocketData)
         , networkConnecting(networkConnecting)
         , networkReady(networkReady)
         , rtcInSync(rtcInSync)
@@ -118,7 +116,7 @@ public:
 
     /**
      * @brief The link quality as of the last registration check, and the bytes sent and
-     * received over the modem since the last call (docs/specs/NB-IoT.md, "Link quality in
+     * received over the modem since the last call (docs/specs/abandoned/NB-IoT.md, "Link quality in
      * telemetry").
      */
     void populateTelemetry(JsonObject& json) {
@@ -126,6 +124,9 @@ public:
         if (cell) {
             json["cell"] = cell->cellId;
             json["band"] = cell->band;
+            if (cell->rat) {
+                json["rat"] = toConfigName(*cell->rat);
+            }
             auto set = [&](const char* name, std::optional<int> value) {
                 if (value) {
                     json[name] = *value;
@@ -146,9 +147,6 @@ public:
 private:
     /**
      * @brief Runs the modem; only returns when the modem is out of the picture.
-     *
-     * esp_modem itself aborts when it cannot set up the UART (we build without exceptions, which it
-     * would otherwise throw); that only happens with a broken board definition or out of memory.
      */
     Result<> run() {
         if (sharesPinsWithConsole(pins)) {
@@ -162,18 +160,13 @@ private:
         LOGTI(CELLULAR, "Starting modem on UART%d (TX GPIO %d, RX GPIO %d)",
             static_cast<int>(MODEM_UART), static_cast<int>(pins.tx->getGpio()), static_cast<int>(pins.rx->getGpio()));
 
-        auto dte = TRY(createDte(pins, pushSocketData));
-        TRY(enableUartWakeup());
-        // esp_modem's UART terminal warns about every UART_WAKEUP event, which it doesn't handle.
-        // Published, each warning is an uplink whose acknowledgement wakes us again
-        esp_log_level_set("uart_terminal", ESP_LOG_ERROR);
-        module = std::make_shared<Bc660KDriver>(dte, MODEM_UART, pushSocketData);
+        module = TRY(Nrf9151Driver::create(MODEM_UART, pins, rats));
         module->onUrc([this](std::string_view line) {
             handleUrc(line);
         });
 
         if (!module->start()) {
-            LOGTE(CELLULAR, "%s is not answering; is the daughter board connected?", module->getName());
+            LOGTE(CELLULAR, "%s is not answering; is Desert Lark connected?", module->getName());
             return {};
         }
         LOGTI(CELLULAR, "%s is answering", module->getName());
@@ -327,23 +320,17 @@ private:
 
     /**
      * @brief Logs how often the modem listens for paging, which bounds how long a command takes
-     * to arrive, when that changes: what the network made of the eDRX cycle we asked for, and the
-     * cell's own paging cycle, which applies without eDRX.
+     * to arrive, when that changes: what the network made of the eDRX cycle we asked for. Without
+     * eDRX, the cell's own paging cycle applies (1.28 to 10.24 s), which the modem doesn't report.
      *
      * Read on every registration check rather than once: the network grants eDRX with an attach
-     * or a tracking area update, which can still be in progress right after registering. The
-     * paging cycle can only be read while RRC idle.
+     * or a tracking area update, which can still be in progress right after registering.
      */
     void logPagingIfChanged() {
         auto edrx = module->queryEdrx();
         if (edrx && edrx != lastEdrx) {
             LOGTI(CELLULAR, "eDRX: %s", describe(*edrx).c_str());
             lastEdrx = edrx;
-        }
-        auto cycle = module->queryIdlePagingCycle();
-        if (cycle && cycle != lastIdlePagingCycle) {
-            LOGTI(CELLULAR, "Paging cycle while idle: %lld ms", static_cast<long long>(cycle->count()));
-            lastIdlePagingCycle = cycle;
         }
     }
 
@@ -427,65 +414,15 @@ private:
         }
     }
 
-    static Result<std::shared_ptr<esp_modem::DTE>> createDte(const CellularModemPins& pins, bool pushSocketData) {
-        esp_modem_dte_config_t config = ESP_MODEM_DTE_DEFAULT_CONFIG();
-        config.uart_config.port_num = MODEM_UART;
-        config.uart_config.tx_io_num = pins.tx->getGpio();
-        config.uart_config.rx_io_num = pins.rx->getGpio();
-        config.uart_config.rts_io_num = UART_PIN_NO_CHANGE;
-        config.uart_config.cts_io_num = UART_PIN_NO_CHANGE;
-        // The module's default; start() moves both sides to the fast rate (docs/specs/NB-IoT.md,
-        // "UART baud rate")
-        config.uart_config.baud_rate = 115200;
-        // Not the default PLL clock: before light sleep, IDF suspends every enabled UART and waits
-        // for it to sync its registers, which needs the UART's clock running. On the PLL that
-        // wait never ended, and the device froze the first time it went to sleep. XTAL is also
-        // what IDF recommends for peripherals while the CPU frequency scales. It doesn't stay on
-        // in light sleep: waking on RX edges needs no clock
-        config.uart_config.source_clk = UART_SCLK_XTAL;
-        // Room for a full AT+QIRD response: 512 bytes of data as 1024 hex digits, plus framing.
-        // With pushed data, also for a pushed segment (about 3 KB as hex) arriving during a command
-        config.dte_buffer_size = pushSocketData ? 8192 : 2048;
-        if (pushSocketData) {
-            // Pushed data waits here while flash writes hold up everything but the UART interrupt:
-            // several seconds' worth at NB-IoT rates, as hex
-            config.uart_config.rx_buffer_size = 16384;
-        }
-        auto dte = esp_modem::create_uart_dte(&config);
-        if (dte == nullptr) {
-            return failure("could not create UART terminal");
-        }
-        return dte;
-    }
-
-    /**
-     * @brief Wakes the ESP32 from light sleep when the modem starts sending.
-     *
-     * Counting RX edges is the only UART wake-up that works without the 40 MHz crystal running
-     * in light sleep, which would cost milliamps. It loses the first few bytes of whatever woke
-     * us, so handleUrc() treats a line it can't make sense of as "something happened" and looks
-     * for itself (docs/specs/NB-IoT.md, "Waking the ESP32 on UART edges"). While a command is in
-     * flight the ESP32 stays awake, so responses arrive intact.
-     */
-    static Result<> enableUartWakeup() {
-        uart_wakeup_cfg_t config {};
-        config.wakeup_mode = UART_WK_MODE_ACTIVE_THRESH;
-        // The fewest edges the hardware takes
-        config.rx_edge_threshold = 3;
-        ESP_TRY(uart_wakeup_setup(MODEM_UART, &config));
-        ESP_TRY(esp_sleep_enable_uart_wakeup(MODEM_UART));
-        return {};
-    }
-
-    // Runs on the UART's receive task, so it must not send commands to the module
+    // Runs on the UART's reader task, so it must not send commands to the modem
     void handleUrc(std::string_view line) {
         if (auto registration = parseCeregUrc(line)) {
             LOGTI(CELLULAR, "Network: %s", describe(*registration).c_str());
             networkChanged.overwrite(true);
             return;
         }
-        if (line.starts_with("+CTZEU:")) {
-            if (auto time = parseCtzeu(line)) {
+        if (line.starts_with("%XTIME:")) {
+            if (auto time = parseXtime(line)) {
                 // Worth knowing whether the operator sends it at all (cornucopia-app#507)
                 LOGTI(CELLULAR, "Network time (NITZ): %.*s", static_cast<int>(line.size()), line.data());
                 lastTimeSync = steady_clock::now();
@@ -506,27 +443,23 @@ private:
             LOGTI(CELLULAR, "eDRX changed by the network: %s", describe(*edrx).c_str());
             return;
         }
-        if (line.starts_with("+IP:")) {
-            // The PDP context got its address
-            LOGTD(CELLULAR, "URC: %.*s", static_cast<int>(line.size()), line.data());
-            networkChanged.overwrite(true);
+        if (line.starts_with("%MDMEV:")) {
+            // Network searches, and the modem's own trouble: a reset loop, a rejected SIM
+            LOGTI(CELLULAR, "Modem: %.*s", static_cast<int>(line.size()), line.data());
             return;
         }
-        // Most likely a URC that woke the ESP32 from light sleep and lost its first bytes, e.g.
-        // 'RC: "recv",0,40'. Whatever it was, look for what it could have been: socket data and a
-        // change in registration or RRC state. Verbose only: a published log record would bring
-        // the radio back to connected, and its acknowledgement could wake us the same way
-        LOGTV(CELLULAR, "Unrecognized line from the modem, checking for news: %.*s", static_cast<int>(line.size()), line.data());
-        transport.checkForData();
-        networkChanged.overwrite(true);
+        // Verbose only: a published log record is an uplink, and its acknowledgement brings the
+        // modem's UART back up
+        LOGTV(CELLULAR, "Unrecognized line from the modem: %.*s", static_cast<int>(line.size()), line.data());
     }
 
+    /**
+     * @brief Whether the console has the modem's UART: UD_UART0_CONSOLE builds put it back on
+     * UART0, which is the modem's, on the same pins.
+     */
     static bool sharesPinsWithConsole([[maybe_unused]] const CellularModemPins& pins) {
 #if defined(CONFIG_ESP_CONSOLE_UART) && CONFIG_ESP_CONSOLE_UART_NUM == 0
-        auto isConsolePin = [](const InternalPinPtr& pin) {
-            return pin->getGpio() == U0TXD_GPIO_NUM || pin->getGpio() == U0RXD_GPIO_NUM;
-        };
-        return isConsolePin(pins.tx) || isConsolePin(pins.rx);
+        return true;
 #else
         return false;
 #endif
@@ -540,15 +473,16 @@ private:
     static constexpr milliseconds NTP_RETRY_INTERVAL = 5min;
     static constexpr milliseconds TIME_RESYNC_INTERVAL = 24h;
 
-    // UART0 is the console's when UD_UART0_CONSOLE is set; UART1 works on any pin via the GPIO matrix
-    static constexpr uart_port_t MODEM_UART = UART_NUM_1;
+    // UART1 is the RS485 port's on MK14. UD_UART0_CONSOLE builds put the console on UART0, but
+    // then the modem doesn't start (see sharesPinsWithConsole())
+    static constexpr uart_port_t MODEM_UART = UART_NUM_0;
 
     const CellularModemPins pins;
+    const std::vector<Rat> rats;
     // nullopt for eDRX off
     const std::optional<milliseconds> edrxCycle;
     // False for a boot that downloads a firmware update (see CellularModuleDriver::configure())
     const bool allowModuleSleep;
-    const bool pushSocketData;
     StateSource& networkConnecting;
     StateSource& networkReady;
     const State& rtcInSync;
@@ -563,7 +497,6 @@ private:
     steady_clock::time_point networkReadySince;
     std::optional<steady_clock::time_point> lastNtpAttempt;
     std::optional<EdrxParameters> lastEdrx;
-    std::optional<milliseconds> lastIdlePagingCycle;
     // Set from the URC handler too
     std::atomic<steady_clock::time_point> lastTimeSync;
 

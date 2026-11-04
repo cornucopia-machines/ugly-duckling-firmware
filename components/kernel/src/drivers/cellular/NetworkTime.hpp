@@ -2,90 +2,94 @@
 
 #include <drivers/cellular/AtResponse.hpp>
 
-#include <charconv>
+#include <array>
 #include <chrono>
+#include <cstddef>
+#include <cstdint>
 #include <ctime>
 #include <optional>
-#include <string>
 #include <string_view>
 
 namespace cornucopia::ugly_duckling::kernel::drivers::cellular {
 
 /**
- * @brief Parses a modem timestamp, "YYYY/MM/DD,hh:mm:ss" or "YY/MM/DD,hh:mm:ss", with an optional
- * "±zz" time zone in quarters of an hour (the format of AT+CCLK).
+ * @brief Parses the network time (NITZ) from the %XTIME URC the modem sends with AT%XTIME=1:
+ * %XTIME: "<local_time_zone>","<universal_time>","<daylight_saving>", where <universal_time> is
+ * UTC as 7 semi-octets, each byte's digits swapped (3GPP TS 24.008, 10.5.3.9): "62113032748340"
+ * is 2026-11-03 23:47:38. The seventh byte is the time zone, which UTC doesn't need.
  *
- * With a time zone, the timestamp is taken as local time in that zone, as 3GPP TS 27.007 defines
- * it for +CCLK, and converted to UTC; without one it is taken as UTC.
+ * Returns nullopt when the URC comes without the time: the network doesn't have to send one.
  */
-inline std::optional<time_t> parseModemTimestamp(std::string_view text) {
+inline std::optional<time_t> parseXtime(std::string_view line) {
     using namespace std::chrono;
 
-    // strptime wants a NUL-terminated string
-    std::string input(text);
-    std::tm fields {};
-    const char* rest = strptime(input.c_str(), "%Y/%m/%d,%H:%M:%S", &fields);
-    if (rest == nullptr) {
+    auto fields = parseAtFields(line, "%XTIME:");
+    if (!fields || fields->size() < 2) {
         return std::nullopt;
     }
-    int fullYear = fields.tm_year + 1900;
-    if (fullYear < 100) {
-        // %Y takes the two-digit form at face value, as the year 26
-        fullYear += 2000;
-    }
-    year_month_day date { year(fullYear), month(static_cast<unsigned>(fields.tm_mon + 1)), day(static_cast<unsigned>(fields.tm_mday)) };
-    if (!date.ok()) {
+    auto text = (*fields)[1].asString();
+    if (!text || text->size() < 12) {
         return std::nullopt;
     }
-
-    // Whatever strptime left over can only be the time zone
-    minutes zoneOffset { 0 };
-    const char* end = input.c_str() + input.size();
-    if (rest != end) {
-        char sign = *rest;
-        int quarters = 0;
-        auto [ptr, ec] = std::from_chars(rest + 1, end, quarters);
-        if ((sign != '+' && sign != '-') || ec != std::errc {} || ptr != end || quarters > 96) {
+    std::array<int, 6> values {};
+    for (size_t i = 0; i < values.size(); i++) {
+        // The low digit comes first
+        char low = (*text)[i * 2];
+        char high = (*text)[(i * 2) + 1];
+        if (low < '0' || low > '9' || high < '0' || high > '9') {
             return std::nullopt;
         }
-        zoneOffset = minutes((sign == '-' ? -quarters : quarters) * 15);
+        values[i] = ((high - '0') * 10) + (low - '0');
     }
-
-    auto utc = sys_days(date) + hours(fields.tm_hour) + minutes(fields.tm_min) + seconds(fields.tm_sec) - zoneOffset;
+    auto [yy, mon, dd, hh, mm, ss] = values;
+    year_month_day date { year(2000 + yy), month(static_cast<unsigned>(mon)), day(static_cast<unsigned>(dd)) };
+    if (!date.ok() || hh > 23 || mm > 59 || ss > 60) {
+        return std::nullopt;
+    }
+    auto utc = sys_days(date) + hours(hh) + minutes(mm) + seconds(ss);
     return static_cast<time_t>(duration_cast<seconds>(utc.time_since_epoch()).count());
 }
 
+// An SNTP packet: 48 bytes, client and server alike (RFC 4330)
+inline constexpr size_t SNTP_PACKET_SIZE = 48;
+
 /**
- * @brief Parses the network time the module reports with AT+CTZR=3:
- * +CTZEU: <tz>,<dst>[,<utime>], where <utime> is "YYYY/MM/DD,hh:mm:ss" in UTC.
- *
- * Returns nullopt for a time zone report without the time: the network doesn't have to send one.
+ * @brief An SNTP client request: version 4, client mode, everything else zero.
  */
-inline std::optional<time_t> parseCtzeu(std::string_view line) {
-    auto fields = parseAtFields(line, "+CTZEU:");
-    if (!fields || fields->size() < 3) {
-        return std::nullopt;
-    }
-    auto utime = (*fields)[2].asString();
-    if (!utime) {
-        return std::nullopt;
-    }
-    return parseModemTimestamp(*utime);
+inline std::array<uint8_t, SNTP_PACKET_SIZE> makeSntpRequest() {
+    std::array<uint8_t, SNTP_PACKET_SIZE> packet {};
+    // LI 0, VN 4, mode 3 (client)
+    packet[0] = 0x23;
+    return packet;
 }
 
 /**
- * @brief Parses the "+QNTP: <result>,<time>" that follows AT+QNTP; nullopt unless the result is 0.
+ * @brief The server's transmit time from an SNTP reply, in UTC.
+ *
+ * @return nullopt for anything but a server reply with a time: the wrong mode or size, or a
+ * kiss-o'-death (stratum 0)
  */
-inline std::optional<time_t> parseQntp(std::string_view line) {
-    auto fields = parseAtFields(line, "+QNTP:");
-    if (!fields || fields->size() < 2 || (*fields)[0].asInt() != 0) {
+inline std::optional<time_t> parseSntpResponse(const uint8_t* packet, size_t length) {
+    if (length < SNTP_PACKET_SIZE) {
         return std::nullopt;
     }
-    auto time = (*fields)[1].asString();
-    if (!time) {
+    // Mode 4 (server); stratum 0 means kiss-o'-death, no time
+    if ((packet[0] & 0x07) != 4 || packet[1] == 0) {
         return std::nullopt;
     }
-    return parseModemTimestamp(*time);
+    uint32_t seconds = (static_cast<uint32_t>(packet[40]) << 24) | (static_cast<uint32_t>(packet[41]) << 16)
+        | (static_cast<uint32_t>(packet[42]) << 8) | static_cast<uint32_t>(packet[43]);
+    if (seconds == 0) {
+        return std::nullopt;
+    }
+    // NTP counts from 1900; era 1 starts in February 2036, so small values belong to it (RFC 4330,
+    // section 3)
+    static constexpr int64_t NTP_TO_UNIX = 2208988800LL;
+    int64_t ntpSeconds = seconds;
+    if (seconds < 0x80000000U) {
+        ntpSeconds += 0x100000000LL;
+    }
+    return static_cast<time_t>(ntpSeconds - NTP_TO_UNIX);
 }
 
 }    // namespace cornucopia::ugly_duckling::kernel::drivers::cellular

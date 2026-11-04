@@ -63,7 +63,7 @@ private:
         }
 #ifdef UD_PLATFORM_CARROT
         if (cellular != nullptr) {
-            status += ", NB-IoT: " + cellularStatus();
+            status += ", cellular: " + cellularStatus();
         }
 #endif
         status += ", RTC \033[33m" + std::string(RtcDriver::isTimeSet() ? "OK" : "UNSYNCED") + "\033[0m";
@@ -116,6 +116,9 @@ private:
         if (link.rrcConnected) {
             // The radio draws milliamps while connected and microamps while idle
             result += *link.rrcConnected ? " \033[0;33mCONN\033[0m" : " \033[0;32mIDLE\033[0m";
+        }
+        if (link.servingCell && link.servingCell->rat) {
+            result += std::string(" ") + drivers::cellular::toString(*link.servingCell->rat);
         }
         if (link.servingCell && link.servingCell->rsrp) {
             result += " RSRP \033[33m" + std::to_string(*link.servingCell->rsrp) + "\033[0m dBm";

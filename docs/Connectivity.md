@@ -3,16 +3,18 @@
 A device reaches the MQTT broker, and downloads firmware updates, over one of two links:
 
 - **WiFi**, on every board (Spinach and Carrot).
-- **NB-IoT**, through the Quectel BC660K-GL on the Desert Lark daughter board: Carrot builds on MK13
-  boards only.
+- **Cellular** (LTE-M or NB-IoT), through the Nordic nRF9151 on the Desert Lark MK2 daughter board:
+  Carrot builds on MK14 boards only.
 
 The link is chosen at boot from network-config, and only that link's driver is started. Both
 drivers report the same network states, so MQTT, telemetry and the rest of the firmware don't need
 to know which link is in use.
 
-This document describes how both links work today. The design history of the NB-IoT link, the
-bench measurements behind its numbers, and what's planned next are in
-[`specs/NB-IoT.md`](specs/NB-IoT.md).
+This document describes how both links work today. The decisions behind the cellular link, what
+was measured on Desert Lark MK2, and what's left are in [`specs/Desert-Lark-MK2.md`](specs/Desert-Lark-MK2.md).
+The cellular link started out on NB-IoT, with a Quectel BC660K-GL on Desert Lark MK1 (MK13 boards,
+now WiFi only); that work's design history and bench measurements are in
+[`specs/abandoned/NB-IoT.md`](specs/abandoned/NB-IoT.md).
 
 ## Overview
 
@@ -27,31 +29,31 @@ graph TB
         WIFI["WiFiDriver"]
     end
 
-    subgraph NB-IoT link
+    subgraph Cellular link
         TLS["TlsTransport (mbedTLS)"]
         SOCK["AtSocketTransport"]
         CELL["CellularDriver"]
-        BC["Bc660KDriver (esp_modem)"]
-        UART["UART1"]
+        NRF["Nrf9151Driver"]
+        CHAN["AtChannel (UART0, RTS/CTS)"]
     end
 
     MQTT --> ESPTLS --> LWIP --> WIFI
     OTA -->|https| ESPTLS
-    MQTT --> TLS --> SOCK --> BC --> UART
+    MQTT --> TLS --> SOCK --> NRF --> CHAN
     OTA -->|https| TLS
-    CELL -->|owns| BC
+    CELL -->|owns| NRF
 ```
 
 TLS follows the URL's scheme on both links: an `http://` firmware URL is fetched unencrypted, with
 no certificate check.
 
-| | WiFi | NB-IoT |
+| | WiFi | Cellular |
 | --- | --- | --- |
-| Platforms | Spinach, Carrot | Carrot, MK13 boards |
-| Driver | `WiFiDriver` | `CellularDriver`, `Bc660KDriver` |
+| Platforms | Spinach, Carrot | Carrot, MK14 boards |
+| Driver | `WiFiDriver` | `CellularDriver`, `Nrf9151Driver` |
 | IP stack | lwIP | The modem's own, through AT socket commands |
 | TLS | esp-tls | `TlsTransport`, mbedTLS over the AT socket |
-| Time | SNTP | NITZ from the network, NTP through the modem as a fallback |
+| Time | SNTP | NITZ from the network, SNTP over a modem socket as a fallback |
 | Telemetry section | `wifi` | `cellular` |
 
 ## Choosing the link
@@ -62,6 +64,7 @@ exactly one entry is supported:
 ```json
 "links": ["cellular"],
 "cellular": {
+  "rats": ["lte-m", "nb-iot"],
   "edrxCycle": 0
 }
 ```
@@ -72,14 +75,18 @@ exactly one entry is supported:
 | ------- | ---- | ------ |
 | missing or empty | WiFi | nothing, as every device did before the field existed |
 | `["wifi"]` | WiFi | |
-| `["cellular"]` on a device with a modem | NB-IoT | |
+| `["cellular"]` on a device with a modem | Cellular | |
 | `["cellular"]` on a device without one | WiFi | an error |
 | more than one entry, or an unknown one | WiFi | an error |
 
 A device has a modem only on Carrot builds (`UD_PLATFORM_CARROT`, set by CMake), and only on boards
 whose device definition returns modem pins (`DeviceDefinition::getCellularModemPins()`, which only
-MK13 overrides). The `cellular` section holds the modem settings and is only used on the NB-IoT
-link (see [Sleep](#sleep)).
+MK14 overrides). The `cellular` section holds the modem settings and is only used on the cellular
+link:
+
+- `rats`: the radio access technologies to use, in order of preference, `"lte-m"` and `"nb-iot"`.
+  Missing or empty means both, LTE-M first (see [Startup](#startup)).
+- `edrxCycle`: see [Sleep](#sleep).
 
 Changing the link reboots the device, like any other network-config change. Network-config also
 carries the device's client key, so every change to `links` comes with a freshly issued client
@@ -88,7 +95,7 @@ device without coverage to `cellular` leaves it unreachable until someone gets t
 
 `initConnectivity()` (`Connectivity.hpp`) starts the chosen link's driver, along with an `RtcDriver`
 set up for that link. The result is a `ConnectivityDrivers` struct. In it, the other link's driver
-is `nullptr`, and `modemTransport` holds the transport that MQTT and updates use over NB-IoT
+is `nullptr`, and `modemTransport` holds the transport that MQTT and updates use over cellular
 (`nullptr` on WiFi, meaning lwIP). The BOOT message reports the link in use as `connectivity`.
 
 ### Network states
@@ -96,7 +103,7 @@ is `nullptr`, and `modemTransport` holds the transport that MQTT and updates use
 Both drivers set the same two states in `ModuleStates`. `MqttDriver` waits for `networkReady`
 before every connection attempt.
 
-| State | WiFi | NB-IoT |
+| State | WiFi | Cellular |
 | ----- | ---- | ------ |
 | `networkConnecting` | Set while connecting | Set from modem start until registered with an IP address, and again when registration is lost |
 | `networkReady` | Set on `IP_EVENT_STA_GOT_IP`, cleared on disconnect or lost IP | Set once registered with an IP address, cleared when registration is lost |
@@ -153,168 +160,158 @@ Carrot is in `sdkconfig.carrot.defaults`:
 The `wifi` section has `rssi` (while connected) and `disconnects` (since the last telemetry
 message).
 
-## NB-IoT
+## Cellular
 
 ### Hardware
 
-The BC660K-GL sits on the Desert Lark daughter board. On MK13 its UART goes to GPIO17 (TX) and
-GPIO16 (RX), the pins UART0 would use; TX and RX are swapped on the board (hardware#93), hence
-the crossed assignment. The firmware runs it on UART1 through the GPIO matrix, clocked from the 40 MHz crystal. The
-console is on USB Serial/JTAG. A debug build with `-DUD_UART0_CONSOLE=1` puts the console back on
-UART0; the cellular driver then leaves the pins alone and the device runs offline.
+Desert Lark MK2 carries a Nordic nRF9151 (LTE-M and NB-IoT) running Nordic's
+[Serial Modem](https://github.com/nrfconnect/ncs-serial-modem) 2.0 firmware, with the nRF91M1's pin
+map: hardware flow control is always on, and the UART starts at 115200 baud on every boot. It
+plugs into MK14's JMODEM1 (`UglyDucklingMk14Rev1::getCellularModemPins()`):
 
-The modem's RI and PSM_EINT pins aren't wired, and MK13 can't reset the modem from firmware. Its
-`RESET_N` follows the ESP32's reset.
+| Signal | ESP32-C6 | Notes |
+| ------ | -------- | ----- |
+| TX → modem RX | GPIO16 | UART0 |
+| RX ← modem TX | GPIO17 | UART0 |
+| RTS → modem CTS | GPIO21 | |
+| CTS ← modem RTS | GPIO20 | Pulled up here, as Serial Modem asks of the host |
+| DTR# → modem | GPIO15 | Low keeps the modem's UART on; Desert Lark pulls it up |
+| RI# ← modem | GPIO3 | Low when the modem has something to say while its UART is off |
+| RESET# → modem nRESET | GPIO4 | Open-drain only: pulled low or released, never driven high, no pull-up |
+
+The modem runs on UART0 (UART1 is RS485's on MK14), clocked from the 40 MHz crystal. The console
+is on USB Serial/JTAG. A debug build with `-DUD_UART0_CONSOLE=1` puts the console back on UART0;
+the cellular driver then leaves the modem alone and the device runs offline.
+
+MK13's BC660K-GL Desert Lark is no longer supported: MK13 boards run on WiFi.
 
 ### Layers
 
 ```text
-CellularDriver              ← owns the UART, startup, registration, network states, time, telemetry
-  └─ CellularModuleDriver   ← chipset-specific AT: settings, sockets, URC parsing, NTP
-       └─ Bc660KDriver      ← esp_modem GenericModule subclass; Quectel QI*/QENG/QSCLK commands
-AtSocketTransport           ← esp_transport over the module's socket commands
+CellularDriver              ← startup, registration, network states, time, telemetry
+  └─ CellularModuleDriver   ← chipset-specific AT: settings, sockets, URCs, NTP
+       └─ Nrf9151Driver     ← Serial Modem's #X* commands, %XMONITOR, DTR/RI and reset
+            └─ AtChannel    ← UART with flow control: commands, responses, URC lines
+AtSocketTransport           ← esp_transport over the modem's socket commands
 TlsTransport                ← mbedTLS over any esp_transport
 ```
 
-[`esp_modem`](https://components.espressif.com/components/espressif/esp_modem) (command mode,
-PPP off) frames AT commands and matches their responses. `Bc660KDriver` parses responses and URCs
-itself (`AtResponse.hpp`, `AtSocket.hpp` and the other parsers next to them), and these parsers
-are unit-tested natively. Every command first wakes the module: `AT` repeatedly, up to 10 times,
-backing off from 100 ms to 1 s, since the first command after the module's sleep is lost.
+`AtChannel` owns the UART: a reader task splits what the modem sends into lines, and hands them to
+the command in flight, or, for lines that are URCs (`Nrf9151Driver::isUrc()`) and everything
+between commands, to the URC handler. A command that times out still gets answered eventually; the
+next command first waits for that late result, so it isn't taken for its own. The parsers
+(`AtResponse.hpp`, `AtSocket.hpp` and the others next to them) are unit-tested natively, against
+lines captured from the modem.
 
 ### Startup
 
 `CellularDriver` runs on its own `cellular` task:
 
-1. **Find the module** at 460800 baud, then at 115200. If it answers at 115200, switch it with
-   `AT+IPR` (saved in its NVRAM), confirm at the new rate, and go back if that fails.
-2. **Apply settings that may restart the module** first, since a restart loses the others:
-   - `AT+QCFG="wakeupRXD",1`, so UART activity wakes the module; then `AT+QRST=1`;
-   - `AT+QCFG="relversion",14` (Cat NB2), set at `AT+CFUN=0`; then `AT+QRST=1`;
-   - `AT+QCFG="MacRAI",1` (release assistance, see [Sockets](#sockets)), set at `AT+CFUN=0`; then
-     `AT+QRST=1`.
-3. **Apply settings sent on every boot**:
-   - `ATE0`, `AT+CMEE=2`;
-   - `AT+CEREG=3` (registration URCs with the reject cause);
-   - `AT+QNBIOTEVENT=1,1`, `AT+CSCON=1` (RRC state URCs);
-   - `AT+QSCLK=2` (module light sleep), or `AT+QSCLK=0` on an update boot.
-4. **Apply settings saved in NVRAM, written only when they differ**:
-   - `AT+CFUN=1`;
-   - `AT+QBAND=2,20,8` (EU bands);
-   - `AT+QICFG="dataformat",1,1` (socket data as hex), `"showlength",1`, `"viewmode",0`;
-   - `AT+CTZR=3` (network time in UTC).
+1. **Find the modem** at 921600 baud, then at 115200, retrying for a few seconds while it boots. An
+   ESP32 restart doesn't restart the modem, so it can still be on the fast rate. If it answers at
+   115200, switch it with `AT+IPR=921600` (not saved: it's back at 115200 after every modem boot).
+   If it doesn't answer at all, pulse nRESET and try again.
+2. **Apply settings sent on every boot** (Serial Modem keeps none of them):
+   - `AT+CMEE=1`;
+   - `AT+CEREG=5` (registration URCs with the reject cause and the PSM timers);
+   - `AT+CSCON=1` (RRC state URCs), `AT%MDMEV=1` (modem events, logged);
+   - `AT%XTIME=1` (network time), `AT#XAPOLL=,1,1` (socket announcements, see [Sockets](#sockets));
+   - `AT#XCLOSE`, for sockets an earlier boot left open.
+3. **Choose the RATs**: `AT%XSYSTEMMODE` from `cellular.rats` (`1,1,0,1` for both with LTE-M
+   first, GNSS off). The modem keeps it in flash; it's only written when it differs, with the radio
+   off (`AT+CFUN=4`), since a change costs a detach and a fresh network search.
+4. **Release assistance** on (`AT%RAI=1`), then the radio (`AT+CFUN=1`; Serial Modem starts at 0).
 5. **Power saving**: PSM off (`AT+CPSMS=0`), eDRX as configured (see [Sleep](#sleep)).
-6. **Log** the module identity, IMEI, SIM and IMSI, attach the module to the socket transport, and
-   start monitoring the network.
+6. **Log** the Serial Modem and modem firmware versions, IMEI, ICCID, IMSI and system mode, attach
+   the modem to the socket transport, and start monitoring the network.
 
-If the module doesn't answer, the driver logs an error and the device stays offline. It doesn't
-fall back to WiFi.
+If the modem restarts later (Serial Modem says `Ready`), or stops answering (3 commands in a row
+time out, at most once every 10 minutes it's then reset through nRESET), the next command runs
+steps 1–5 again, and an open socket is reported closed. If the modem doesn't answer at startup,
+the driver logs an error and the device stays offline. It doesn't fall back to WiFi.
 
 ### Registration
 
 The network monitor reads `AT+CEREG?` every 30 s while searching and every 5 minutes once the
-network is ready and the time is set. A `+CEREG` or `+IP` URC triggers a read straight away. Each
-check also reads:
+network is ready and the time is set. A `+CEREG` URC triggers a read straight away. Each check also
+reads:
 
-- the serving cell (`AT+QENG=0`: cell, band, EARFCN, PCI, RSRP, RSRQ, SINR, ECL);
+- the serving cell (`AT%XMONITOR`: RAT, operator, cell, band, EARFCN, PCI, RSRP, SNR; and once
+  camped `AT%CONEVAL`: RSRQ, coverage enhancement level, transmit power);
 - the RRC state (`AT+CSCON?`);
-- once registered, the eDRX grant and the paging cycle, logged when they change.
+- once registered, the eDRX grant (`AT+CEDRXRDP`), logged when it changes.
 
-While searching, it also logs `AT+QENG=3` and `AT+COPS?`.
+While searching, it also logs `AT+COPS?`. A refused registration shows in the `+CEREG` URC as an
+EMM cause, e.g. 15 (*no suitable cells in tracking area*) from a network that doesn't take the
+SIM on that RAT; the modem then tries elsewhere by itself.
 
-The network is ready once the module is registered (home or roaming) *and* PDP context 0 has an
-address (`AT+CGPADDR=0`). DNS comes from the network (`AT+QIDNSCFG`), with public servers as a
-fallback when it hands out none. Losing registration clears `networkReady` again.
+The network is ready once the modem is registered (home or roaming) *and* PDP context 0 has an
+address (`AT+CGPADDR=0`). The APN, DNS servers and MTU the network handed out are logged
+(`AT+CGCONTRDP=0`). Losing registration clears `networkReady` again.
 
 ### Sockets
 
-`AtSocketTransport` is an `esp_transport` over the module's TCP socket commands. Both esp-mqtt and
-the HTTP client accept it in place of lwIP. The module driver has a single connection (ID 0).
+`AtSocketTransport` is an `esp_transport` over the modem's TCP socket commands. Both esp-mqtt and
+the HTTP client accept it in place of lwIP. There's one connection at a time.
 
-- **Connecting**: `AT+QIOPEN` with the hostname directly. The module resolves it, and the open
-  can take up to 65 s.
-- **Sending**: `AT+QISEND=0,<len>,"<hex>"`, up to 1024 bytes per command, waiting for `SEND OK`.
-  `SEND FAIL` is retried 3 times, 1 s apart.
-- **Receiving**: depends on the access mode.
-  - **Buffer access mode** (normal boots): the module keeps received data in its 2168-byte buffer
-    and announces it with `+QIURC: "recv",0`. The transport reads it with `AT+QIRD=0,512` until a
-    read comes back empty: the module only announces new data once a read has found the buffer
-    empty. While data flows, and for 5 s after anything was sent or received, the transport also
-    polls every 50 ms, because the module's announcements come late then. Otherwise it reads
-    every 2 minutes in case an announcement was lost. Polling more often would keep the module
-    awake, since it stays awake for 10 s after UART activity.
-  - **Direct push mode** (update boots): the module sends every received segment straight away as
-    `+QIURC: "recv",0,<len>,"<hex>"`. The transport decodes it into a 16 KB queue, which reads
-    take from. There's no flow control: if the queue fills, a URC doesn't decode, or the UART has
-    had an error since connecting (it can cut a pushed URC so that it no longer parses as one),
-    the next read fails and the connection breaks.
+- **Connecting**: `AT#XSOCKET=1,1,0` (the handle it returns starts at 1), then
+  `AT#XCONNECT=<handle>,"<host>",<port>` with the hostname directly; the modem resolves it.
+- **Sending**: `AT#XSEND=<handle>,1,0,"<hex>"`, up to 1400 bytes per command.
+- **Receiving**: the modem keeps received data, and announces it with `#XAPOLL: <handle>,1`
+  (POLLIN). It announces again only once a read has found the socket drained, so the transport
+  reads with `AT#XRECV=<handle>,1,64,0,2048` (hex, non-blocking) until a read comes back empty
+  (`ERROR`, for EAGAIN). It also reads every 30 s without an announcement, in case one got lost.
+  The modem's TCP stack holds what we haven't read and throttles the peer, so nothing is lost
+  while the ESP32 is busy, e.g. writing flash during an update.
+- **Closing**: `#XAPOLL: <handle>,16` (POLLHUP) means the peer or the network closed it; a read
+  then answers a bare `OK` once everything has been read. We close with `AT#XCLOSE=<handle>`.
 - **Releasing the radio**: once an exchange ends with data received and nothing more for 5 s
-  (a PUBACK or PINGRESP answered what we sent), the transport sends `AT+CNMPSD`. With Release 14
-  MAC RAI on in the module and granted by the network, the network releases the RRC connection
-  straight away, instead of keeping it up (about 10 mA more than idle) until its inactivity timer
-  runs out. After a send, the transport leaves it to the network's timer, since an answer is
-  probably on its way. The first release of a boot checks `AT+QR14FEATURE` and logs whether the
-  network grants MAC RAI; without it, the transport stops asking. A wrong guess only costs a new
+  (a PUBACK or PINGRESP answered what we sent), the transport sends
+  `AT#XSOCKETOPT=<handle>,1,61,1` (`RAI_NO_DATA`), so the modem leaves RRC connected mode right
+  away instead of when the network's inactivity timer runs out. After a send, it's left to the
+  network's timer, since an answer is probably on its way. A wrong guess only costs a new
   connection.
-- **Closing**: `AT+QICLOSE`. `+QIURC: "closed"` means the peer or the network closed it; the module
-  can't tell which.
 
 Socket data is hex in both directions, so it travels as ordinary text lines through the same
-command and URC handling as everything else.
+command and URC handling as everything else. That doubles the bytes on the UART, which at 921600
+baud still leaves it faster than LTE-M.
 
-esp_modem keeps a line buffer that it only empties when a command returns. So `Bc660KDriver` takes
-data arriving outside a command chunk by chunk, and drops each chunk from that buffer once it has
-split it into lines (`AtLineAssembler`). A line cut off at the end of a chunk waits for the rest.
-URCs that arrive in the middle of a command's response, or after its final result code in the
-same read, go to the URC handler too. Outside commands, nothing else would ever empty the
-buffer: a stream of pushed URCs, about 3 KB each, would fill it within a few, and esp_modem then
-stops reading. Update boots raise the buffer from 2 KB to 8 KB, so that the pushed URCs arriving
-while a command waits for its response fit, and the UART driver's receive buffer to 16 KB.
-
-While a push socket is open, AT commands from outside the socket code (the network monitor) are
-held back, since their response could land in the middle of a pushed URC. They run in a pause
-before we send, but only if the peer has sent something since our last send: in HTTP/1.1 and TLS,
-we only send once the peer's whole reply has arrived, and the peer then waits for us. That's the
-case before each range request (see [Firmware updates](#firmware-updates)), but not, for example,
-for the request right after a TLS 1.3 handshake, when the server may still be sending session
-tickets.
-
-The transport logs a summary when each connection closes:
-
-- duration and bytes each way;
-- in buffer access mode, how the data was found (announced, by polling, or by the safety poll),
-  plus `buff full` URCs;
-- in push mode, the chunks pushed, the most bytes queued at once, and whether anything was lost;
-- UART errors.
+The transport logs a summary when each connection closes: duration, bytes each way, how much the
+safety poll found, data announcements and UART errors.
 
 ### Sleep
 
 The modem stays reachable for commands, so PSM is off. eDRX is configurable in network-config:
-`cellular.edrxCycle` is in milliseconds, one of the NB-IoT cycles from 20480 to 10485760. The
-default is 0, which turns eDRX off: on the bench, Telekom didn't grant eDRX to 1NCE's roaming
-SIM. Without eDRX
-the module listens every paging cycle the cell broadcasts (1.28–10.24 s), and light-sleeps in
-between (`AT+QSCLK=2`). What the network grants is logged.
+`cellular.edrxCycle` is in milliseconds, one of the eDRX cycles (on LTE-M 5120, 10240, 20480,
+40960, 61440, 81920 ms and up; on NB-IoT 20480, 40960, 81920 ms and up), and it's requested on each
+RAT that has it (`AT+CEDRXS=2,<4 or 5>,"<code>"`). The default is 0, which turns eDRX off
+(`AT+CEDRXS=0`): commands should arrive within seconds. Without eDRX the modem listens every
+paging cycle the cell broadcasts (1.28–10.24 s). What the network grants is logged; on the bench,
+One HU granted 81.92 s on LTE-M to an Onomondo SIM.
 
-The ESP32 light-sleeps too:
+Serial Modem turns its UART off while DTR is deasserted, which saves about 0.4–0.6 mA. So:
 
-- It holds a no-light-sleep lock only while a command is in flight.
-- It wakes on 3 RX edges on the UART (`UART_WK_MODE_ACTIVE_THRESH`), which needs no clock in
-  sleep, and loses the first bytes of whatever woke it.
-- Every URC has a query for the same state, so a line that doesn't parse means "something
-  happened": the transport checks for data, and the monitor re-reads the registration.
+- DTR is asserted, and the ESP32 held out of light sleep, while commands run and for 100 ms after
+  the last byte either way; then it's deasserted, and the ESP32 can sleep.
+- When the modem has something to say while its UART is off (an `#XAPOLL` for received data, a
+  `+CEREG`), it asserts RI. RI wakes the ESP32 from light sleep (a low-level GPIO wake-up, armed
+  once the modem is up, since RI floats while it boots), which asserts DTR. The modem releases RI
+  once its UART is up, and sends what it held back.
+- With flow control on both sides, nothing sent either way is lost to a sleeping UART.
+- RI that stays low for 2 s (a modem stuck in reset) is taken out of the wake-up sources until it
+  goes high again, so it doesn't keep the ESP32 awake.
 
-On update boots neither the module nor the ESP32 sleeps.
+On update boots DTR stays asserted, and the ESP32 awake, throughout.
 
 ### Telemetry and the debug console
 
 The `cellular` telemetry section has:
 
-- the serving cell's `cell`, `band`, `rsrp`, `rsrq`, `sinr` and `ecl`, as of the last registration
-  check;
+- the serving cell's `cell`, `rat` (`lte-m` or `nb-iot`), `band`, `rsrp`, `rsrq`, `sinr` and
+  `ecl`, as of the last registration check;
 - `bytes-sent` and `bytes-received` over the modem;
-- `rrc-releases`, how many times the network was asked to release the RRC connection after an
-  exchange (`AT+CNMPSD`, see below);
+- `rrc-releases`, how many times release assistance was sent after an exchange (see
+  [Sockets](#sockets));
 - `rrc-idle-ratio` and `rrc-connections`;
 - `rrc-longest-connected`, the longest RRC connection in seconds (one still open counts as far as
   it got);
@@ -324,9 +321,9 @@ The `cellular` telemetry section has:
 
 The byte and RRC counts cover the time since the last telemetry message.
 
-In `UD_DEBUG_CONSOLE` builds, the console shows an `NB-IoT:` line in place of `WIFI:`, with the
-registration state or IP address, `CONN`/`IDLE` for the RRC state, RSRP and ECL. It shows what
-the last registration check saw (`CellularDriver::getStatus()`), rather than sending commands.
+In `UD_DEBUG_CONSOLE` builds, the console shows a `cellular:` line in place of `WIFI:`, with the
+registration state or IP address, `CONN`/`IDLE` for the RRC state, the RAT, RSRP and ECL. It shows
+what the last registration check saw (`CellularDriver::getStatus()`), rather than sending commands.
 
 ## Time
 
@@ -338,13 +335,14 @@ Service (Carrot).
 - **WiFi**: SNTP. The client starts once the network is ready and lives for the lifetime of the
   device. It uses the DHCP lease's server, then `ntp.host` from network-config, then
   `pool.ntp.org`.
-- **NB-IoT**: NITZ, which the network sends with an attach as `+CTZEU` (UTC). If none came 30 s
-  after the network is ready, the driver asks `ntp.host` (or `pool.ntp.org`) through the module
-  (`AT+QNTP`), retrying every 5 minutes, then re-syncs once a day.
+- **Cellular**: NITZ, which the network sends with an attach, as `%XTIME` (UTC, in semi-octets).
+  If none came 30 s after the network is ready, the driver asks `ntp.host` (or `pool.ntp.org`)
+  with SNTP over a UDP socket of the modem's (`AT#XSENDTO`, `AT#XRECVFROM`), since Serial Modem
+  has no NTP command. It retries every 5 minutes, then re-syncs once a day.
 
 ## MQTT over each link
 
-`MqttDriver` uses esp-mqtt on both links. Over NB-IoT it gets the transport stack in
+`MqttDriver` uses esp-mqtt on both links. Over cellular it gets the transport stack in
 `config.network.transport`. esp-mqtt then ignores the URI's scheme, so the driver builds the stack
 to match it:
 
@@ -352,7 +350,7 @@ to match it:
 - `TlsTransport` on top, for `mqtts` and `wss`;
 - IDF's WebSocket transport on top of that, for `ws` and `wss`.
 
-| | WiFi | NB-IoT |
+| | WiFi | Cellular |
 | --- | --- | --- |
 | Transport | esp-mqtt's own, from the URI | The stack above |
 | TLS | esp-tls, verifying against `serverCert` | `TlsTransport`, verifying against `serverCert` (required), hostname checked |
@@ -373,8 +371,18 @@ connection is still coming up, waits in `MqttDriver`'s own queue, in order, unti
 make room. That queue doesn't expire, but holds at most another 16 KB; past that, new messages are
 dropped.
 
-Plain `mqtts` costs the least over NB-IoT: WebSocket adds an HTTP upgrade per connection and a few
+Plain `mqtts` costs the least over cellular: WebSocket adds an HTTP upgrade per connection and a few
 bytes per packet.
+
+**A broker behind Tailscale Funnel keeps the radio connected.** Funnel (in front of the
+`mosquitto-home` bench broker) accepts connections on Go servers, which send TCP keepalives: a probe
+after 15 s idle, then every 15 s. Each probe is a downlink packet that pages the modem and restarts
+the network's RRC inactivity timer, so the radio never goes RRC idle, even in a release build with
+no MQTT traffic. None of it shows in the byte counters. On the BC660K, moving to the staging broker
+(not behind Funnel) dropped the battery current from about 29 mA to 19 mA. So measure power,
+`rrc-idle-ratio` and the carrier's NAT idle timeout against a broker without TCP keepalives, and
+check any production endpoint for them too. Debug builds also keep the radio connected on any
+broker: they keep the ESP32 awake and publish their logs.
 
 ## Firmware updates
 
@@ -387,11 +395,11 @@ bytes per packet.
 The update boot holds the CPU at full speed and keeps the ESP32 out of light sleep. BLE isn't
 started.
 
-| | WiFi | NB-IoT |
+| | WiFi | Cellular |
 | --- | --- | --- |
 | MQTT during the download | Running; the update waits up to 15 s for it, so logs are published | Not started: the download needs the modem's single socket. Only the serial console has logs |
 | Waiting for the network | 15 s | 5 minutes |
-| Transport | lwIP, esp-tls | `AtSocketTransport` in direct push mode, `TlsTransport` on top for HTTPS |
+| Transport | lwIP, esp-tls | `AtSocketTransport`, `TlsTransport` on top for HTTPS |
 | Certificate check | CA bundle | CA bundle (`TlsTransport` without credentials) |
 | HTTP read timeout | HTTP client default | 30 s |
 | Range size | 256 KB | 64 KB, about 30 s each |
@@ -400,12 +408,12 @@ started.
 (`CONFIG_ESP_HTTPS_OTA_ENABLE_PARTIAL_DOWNLOAD`):
 
 1. `esp_https_ota` asks for the image size with a `HEAD` request, on a connection of its own.
-   Over NB-IoT, that's an extra TLS handshake of about 5 s, on every attempt.
+   Over NB-IoT, that's an extra TLS handshake of about 5 s, on every attempt; LTE-M is quicker.
 2. It requests one range at a time, on the same connection.
 
-Over NB-IoT, the pause before each request is when the commands held back by push mode run, for
-up to 5 s. WiFi needs no pauses, but takes the same path, so updates over WiFi on the bench
-exercise it. Progress is logged every 128 KB, against the image size.
+Ranges cost a request each, but a download that breaks off then picks up where it left off. WiFi
+takes the same path, so updates over WiFi on the bench exercise it. Progress is logged every
+128 KB, against the image size.
 
 **Resuming.** A download that breaks off is resumed in the same boot, after 2 s, from what made it
 to flash. A TLS record that lost data fails its MAC check and never reaches the image, so
@@ -414,7 +422,7 @@ error status is only final before anything has been written: once part of the im
 flash, an error on a later range counts as a broken-off download, and is retried like one. An
 image that's refused (not a valid image, not for this chip or flash mode, or too large for the
 partition) isn't downloaded again. Each
-attempt starts with its own `HEAD` request, so over NB-IoT a resume costs two TLS handshakes.
+attempt starts with its own `HEAD` request, so over cellular a resume costs two TLS handshakes.
 Across a reboot, a download starts over.
 
 The CA bundle is copied to internal RAM for the whole attempt (`RamCertBundle`, about 16 KB, a
@@ -424,41 +432,49 @@ watchdog is fed with every chunk received.
 
 ## Known gaps
 
-- **No fallback between links.** A device on NB-IoT whose modem doesn't answer stays offline, and a
-  link change is confirmed before MQTT has connected over the new link (stage 4 of the NB-IoT
-  spec).
+- **No fallback between links.** A device on cellular whose modem doesn't answer stays offline, and a
+  link change is confirmed before MQTT has connected over the new link (stage 4 of
+  [`specs/abandoned/NB-IoT.md`](specs/abandoned/NB-IoT.md)).
 - **`links` must be an array.** A plain string such as `"links": "cellular"` is ignored without an
   error, and the device uses WiFi.
 - **The hostname isn't applied** to the WiFi netif.
+- **No band lock.** The modem searches every band it supports, which can take minutes on a first
+  attach in a new area.
+- **Some downloads end early.** On the bench (Onomondo on One HU, LTE-M), 3 of 12 plain-HTTP
+  downloads of 64 KB ended 5672 bytes short, each time at the same offset, with a clean close
+  (`#XAPOLL` POLLHUP, then end of stream): the data never reached the modem's socket. Curl over
+  the wired network never truncated. The cause (server, operator or modem) is unknown. For
+  updates, TLS catches the gap and the download resumes (see [Firmware updates](#firmware-updates)).
+- **ESP32 light sleep on cellular is untested on MK14 hardware.** DTR gating and RI work (MK14's
+  first run, a debug build), but no release build has run yet, so the light-sleep wake-up on RI,
+  the battery current and RRC idle are still to be measured (see
+  [`specs/Desert-Lark-MK2.md`](specs/Desert-Lark-MK2.md#mk14)).
 - **SoftAP provisioning** is open, uses a fixed proof of possession, and has no timeout.
-- **On NB-IoT, BLE still advertises the WiFi provisioning service.** Writes to it are ignored.
+- **On cellular, BLE still advertises the WiFi provisioning service.** Writes to it are ignored.
 - **Clean sessions only**, so QoS 1 messages sent while the device was away are lost (#682).
-- **Updates over NB-IoT can't resume across a reboot**, and each costs about 2 MB of the SIM's data
-  budget. The planned replacement sends the image in chunks over MQTT
+- **Updates over cellular can't resume across a reboot**, and each costs about 2 MB of the SIM's
+  data budget. The planned replacement sends the image in chunks over MQTT
   ([cornucopia-app#535](https://github.com/cornucopia-machines/cornucopia-app/issues/535)).
 
 ## Alternatives not taken
 
-For the full reasoning, and measurements, see [`specs/NB-IoT.md`](specs/NB-IoT.md).
+For the reasoning behind the current design, see [`specs/Desert-Lark-MK2.md`](specs/Desert-Lark-MK2.md);
+for the NB-IoT era's, and its measurements, [`specs/abandoned/NB-IoT.md`](specs/abandoned/NB-IoT.md).
 
-- **PPP to the modem, with lwIP on top.** It would have made the modem look like any other netif,
-  but the BC660K-GL has no PPP.
-- **The modem's own MQTT client** (`AT+QMT*`), and TLS in the modem. They'd be a second MQTT stack
-  next to esp-mqtt, with its own QoS, reconnect and payload limits. The TLS endpoint would be the
-  modem firmware's. Over our own AT socket transport, the bytes on the wire are the same as over
-  WiFi, and certificates are handled the same way.
-- **esp_modem's `sock_dce` socket layer** (its `modem_tcp_client` example). It moves raw bytes,
-  waiting for a `>` prompt on send and taking binary data in the middle of a response, which a
-  line-based parser can't handle. Hex keeps socket data on ordinary lines.
-- **PSM instead of eDRX.** PSM sleeps deeper (0.8 µA vs 38 µA), but the device would be
-  unreachable for commands between its own wakes. The ESP32, not the modem, dominates the power
-  budget anyway.
-- **Waking the ESP32 on UART data instead of edges**, or with the modem's RI pin. Data wakes need
-  the 40 MHz crystal running in sleep (about 3.3 mA instead of 34 µA), and RI isn't wired. Losing
-  the first bytes of a wake costs nothing, since every URC can be re-read with a query.
-- **Buffer access mode for update downloads**, with faster polling or raw data instead of hex. The
-  module's buffer kept overflowing even with polling every 50 ms, because flash writes stall the
-  reads. The module drops data it has no room for instead of holding it back. Push mode moves the
-  buffering to the ESP32, where the UART interrupt keeps filling it from IRAM.
-- **Ranged downloads only over NB-IoT.** They'd save WiFi an extra request, but one path for both
-  links means updates over WiFi exercise what NB-IoT devices rely on.
+- **PPP to the modem, with lwIP on top** (Serial Modem has `AT#XPPP` and CMUX). It would make the
+  modem look like any other netif, but needs CMUX to keep AT commands for registration and status
+  alongside, and lwIP in cellular builds. The AT socket transport was already there.
+- **The modem's own MQTT client** (`AT#XMQTT*`), and TLS in the modem (`AT#XSSOCKET`). They'd be a
+  second MQTT stack next to esp-mqtt, with its own QoS, reconnect and payload limits, and
+  certificates stored in the modem. Over our own AT socket transport, the bytes on the wire are the
+  same as over WiFi, and certificates are handled the same way.
+- **Binary data mode** (`AT#XSEND=<handle>,2,...`, `#XRECV` in binary) instead of hex. Half the
+  bytes on the UART, but raw data in the middle of the line protocol; at 921600 baud the UART
+  isn't the bottleneck.
+- **Pushed data** (`AT#XRECVCFG`) instead of announcements and reads. With the modem buffering
+  and flow control on the UART, reading on demand loses nothing, and keeps commands and data apart.
+- **PSM instead of eDRX.** PSM sleeps deeper (about 2.7 µA vs 18–32 µA in eDRX), but the device
+  would be unreachable for commands between its own wakes. The ESP32, not the modem, dominates the
+  power budget anyway.
+- **Ranged downloads only over cellular.** They'd save WiFi an extra request, but one path for both
+  links means updates over WiFi exercise what cellular devices rely on.
