@@ -222,10 +222,14 @@ the power handling.
   announcements"), and no UART errors
 - [ ] The free internal RAM during an update over cellular, with both TLS sessions up
 - [ ] Modem reset through nRESET: pulse it from a debug build and watch the driver recover
-- [ ] A release build (`UD_DEBUG` off, `sleepWhenIdle` on): `pm.sleep-ratio`, battery current,
-  `rrc-idle-ratio` and `rrc-longest-connected`. Debug builds keep the ESP32 awake and publish logs,
-  so they never go RRC idle. Use a broker that isn't behind Tailscale Funnel: Funnel's TCP
-  keepalives page the modem every 15 s (see `abandoned/NB-IoT.md`, "Keepalive and session expiry")
+- [x] A release build (`UD_DEBUG` off, `sleepWhenIdle` on) sleeps: `pm.sleep-ratio` 98.18–98.28%
+  in three telemetry reports in a row (2026-11-04). The battery current reads 0 without solar
+  input: the BQ27220 can't resolve currents that small
+- [x] The same release build goes RRC idle, against `mqtt-staging` (not behind Tailscale Funnel,
+  whose TCP keepalives page the modem every 15 s; see `abandoned/NB-IoT.md`, "Keepalive and session
+  expiry"): `rrc-idle-ratio` 0.90–0.925 and `rrc-longest-connected` 10–12 s over the same three
+  reports. The latest report had 3 connections, 3 releases, no missed RRC changes and no MQTT
+  disconnects. Debug builds keep the ESP32 awake and publish logs, so they never go RRC idle
 - [ ] NB-IoT on MK14 (`"rats": ["nb-iot"]`)
 - [ ] Coverage at the sites, with the Desert Lark coverage logger
 
