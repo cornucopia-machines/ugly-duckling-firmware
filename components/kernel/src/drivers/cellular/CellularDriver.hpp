@@ -168,6 +168,7 @@ private:
         networkConnecting.set();
         LOGTI(CELLULAR, "Starting modem on UART%d (TX GPIO %d, RX GPIO %d)",
             static_cast<int>(MODEM_UART), static_cast<int>(pins.tx->getGpio()), static_cast<int>(pins.rx->getGpio()));
+        logConfig();
 
         module = TRY(Nrf9151Driver::create(MODEM_UART, pins, rats));
         module->onUrc([this](std::string_view line) {
@@ -345,6 +346,23 @@ private:
             }
         }
         return std::nullopt;
+    }
+
+    /**
+     * @brief Logs what network-config asks for, after parsing: unknown RAT names are dropped, and
+     * no known one means both.
+     */
+    void logConfig() {
+        std::string ratNames;
+        for (auto rat : rats) {
+            if (!ratNames.empty()) {
+                ratNames += ", ";
+            }
+            ratNames += toString(rat);
+        }
+        LOGTI(CELLULAR, "Configured RATs: %s%s; eDRX cycle: %s", ratNames.c_str(),
+            rats.size() > 1 ? " (in order of preference)" : "",
+            edrxCycle ? (std::to_string(edrxCycle->count()) + " ms").c_str() : "off");
     }
 
     void logNetworkDetails() {
