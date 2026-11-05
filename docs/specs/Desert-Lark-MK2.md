@@ -201,8 +201,9 @@ the power handling.
 - [x] `AT+IPR=921600` works and isn't saved
 - [x] `+CTZR` is unsupported; `%XTIME` gives NITZ in UTC
 - [x] 64 KB HTTP downloads over LTE-M (One HU) at about 115–125 kbit/s
-- [ ] 3 of 12 of those downloads ended 5672 bytes short, at the same offset, with a clean close.
-  The data never reached the modem's socket; cause unknown (see open questions)
+- [x] 3 of 12 of those downloads ended 5672 bytes short, at the same offset, with a clean close,
+  and the data never reached the modem's socket. Not seen again on MK14, where several firmware
+  updates over LTE-M went through without a failure
 
 ### MK14
 
@@ -213,15 +214,18 @@ the power handling.
 - [x] Commands and UPDATEs from the server arrive within about 2 s; valve overrides round-trip
 - [x] Two hours of telemetry every 5 minutes with no MQTT disconnects and no modem restarts
 - [x] DTR gating and RI wake-ups work: announcements and URCs arrive while the modem's UART is off
-- [ ] ICCID and IMSI logged at startup with the retry
-- [ ] Time from the modem's clock right after an ESP32 restart, and from NTP 10 s after network
-  ready on a cold boot without NITZ
+- [x] ICCID and IMSI logged at startup with the retry
+- [x] Time from the modem's clock right after an ESP32 restart: with the modem already holding
+  the time, the device boots in under a second (2026-11-05)
+- [ ] Time from NTP 10 s after network ready, on a cold boot without NITZ
 - [x] Firmware update over cellular, end to end, with MQTT connected during the download
   (2026-11-04, debug build, LTE-M): 2132 KB in 184 s, about 11.8 KB/s, and the new image booted.
-  The modem announced 2694 times; 95 KB (4%) came in through reads it hadn't announced (see "Lost
-  announcements"), and no UART errors
-- [ ] The free internal RAM during an update over cellular, with both TLS sessions up
-- [ ] Modem reset through nRESET: pulse it from a debug build and watch the driver recover
+  The modem announced 2694 times; 95 KB (4%) came in through reads it hadn't announced (#710),
+  and no UART errors
+- [x] The free internal RAM during an update over cellular, with both TLS sessions up: not a
+  concern, WiFi isn't loaded on a cellular update boot, which leaves plenty
+- [ ] Modem reset through nRESET: with the modem stuck (see "Reset through nRESET, rarely"),
+  watch the driver pulse it and recover
 - [x] A release build (`UD_DEBUG` off, `sleepWhenIdle` on) sleeps: `pm.sleep-ratio` 98.18–98.28%
   in three telemetry reports in a row (2026-11-04). The battery current reads 0 without solar
   input: the BQ27220 can't resolve currents that small
@@ -230,61 +234,25 @@ the power handling.
   expiry"): `rrc-idle-ratio` 0.90–0.925 and `rrc-longest-connected` 10–12 s over the same three
   reports. The latest report had 3 connections, 3 releases, no missed RRC changes and no MQTT
   disconnects. Debug builds keep the ESP32 awake and publish logs, so they never go RRC idle
-- [ ] NB-IoT on MK14 (`"rats": ["nb-iot"]`)
-- [ ] Coverage at the sites, with the Desert Lark coverage logger
+- [x] NB-IoT on MK14 (`"rats": ["nb-iot"]`): connects on Yettel HU with an Onomondo SIM
+  (2026-11-05). A 1NCE SIM in the same place stays at "searching", with no serving cell and no
+  band lock, while the same board and SIM on LTE-M register within a second on One HU (21670),
+  band 20, RSRP −102 dBm: most likely 1NCE has no NB-IoT roaming here
 
 ## Open questions
-
-### Truncated downloads
-
-On the bench, 3 of 12 plain-HTTP 64 KB downloads ended exactly 5672 bytes short, with `#XAPOLL`
-POLLHUP and a clean end of stream. Curl over the wired network never truncated. Server, operator
-NAT or modem? Updates survive it (TLS catches the gap and the download resumes from what reached
-flash), but it costs a TLS handshake each time. To narrow down: the same download over HTTPS, from
-another server, and on another operator.
-
-### Lost announcements
-
-The first update over cellular with MQTT connected (MK14, LTE-M) ran at about 2 KB/s. Every 30 s
-the safety poll found 2 KB that `#XAPOLL` never announced, so the download stalled for most of each
-30 s. That's about one stall per 32 KB, which looks like the modem's TCP window filling up.
-
-Serial Modem 2.0 (`app/src/sm_at_socket.c`) doesn't announce a socket event that comes while
-its AT host is busy, meaning running a command or within its idle timer after one. It saves the
-event, and once the host is idle it re-registers the socket's one-shot poll callback "to see which
-ones are still valid" instead of announcing it. With the download and MQTT (debug logs on every
-line) sending commands back to back, the host is rarely idle. Most likely the re-registered
-callback doesn't fire for data that's already waiting, and with the window full nothing new
-arrives to fire it. The single-socket bench downloads had far less command traffic.
-
-The download transport now reads every 250 ms for as long as data flowed in the last 10 s,
-announced or not. The UART is on throughout an update, so the reads cost nothing. With that, the
-same download ran at 11–14 KB/s (128 KB every 9–12 s), close to the 115–125 kbit/s of the bench
-downloads; the whole 2132 KB image took 184 s, with 4% of it found without an announcement. MQTT keeps relying on announcements and the 30 s safety poll. To confirm the cause: count the bytes "found
-without an announcement" in the download's closing log line, and see whether they drop with
-`publishLogs` at `Info`.
-
-### Slow sends during cell changes
-
-On the first MK14 run, an `AT#XSEND` of 75 bytes took 12 s, while the modem hopped between three
-cells at marginal coverage (TX power at its 20 dBm maximum). Nothing broke, and the broker
-redelivered a few QoS 1 messages, which were ignored as duplicates. Worth watching: a send that
-blocks that long holds the command mutex, and everything else on the modem waits.
-
-### Band lock
-
-The modem searches every band it supports. A first attach in a new area can take over a minute
-(`%MDMEV: SEARCH STATUS 1`, then a full scan). `AT%XBANDLOCK` could narrow it down to the bands
-in use (20 and 8 in Hungary so far), but would have to be configurable before devices go
-elsewhere.
 
 ### Keepalive and the NAT timeout
 
 The keepalive is still 10 minutes (a ping every 5), as set for the 1NCE budget. Onomondo's NAT
-idle timeout is unmeasured; the method in `abandoned/NB-IoT.md` ("Keepalive and session expiry")
-still applies.
+idle timeout is unmeasured; asking Onomondo first, and otherwise the method in
+`abandoned/NB-IoT.md` ("Keepalive and session expiry") still applies.
 
-### Modem firmware updates
+## Follow-ups
 
-Serial Modem has `AT#XFOTA` for modem firmware (mfw) and its own application. Not needed yet; the
-boards ship with mfw 2.0.4 and Serial Modem 2.0.0.
+- Lost `#XAPOLL` announcements: the download transport polls while data flows; the cause is
+  unconfirmed (#710)
+- An `AT#XSEND` that took 12 s during cell changes, once (#711)
+- Modem firmware and Serial Modem updates with `AT#XFOTA` (#712)
+- Band lock: not needed. After the first attach the modem starts from its cell history and
+  registers in a few seconds; a lock would only shorten a first attach in a new area, or a search
+  after losing coverage, and would have to be configurable before devices go elsewhere
