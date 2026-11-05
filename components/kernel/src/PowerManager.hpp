@@ -8,6 +8,10 @@
 #include <esp_sleep.h>
 #include <esp_timer.h>
 
+#ifdef CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION
+#include <driver/usb_serial_jtag.h>
+#endif
+
 #include <array>
 #include <chrono>
 #include <string>
@@ -111,6 +115,12 @@ public:
         ESP_ERROR_CHECK(esp_pm_light_sleep_register_cbs(&cbs_conf));
 #endif
 
+#ifdef CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION
+        if (sleepWhenIdle) {
+            watchUsbConsole();
+        }
+#endif
+
 #ifdef UD_PM_DIAGNOSTICS
         // Dumps PM locks, esp_timer stats, light-sleep wakeup count/causes, and (if
         // CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS) per-task CPU time every 2.5s. Real
@@ -170,6 +180,32 @@ public:
     inline static PowerManagementLock noLightSleep { "no-light-sleep", ESP_PM_NO_LIGHT_SLEEP };
 
 private:
+#ifdef CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION
+    /**
+     * @brief Says whether a USB host keeps the device awake (CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION),
+     * and when it goes away.
+     *
+     * Only watches while connected: the device is awake then anyway, so polling costs nothing.
+     * Once the cable is gone the device sleeps, and the console doesn't survive that, so a cable
+     * plugged in later needs a reset to be useful; the boot after it says so again.
+     */
+    static void watchUsbConsole() {
+        // IDF assumes a host at boot and gives up on it after a few ticks without frames, long
+        // before we get here
+        if (!usb_serial_jtag_is_connected()) {
+            return;
+        }
+        LOGTI(PM, "USB host connected, staying awake while it is");
+        Task::run("usb-watch", 2560, [](Task& /*task*/) {
+            while (usb_serial_jtag_is_connected()) {
+                Task::delay(1s);
+            }
+            // Doesn't make it to the console anymore, only to the published log
+            LOGTI(PM, "USB host disconnected, light sleep resumes");
+        });
+    }
+#endif
+
     static bool shouldSleepWhenIdle(bool requestedSleepWhenIdle) {
         if (requestedSleepWhenIdle) {
 #ifdef UD_NOSLEEP

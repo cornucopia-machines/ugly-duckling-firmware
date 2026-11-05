@@ -204,17 +204,6 @@ static void startDevice(const std::shared_ptr<DeviceDefinition>& deviceDefinitio
         ble);
 #endif
 
-    // Over the modem, a pending firmware update runs before MQTT is even started: the modem has a
-    // single socket, and the download needs it (docs/specs/NB-IoT.md, stage 5). So there are no
-    // MQTT logs during the update; its outcome is reported in BOOT and SYNC after the reboot. If
-    // an update is pending, this doesn't return
-    std::optional<RejectionCode> firmwareDownloadRejection;
-    if (connectivity.link == NetworkLink::Cellular) {
-        firmwareDownloadRejection = HttpUpdater::performPendingHttpUpdateIfNecessary(legacyConfigNvs,
-            { .ready = states->networkReady, .modemTransport = connectivity.modemTransport },
-            watchdog, firmwareVersion);
-    }
-
     // Init MQTT connection
     // TODO(legacy-v1-topics): remove fallback and the macAddress parameter
     auto clientId = "ugly-duckling-" + (networkConfig->id.get().empty() ? macAddress : networkConfig->id.get());
@@ -245,12 +234,12 @@ static void startDevice(const std::shared_ptr<DeviceDefinition>& deviceDefinitio
     auto pendingFirmwareRejection = std::make_shared<std::optional<RejectionCode>>();
 
     registerHttpUpdateCommand(mqttRoot, legacyConfigNvs);
-    if (connectivity.link == NetworkLink::WiFi) {
-        // Handle any pending HTTP update (reboots after the attempt, whether it succeeds or not)
-        firmwareDownloadRejection = HttpUpdater::performPendingHttpUpdateIfNecessary(legacyConfigNvs,
-            { .ready = states->networkReady, .mqttReady = &states->mqttReady },
-            watchdog, firmwareVersion);
-    }
+    // Handle any pending HTTP update (reboots after the attempt, whether it succeeds or not). Over
+    // the modem, the download has a socket of its own, so MQTT stays connected during it, and logs
+    // are published, as over WiFi
+    auto firmwareDownloadRejection = HttpUpdater::performPendingHttpUpdateIfNecessary(legacyConfigNvs,
+        { .ready = states->networkReady, .mqttReady = &states->mqttReady, .modemTransport = connectivity.modemDownloadTransport },
+        watchdog, firmwareVersion);
 
     // Detect whether the bootloader rolled back from a failed OTA partition. This and a failed
     // download cannot co-occur: a failed download never writes a new partition, so there's nothing

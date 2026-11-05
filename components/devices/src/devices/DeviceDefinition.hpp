@@ -117,7 +117,8 @@ public:
     }
 
     /**
-     * @brief How the NB-IoT modem connector is wired, on boards that have one.
+     * @brief How the cellular modem connector is wired, on boards that have one (MK14: Desert Lark
+     * MK2, an nRF9151).
      */
     virtual std::optional<cellular::CellularModemPins> getCellularModemPins() const {
         return std::nullopt;

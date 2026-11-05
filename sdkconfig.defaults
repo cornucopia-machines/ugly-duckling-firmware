@@ -150,11 +150,11 @@ CONFIG_MQTT_USE_CUSTOM_CONFIG=y
 CONFIG_MQTT_OUTBOX_EXPIRED_TIMEOUT_MS=600000
 
 # Let the HTTP client run over a transport we provide: the OTA download goes over the cellular
-# modem's AT sockets, which lwIP can't reach (docs/specs/NB-IoT.md, stage 5)
+# modem's AT sockets, which lwIP can't reach (docs/Connectivity.md, "Firmware updates")
 CONFIG_ESP_HTTP_CLIENT_ENABLE_CUSTOM_TRANSPORT=y
 
-# Fetch the update image in ranges over one connection (HttpUpdate.hpp): over the modem, the
-# commands held back while it pushes the image get through in between. WiFi takes the same path
+# Fetch the update image in ranges over one connection (HttpUpdate.hpp): a download over the modem
+# that breaks off picks up where it left off. WiFi takes the same path
 CONFIG_ESP_HTTPS_OTA_ENABLE_PARTIAL_DOWNLOAD=y
 
 # We don't need TLS server functionality
@@ -258,12 +258,3 @@ CONFIG_BT_NIMBLE_TRANSPORT_ACL_FROM_LL_COUNT=12
 # # Disable L2CAP connection-oriented channels (we only use ATT/GATT).
 # # CONFIG_BT_NIMBLE_L2CAP_COC_MAX_NUM=0
 # ------------------------------------------------------------------------------
-
-#
-# Cellular modem (esp_modem)
-#
-
-# The BC660K-GL has no PPP; we only use AT command mode, so leave lwIP's PPP support out
-CONFIG_ESP_MODEM_USE_PPP_MODE=n
-# Lets the driver see unsolicited result codes (+CEREG etc.) arriving between commands
-CONFIG_ESP_MODEM_URC_HANDLER=y

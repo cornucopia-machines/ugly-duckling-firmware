@@ -32,7 +32,7 @@ struct NetworkLinkChoice {
 };
 
 /**
- * @brief Picks the link to use from network-config's `links` (docs/specs/NB-IoT.md, "Choosing
+ * @brief Picks the link to use from network-config's `links` (docs/specs/abandoned/NB-IoT.md, "Choosing
  * WiFi or NB-IoT").
  *
  * `links` is an ordered list of preference, but only a single link is supported for now. No

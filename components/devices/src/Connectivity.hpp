@@ -35,8 +35,8 @@ using namespace cornucopia::ugly_duckling::kernel;
  * lwIP; without it the time comes from the modem. Either way, BLE can set the time too, and
  * captures the RTC so it stays alive as long as BLE does.
  *
- * The NB-IoT modem (docs/specs/NB-IoT.md) is Carrot only, and needs a board with a modem
- * connector; asking for it anywhere else falls back to WiFi.
+ * The cellular modem (docs/Connectivity.md, "Cellular") is Carrot only, and needs a board with a
+ * modem connector; asking for it anywhere else falls back to WiFi.
  */
 struct ConnectivityDrivers {
     NetworkLink link = NetworkLink::WiFi;
@@ -45,9 +45,10 @@ struct ConnectivityDrivers {
     std::shared_ptr<cellular::CellularDriver> cellular;
 #endif
     std::shared_ptr<RtcDriver> rtc;
-    // The cellular modem's socket transport, which MQTT and the OTA download connect over;
-    // nullptr for lwIP's own
+    // The cellular modem's socket transports, one for MQTT and one for the OTA download, each
+    // with a connection of its own; nullptr for lwIP's own
     esp_transport_handle_t modemTransport = nullptr;
+    esp_transport_handle_t modemDownloadTransport = nullptr;
 };
 
 inline void initWiFi(ConnectivityDrivers& drivers, const std::shared_ptr<ModuleStates>& states, const std::shared_ptr<NetworkConfig>& networkConfig, const std::shared_ptr<BleDriver>& ble) {
@@ -96,12 +97,11 @@ inline void initCellular(ConnectivityDrivers& drivers, const std::shared_ptr<Mod
         states->rtcInSync,
         ntpServer.empty() ? std::string(RtcDriver::DEFAULT_NTP_SERVER) : ntpServer,
         [rtc](time_t utcTime, const char* source) { rtc->setTime(utcTime, source); },
-        // The download needs the modem awake, and its data pushed; the device reboots after it
-        // either way
-        !updatePending,
-        updatePending);
+        // The download keeps the modem's UART on; the device reboots after it either way
+        !updatePending);
     drivers.cellular = cellular;
-    drivers.modemTransport = cellular->getTransport();
+    drivers.modemTransport = cellular->getMqttTransport();
+    drivers.modemDownloadTransport = cellular->getDownloadTransport();
 }
 #endif
 

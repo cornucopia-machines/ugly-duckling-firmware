@@ -35,7 +35,7 @@ struct DeviceConfiguration : ConfigurationSection {
      */
     Property<seconds> publishInterval { this, "publishInterval", 5min };
     // Not Verbose even in debug builds: every published record is an uplink, and over NB-IoT a
-    // steady stream of them keeps the radio connected (docs/specs/NB-IoT.md, stage 4)
+    // steady stream of them keeps the radio connected (docs/specs/abandoned/NB-IoT.md, stage 4)
     Property<Level> publishLogs { this, "publishLogs",
 #ifdef UD_DEBUG
         Level::Debug

@@ -42,14 +42,14 @@ inline const char* toString(RegistrationStatus status) {
 
 /**
  * @brief Registration state as reported by +CEREG, with the location and reject cause
- * the module includes in URC mode 3.
+ * the modem includes from URC mode 3 up (we use 5, which adds the PSM timers).
  */
 struct Registration {
     RegistrationStatus status;
-    // Tracking area code and E-UTRAN cell ID, hex strings as the module reports them
+    // Tracking area code and E-UTRAN cell ID, hex strings as the modem reports them
     std::optional<std::string> trackingAreaCode;
     std::optional<std::string> cellId;
-    // 7 = E-UTRAN, 9 = E-UTRAN (NB-S1 mode)
+    // 7 = E-UTRAN (LTE-M), 9 = E-UTRAN (NB-S1 mode, NB-IoT)
     std::optional<int> accessTechnology;
     // 0 = EMM cause (3GPP TS 24.008 Annex G), 1 = manufacturer-specific
     std::optional<int> causeType;
@@ -63,7 +63,7 @@ struct Registration {
 
 namespace detail {
 
-// Fields from <stat> onward: <stat>[,[<tac>],[<ci>],[<AcT>][,<cause_type>,<reject_cause>]]
+// Fields from <stat> onward: <stat>[,[<tac>],[<ci>],[<AcT>][,<cause_type>,<reject_cause>[,...]]]
 inline std::optional<Registration> parseRegistrationFields(const std::vector<AtField>& fields, size_t first) {
     if (fields.size() <= first) {
         return std::nullopt;
@@ -92,10 +92,10 @@ inline std::optional<Registration> parseRegistrationFields(const std::vector<AtF
 }    // namespace detail
 
 /**
- * @brief Parses the unsolicited +CEREG: <stat>[,...] the module sends when registration changes.
+ * @brief Parses the unsolicited +CEREG: <stat>[,...] the modem sends when registration changes.
  *
- * Not to be confused with the read response, which has <n> in front: "+CEREG: 3,2" is a read
- * response meaning "URC mode 3, searching", while as a URC it would read "denied, TAC 2".
+ * Not to be confused with the read response, which has <n> in front: "+CEREG: 5,2" is a read
+ * response meaning "URC mode 5, searching", while as a URC it would read "denied, TAC 2".
  */
 inline std::optional<Registration> parseCeregUrc(std::string_view line) {
     auto fields = parseAtFields(line, "+CEREG:");

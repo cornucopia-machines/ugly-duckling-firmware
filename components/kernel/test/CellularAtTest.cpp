@@ -5,6 +5,7 @@
 #include <drivers/cellular/Edrx.hpp>
 #include <drivers/cellular/NetworkTime.hpp>
 #include <drivers/cellular/RadioStatus.hpp>
+#include <drivers/cellular/Rat.hpp>
 
 #include <array>
 #include <chrono>
@@ -18,120 +19,122 @@
 using namespace cornucopia::ugly_duckling::kernel::drivers::cellular;
 using namespace std::chrono_literals;
 
-// Response samples follow the BC660K-GL AT Commands Manual v1.3 and the bring-up notes in
-// https://github.com/cornucopia-machines/ugly-duckling-firmware/issues/641
+// Lines captured from an nRF9151 on Desert Lark MK2 (Serial Modem 2.0.0, modem firmware 2.0.4),
+// on LTE-M with an Onomondo SIM roaming on One HU, unless noted otherwise
 
-TEST_CASE("parseAtResponse collects information lines up to OK") {
-    auto response = parseAtResponse("\r\nQuectel_Ltd\r\nQuectel_BC660K-GL\r\nRevision: BC660KGLAAR01A01\r\n\r\nOK\r\n", "ATI");
+namespace {
 
-    REQUIRE(response.has_value());
-    REQUIRE(response->result == AtResult::Ok);
-    REQUIRE(response->lines == std::vector<std::string> { "Quectel_Ltd", "Quectel_BC660K-GL", "Revision: BC660KGLAAR01A01" });
+AtResponse collect(std::string_view command, std::initializer_list<std::string_view> lines) {
+    AtResponseCollector collector(command);
+    for (auto line : lines) {
+        if (collector.feed(line)) {
+            break;
+        }
+    }
+    return collector.take();
 }
 
-TEST_CASE("parseAtResponse drops the echo of the command") {
-    auto response = parseAtResponse("AT+QCCID\r\r\n+QCCID: 89860446091891372008\r\n\r\nOK\r\n", "AT+QCCID");
-
-    REQUIRE(response.has_value());
-    REQUIRE(response->lines == std::vector<std::string> { "+QCCID: 89860446091891372008" });
+std::vector<std::string> feedLines(AtLineAssembler& assembler, std::initializer_list<std::string_view> chunks) {
+    std::vector<std::string> lines;
+    for (auto chunk : chunks) {
+        assembler.feed(chunk, [&](std::string_view line) {
+            lines.emplace_back(line);
+        });
+    }
+    return lines;
 }
 
-TEST_CASE("parseAtResponse waits for the final result code") {
-    REQUIRE_FALSE(parseAtResponse("", "AT").has_value());
-    REQUIRE_FALSE(parseAtResponse("\r\n+CSQ: 21,99\r\n", "AT+CSQ").has_value());
-    // "OK" without its line ending yet
-    REQUIRE_FALSE(parseAtResponse("\r\n+CSQ: 21,99\r\n\r\nOK", "AT+CSQ").has_value());
+}    // namespace
+
+TEST_CASE("AtResponseCollector collects information lines up to OK") {
+    AtResponseCollector collector("AT#XSMVER");
+
+    REQUIRE_FALSE(collector.feed(R"(#XSMVER: "v2.0.0","3.4.1")"));
+    REQUIRE(collector.feed("OK"));
+    auto response = collector.take();
+    REQUIRE(response.result == AtResult::Ok);
+    REQUIRE(response.lines == std::vector<std::string> { R"(#XSMVER: "v2.0.0","3.4.1")" });
 }
 
-TEST_CASE("parseAtResponse does not take OK inside an information line for the result") {
-    REQUIRE_FALSE(parseAtResponse("\r\n+QNBIOTEVENT: \"ENTER PSM OK\"\r\n", "AT").has_value());
+TEST_CASE("AtResponseCollector drops the echo of the command and empty lines") {
+    auto response = collect("AT+CFUN?", { "AT+CFUN?", "", "+CFUN: 1", "OK" });
+
+    REQUIRE(response.ok());
+    REQUIRE(response.lines == std::vector<std::string> { "+CFUN: 1" });
 }
 
-TEST_CASE("parseAtResponse reports ERROR") {
-    auto response = parseAtResponse("\r\nERROR\r\n", "AT+QENG=\"servingcell\"");
+TEST_CASE("AtResponseCollector stays incomplete without a final result code") {
+    AtResponseCollector collector("AT+CGPADDR=0");
 
-    REQUIRE(response.has_value());
-    REQUIRE(response->result == AtResult::Error);
-    REQUIRE(response->lines.empty());
+    REQUIRE_FALSE(collector.feed(R"(+CGPADDR: 0,"240.5.254.234")"));
+    REQUIRE(collector.take().result == AtResult::Timeout);
 }
 
-TEST_CASE("parseAtResponse reports +CME ERROR with its text") {
-    auto response = parseAtResponse("\r\n+CME ERROR: SIM not inserted\r\n", "AT+CIMI");
+TEST_CASE("AtResponseCollector does not take OK inside an information line for the result") {
+    AtResponseCollector collector("AT#XRECV=1,1,64,0,2048");
 
-    REQUIRE(response.has_value());
-    REQUIRE(response->result == AtResult::CmeError);
-    REQUIRE(response->error == "SIM not inserted");
+    REQUIRE_FALSE(collector.feed("4F4B"));
+    REQUIRE_FALSE(collector.feed("OK then"));
 }
 
-TEST_CASE("parseAtResponse reports where the response ends, before a URC in the same read") {
-    std::string_view buffer = "\r\n+QIRD: 512,0,\"00\"\r\n\r\nOK\r\n\r\n+QIURC: \"recv\",0,512\r\n";
-    size_t consumed = 0;
+TEST_CASE("AtResponseCollector reports ERROR and +CME ERROR with its code") {
+    REQUIRE(collect("AT#XRECV=1,1,64,0,100", { "ERROR" }).result == AtResult::Error);
 
-    auto response = parseAtResponse(buffer, "AT+QIRD=0,512", {}, &consumed);
-
-    REQUIRE(response.has_value());
-    REQUIRE(response->lines == std::vector<std::string> { "+QIRD: 512,0,\"00\"" });
-    REQUIRE(buffer.substr(consumed) == "\r\n+QIURC: \"recv\",0,512\r\n");
+    auto response = collect("AT+CTZR?", { "+CME ERROR: 0" });
+    REQUIRE(response.result == AtResult::CmeError);
+    REQUIRE(response.error == "0");
 }
 
-TEST_CASE("parseAtResponse consumes all of a response with nothing after it") {
-    std::string_view buffer = "\r\nOK\r\n";
-    size_t consumed = 0;
+TEST_CASE("AtResponseCollector keeps a hex read's data line after its header") {
+    auto response = collect("AT#XRECV=1,1,64,0,100", { "#XRECV: 1,1,5", "48545450AA", "OK" });
 
-    REQUIRE(parseAtResponse(buffer, "AT", {}, &consumed).has_value());
-    REQUIRE(consumed == buffer.size());
+    REQUIRE(response.ok());
+    REQUIRE(response.lines == std::vector<std::string> { "#XRECV: 1,1,5", "48545450AA" });
 }
 
-TEST_CASE("parseAtResponse with awaitAfterOk waits for the line after OK") {
-    REQUIRE_FALSE(parseAtResponse("\r\nOK\r\n", "AT+QISEND=0,2,\"0102\"", "SEND ").has_value());
-
-    auto response = parseAtResponse("\r\nOK\r\n\r\nSEND OK\r\n", "AT+QISEND=0,2,\"0102\"", "SEND ");
-
-    REQUIRE(response.has_value());
-    REQUIRE(response->result == AtResult::Ok);
-    REQUIRE(response->lines == std::vector<std::string> { "SEND OK" });
-}
-
-TEST_CASE("parseAtResponse with awaitAfterOk keeps URCs that arrive in between") {
-    auto response = parseAtResponse("\r\nOK\r\n\r\n+CEREG: 5\r\n\r\n+QIOPEN: 0,0\r\n", "AT+QIOPEN=0,0,\"TCP\",\"example.com\",8883,0,0", "+QIOPEN:");
-
-    REQUIRE(response.has_value());
-    REQUIRE(response->lines == std::vector<std::string> { "+CEREG: 5", "+QIOPEN: 0,0" });
-}
-
-TEST_CASE("parseAtResponse with awaitAfterOk ends on ERROR before OK") {
-    auto response = parseAtResponse("\r\nERROR\r\n", "AT+QICLOSE=0", "CLOSE OK");
-
-    REQUIRE(response.has_value());
-    REQUIRE(response->result == AtResult::Error);
+TEST_CASE("isFinalResultCode recognizes only whole result lines") {
+    REQUIRE(isFinalResultCode("OK"));
+    REQUIRE(isFinalResultCode("ERROR"));
+    REQUIRE(isFinalResultCode("+CME ERROR: 0"));
+    REQUIRE_FALSE(isFinalResultCode("OK then"));
+    REQUIRE_FALSE(isFinalResultCode("#XSEND: 1,0,56"));
 }
 
 TEST_CASE("AtResponse::find returns the value after a prefix") {
-    auto response = parseAtResponse("\r\n+CEREG: 3,1\r\n\r\nOK\r\n", "AT+CEREG?");
+    auto response = collect("AT%XSYSTEMMODE?", { "%XSYSTEMMODE: 1,1,0,1", "OK" });
 
-    REQUIRE(response.has_value());
-    REQUIRE(response->find("+CEREG:") == "3,1");
-    REQUIRE_FALSE(response->find("+CSQ:").has_value());
+    REQUIRE(response.find("%XSYSTEMMODE:") == "1,1,0,1");
+    REQUIRE_FALSE(response.find("+CFUN:").has_value());
 }
 
 TEST_CASE("parseCeregUrc reads a registration with location") {
-    auto registration = parseCeregUrc("+CEREG: 1,\"6216\",\"0B2C4A01\",9");
+    auto registration = parseCeregUrc(R"(+CEREG: 2,"13F9","00177A01",7)");
 
     REQUIRE(registration.has_value());
-    REQUIRE(registration->status == RegistrationStatus::RegisteredHome);
-    REQUIRE(registration->isRegistered());
-    REQUIRE(registration->trackingAreaCode == "6216");
-    REQUIRE(registration->cellId == "0B2C4A01");
-    REQUIRE(registration->accessTechnology == 9);
+    REQUIRE(registration->status == RegistrationStatus::Searching);
+    REQUIRE(registration->trackingAreaCode == "13F9");
+    REQUIRE(registration->cellId == "00177A01");
+    REQUIRE(registration->accessTechnology == 7);
     REQUIRE_FALSE(registration->rejectCause.has_value());
 }
 
-TEST_CASE("parseCeregUrc reads the reject cause of a denied registration") {
-    auto registration = parseCeregUrc("+CEREG: 3,\"6216\",\"0B2C4A01\",9,0,15");
+TEST_CASE("parseCeregUrc reads mode 5 with empty cause fields and the PSM timers") {
+    auto registration = parseCeregUrc(R"(+CEREG: 5,"13F9","00177A01",7,,,"11100000","11100000")");
 
     REQUIRE(registration.has_value());
-    REQUIRE(registration->status == RegistrationStatus::Denied);
-    REQUIRE_FALSE(registration->isRegistered());
+    REQUIRE(registration->status == RegistrationStatus::RegisteredRoaming);
+    REQUIRE(registration->isRegistered());
+    REQUIRE(registration->accessTechnology == 7);
+    REQUIRE_FALSE(registration->causeType.has_value());
+    REQUIRE_FALSE(registration->rejectCause.has_value());
+}
+
+TEST_CASE("parseCeregUrc reads the reject cause of a refused registration") {
+    // A 1NCE SIM refused on NB-IoT by Yettel HU
+    auto registration = parseCeregUrc(R"(+CEREG: 2,"6216","0014B307",9,0,15)");
+
+    REQUIRE(registration.has_value());
+    REQUIRE(registration->status == RegistrationStatus::Searching);
     REQUIRE(registration->causeType == 0);
     REQUIRE(registration->rejectCause == 15);
 }
@@ -144,45 +147,34 @@ TEST_CASE("parseCeregUrc handles a bare status") {
     REQUIRE_FALSE(registration->trackingAreaCode.has_value());
 }
 
-TEST_CASE("parseCeregUrc handles empty optional fields") {
-    auto registration = parseCeregUrc("+CEREG: 3,,,,0,15");
-
-    REQUIRE(registration.has_value());
-    REQUIRE(registration->status == RegistrationStatus::Denied);
-    REQUIRE_FALSE(registration->trackingAreaCode.has_value());
-    REQUIRE_FALSE(registration->cellId.has_value());
-    REQUIRE(registration->rejectCause == 15);
-}
-
 TEST_CASE("parseCeregRead skips the URC mode in front of the status") {
-    // URC mode 3, currently searching -- as a URC, the same text would mean "denied"
-    auto registration = parseCeregRead("+CEREG: 3,2");
+    // URC mode 5, unknown -- as a URC, "+CEREG: 5,4" would mean "roaming, TAC 4"
+    auto registration = parseCeregRead("+CEREG: 5,4");
 
     REQUIRE(registration.has_value());
-    REQUIRE(registration->status == RegistrationStatus::Searching);
+    REQUIRE(registration->status == RegistrationStatus::Unknown);
 }
 
-TEST_CASE("parseCeregRead reads location and reject cause after the mode") {
-    auto registration = parseCeregRead("+CEREG: 3,5,\"6216\",\"0B2C4A01\",9");
+TEST_CASE("parseCeregRead reads location after the mode") {
+    auto registration = parseCeregRead(R"(+CEREG: 5,5,"13F9","00177A01",7,,,"11100000","11100000")");
 
     REQUIRE(registration.has_value());
     REQUIRE(registration->status == RegistrationStatus::RegisteredRoaming);
-    REQUIRE(registration->isRegistered());
-    REQUIRE(registration->cellId == "0B2C4A01");
+    REQUIRE(registration->cellId == "00177A01");
 }
 
 TEST_CASE("describe summarizes a registration for the log") {
-    REQUIRE(describe(*parseCeregUrc("+CEREG: 1,\"6216\",\"0B2C4A01\",9")) == "registered (home), TAC 6216, cell 0B2C4A01");
+    REQUIRE(describe(*parseCeregUrc(R"(+CEREG: 5,"13F9","00177A01",7)")) == "registered (roaming), TAC 13F9, cell 00177A01");
     REQUIRE(describe(*parseCeregUrc("+CEREG: 3,,,,0,15")) == "registration denied, EMM cause 15");
     REQUIRE(describe(*parseCeregUrc("+CEREG: 3,,,,1,42")) == "registration denied, manufacturer cause 42");
     REQUIRE(describe(*parseCeregUrc("+CEREG: 2")) == "searching");
 }
 
 TEST_CASE("CEREG parsers reject malformed input") {
-    REQUIRE_FALSE(parseCeregUrc("+CSQ: 21,99").has_value());
+    REQUIRE_FALSE(parseCeregUrc("+CSCON: 1").has_value());
     REQUIRE_FALSE(parseCeregUrc("+CEREG: ").has_value());
     REQUIRE_FALSE(parseCeregUrc("+CEREG: 9").has_value());
-    REQUIRE_FALSE(parseCeregRead("+CEREG: 3").has_value());
+    REQUIRE_FALSE(parseCeregRead("+CEREG: 5").has_value());
     REQUIRE_FALSE(parseCeregRead("+CEREG: x,1").has_value());
 }
 
@@ -219,197 +211,23 @@ TEST_CASE("splitAtFields handles negative numbers, a trailing empty field and an
 }
 
 TEST_CASE("parseAtFields only accepts the expected prefix") {
-    REQUIRE(parseAtFields("+CSQ: 21,99", "+CSQ:")->size() == 2);
-    REQUIRE_FALSE(parseAtFields("+CEREG: 1", "+CSQ:").has_value());
+    REQUIRE(parseAtFields("+CSCON: 1,0", "+CSCON:")->size() == 2);
+    REQUIRE_FALSE(parseAtFields("+CEREG: 1", "+CSCON:").has_value());
 }
-
-TEST_CASE("parseCsq converts the level to dBm") {
-    REQUIRE(parseCsq("+CSQ: 12,99")->rssiDbm == -89);
-    REQUIRE(parseCsq("+CSQ: 0,99")->rssiDbm == -113);
-    REQUIRE(parseCsq("+CSQ: 31,0")->rssiDbm == -51);
-}
-
-TEST_CASE("parseCsq reports an unknown signal as nullopt") {
-    // Captured on an MK13 right after boot, before the modem found a cell
-    auto quality = parseCsq("+CSQ: 99,99");
-
-    REQUIRE(quality.has_value());
-    REQUIRE_FALSE(quality->rssiDbm.has_value());
-}
-
-TEST_CASE("parseCsq rejects malformed input") {
-    REQUIRE_FALSE(parseCsq("+CSQ: 50,99").has_value());
-    REQUIRE_FALSE(parseCsq("+CSQ: ").has_value());
-    REQUIRE_FALSE(parseCsq("+CEREG: 1").has_value());
-}
-
-TEST_CASE("parseQengServingCell recognizes a module that is still searching") {
-    // Captured on an MK13 right after boot
-    auto cell = parseQengServingCell("+QENG: 0,0,0,0,\"00000000\",-157,-20,-137,-30,0,\"0000\",255,-128,255");
-
-    REQUIRE(cell.has_value());
-    REQUIRE_FALSE(cell->isCamped());
-    REQUIRE_FALSE(cell->ecl.has_value());
-    REQUIRE_FALSE(cell->txPower.has_value());
-    REQUIRE_FALSE(cell->operationMode.has_value());
-    REQUIRE(describe(*cell) == "no serving cell");
-}
-
-TEST_CASE("parseQengServingCell reads a serving cell") {
-    // Values from the Desert Lark bring-up report (EARFCN 6449 in band 20, guard band);
-    // the transmit power is made up, the report doesn't give it
-    auto cell = parseQengServingCell("+QENG: 0,6449,0,184,\"0014B308\",-100,-12,-88,-3,20,\"6216\",0,10,2");
-
-    REQUIRE(cell.has_value());
-    REQUIRE(cell->isCamped());
-    REQUIRE(cell->earfcn == 6449);
-    REQUIRE(cell->pci == 184);
-    REQUIRE(cell->cellId == "0014B308");
-    REQUIRE(cell->rsrp == -100);
-    REQUIRE(cell->rsrq == -12);
-    REQUIRE(cell->rssi == -88);
-    REQUIRE(cell->sinr == -3);
-    REQUIRE(cell->band == 20);
-    REQUIRE(cell->trackingAreaCode == "6216");
-    REQUIRE(cell->ecl == 0);
-    REQUIRE(cell->txPower == 10);
-    REQUIRE(cell->operationMode == 2);
-    REQUIRE(describe(*cell) == "band 20, EARFCN 6449, PCI 184, cell 0014B308, RSRP -100 dBm, RSRQ -12 dB, SINR -3 dB, ECL 0");
-}
-
-TEST_CASE("parseQengServingCell ignores neighbor cell lines and short lines") {
-    REQUIRE_FALSE(parseQengServingCell("+QENG: 1,6449,185,-110,-15").has_value());
-    REQUIRE_FALSE(parseQengServingCell("+QENG: 0,6449,0,184").has_value());
-}
-
-TEST_CASE("toHex and fromHex round-trip arbitrary bytes") {
-    const std::array<uint8_t, 6> bytes { 0x00, 0x0D, 0x0A, 0x7F, 0xAB, 0xFF };
-
-    auto hex = toHex(bytes.data(), bytes.size());
-    REQUIRE(hex == "000D0A7FABFF");
-
-    std::array<uint8_t, 6> decoded {};
-    REQUIRE(fromHex(hex, decoded.data()));
-    REQUIRE(decoded == bytes);
-    // Lowercase works too
-    REQUIRE(fromHex("abff", decoded.data()));
-    REQUIRE(decoded[0] == 0xAB);
-}
-
-TEST_CASE("fromHex rejects odd lengths and non-hex digits") {
-    std::array<uint8_t, 2> out {};
-    REQUIRE_FALSE(fromHex("ABC", out.data()));
-    REQUIRE_FALSE(fromHex("AG", out.data()));
-}
-
-TEST_CASE("parseQird reads data with the remaining length") {
-    auto read = parseQird("+QIRD: 3,17,\"16030A\"");
-
-    REQUIRE(read.has_value());
-    REQUIRE(read->length == 3);
-    REQUIRE(read->remaining == 17);
-    REQUIRE(read->hex == "16030A");
-}
-
-TEST_CASE("parseQird reads data without the remaining length") {
-    auto read = parseQird("+QIRD: 2,\"3132\"");
-
-    REQUIRE(read.has_value());
-    REQUIRE(read->length == 2);
-    REQUIRE_FALSE(read->remaining.has_value());
-    REQUIRE(read->hex == "3132");
-}
-
-TEST_CASE("parseQird keeps data whose remaining length is negative") {
-    auto read = parseQird("+QIRD: 2,-2,\"3132\"");
-
-    REQUIRE(read.has_value());
-    REQUIRE(read->length == 2);
-    REQUIRE_FALSE(read->remaining.has_value());
-    REQUIRE(read->hex == "3132");
-}
-
-TEST_CASE("parseQird reads an empty buffer") {
-    auto read = parseQird("+QIRD: 0");
-
-    REQUIRE(read.has_value());
-    REQUIRE(read->length == 0);
-}
-
-TEST_CASE("parseQird rejects data that doesn't match its length") {
-    REQUIRE_FALSE(parseQird("+QIRD: 3,0,\"3132\"").has_value());
-    REQUIRE_FALSE(parseQird("+QIURC: \"recv\",0").has_value());
-}
-
-TEST_CASE("parseQiopen reads the result for the connection") {
-    REQUIRE(parseQiopen("+QIOPEN: 0,0", 0) == 0);
-    REQUIRE(parseQiopen("+QIOPEN: 0,566", 0) == 566);
-    REQUIRE_FALSE(parseQiopen("+QIOPEN: 1,0", 0).has_value());
-}
-
-TEST_CASE("parseQiurc recognizes the socket URCs") {
-    auto recv = parseQiurc("+QIURC: \"recv\",0,123");
-    REQUIRE(recv.has_value());
-    REQUIRE(recv->type == SocketEventType::DataAvailable);
-    REQUIRE(recv->connectId == 0);
-
-    auto full = parseQiurc("+QIURC: \"recv\",0,\"buff full\"");
-    REQUIRE(full.has_value());
-    REQUIRE(full->type == SocketEventType::BufferFull);
-
-    auto closed = parseQiurc("+QIURC: \"closed\",1");
-    REQUIRE(closed.has_value());
-    REQUIRE(closed->type == SocketEventType::Closed);
-    REQUIRE(closed->connectId == 1);
-
-    REQUIRE_FALSE(parseQiurc("+QIURC: \"incoming\",1,0").has_value());
-    REQUIRE_FALSE(parseQiurc("+CEREG: 1").has_value());
-}
-
-TEST_CASE("parseQiurc reads data pushed in direct push mode") {
-    auto pushed = parseQiurc("+QIURC: \"recv\",0,3,\"16030A\"");
-    REQUIRE(pushed.has_value());
-    REQUIRE(pushed->type == SocketEventType::DataPushed);
-    REQUIRE(pushed->connectId == 0);
-    REQUIRE(pushed->length == 3);
-    REQUIRE(pushed->hex == "16030A");
-
-    auto withoutLength = parseQiurc("+QIURC: \"recv\",0,\"3132\"");
-    REQUIRE(withoutLength.has_value());
-    REQUIRE(withoutLength->type == SocketEventType::DataPushed);
-    REQUIRE_FALSE(withoutLength->length.has_value());
-    REQUIRE(withoutLength->hex == "3132");
-
-    REQUIRE_FALSE(parseQiurc("+QIURC: \"recv\",0,-3,\"16030A\"").has_value());
-}
-
-namespace {
-
-std::vector<std::string> feedLines(AtLineAssembler& assembler, std::initializer_list<std::string_view> chunks) {
-    std::vector<std::string> lines;
-    for (auto chunk : chunks) {
-        assembler.feed(chunk, [&](std::string_view line) {
-            lines.emplace_back(line);
-        });
-    }
-    return lines;
-}
-
-}    // namespace
 
 TEST_CASE("AtLineAssembler joins lines split across chunks") {
     AtLineAssembler assembler(64);
 
-    auto lines = feedLines(assembler, { "\r\n+QIURC: \"recv\",0,2,\"31", "32\"\r\n\r\n+CSCON: 0\r", "\n" });
+    auto lines = feedLines(assembler, { "\r\n#XAPOLL: 1", ",1\r\n\r\n+CSCON: 0\r", "\n" });
 
-    REQUIRE(lines == std::vector<std::string> { "+QIURC: \"recv\",0,2,\"3132\"", "+CSCON: 0" });
+    REQUIRE(lines == std::vector<std::string> { "#XAPOLL: 1,1", "+CSCON: 0" });
     REQUIRE_FALSE(assembler.hasPending());
 }
 
 TEST_CASE("AtLineAssembler keeps an unfinished line pending") {
     AtLineAssembler assembler(64);
 
-    auto lines = feedLines(assembler, { "\r\n+CEREG: 1\r\n+QIURC" });
+    auto lines = feedLines(assembler, { "\r\n+CEREG: 1\r\n#XAPO" });
 
     REQUIRE(lines == std::vector<std::string> { "+CEREG: 1" });
     REQUIRE(assembler.hasPending());
@@ -424,38 +242,85 @@ TEST_CASE("AtLineAssembler cuts off an overlong line and drops the rest of it") 
     REQUIRE(assembler.getOverlongCount() == 1);
 }
 
-TEST_CASE("parseModemTimestamp reads UTC timestamps") {
-    // 2026-10-03T12:34:56Z
-    REQUIRE(parseModemTimestamp("2026/10/03,12:34:56") == 1791030896);
-    REQUIRE(parseModemTimestamp("26/10/03,12:34:56") == 1791030896);
-    REQUIRE(parseModemTimestamp("1970/01/01,00:00:00") == 0);
-    // Leap day
-    REQUIRE(parseModemTimestamp("2024/02/29,00:00:00") == 1709164800);
+TEST_CASE("AtLineAssembler drops the line it has started on reset") {
+    AtLineAssembler assembler(64);
+
+    // Garbage from a probe at the wrong baud rate, with no line ending
+    auto lines = feedLines(assembler, { "\x80\xfe" });
+    assembler.reset();
+    lines = feedLines(assembler, { "\r\nOK\r\n" });
+
+    REQUIRE(lines == std::vector<std::string> { "OK" });
 }
 
-TEST_CASE("parseModemTimestamp converts local time with a zone to UTC") {
-    // The AT manual's example: 22:10:00 at GMT+2 is 20:10:00 UTC
-    REQUIRE(parseModemTimestamp("14/05/06,22:10:00+08") == parseModemTimestamp("14/05/06,20:10:00"));
-    REQUIRE(parseModemTimestamp("14/05/06,18:10:00-08") == parseModemTimestamp("14/05/06,20:10:00"));
+TEST_CASE("toHex and fromHex round-trip arbitrary bytes") {
+    const std::array<uint8_t, 6> bytes { 0x00, 0x0D, 0x0A, 0x7F, 0xAB, 0xFF };
+
+    auto hex = toHex(bytes.data(), bytes.size());
+    REQUIRE(hex == "000D0A7FABFF");
+
+    std::array<uint8_t, 6> decoded {};
+    REQUIRE(fromHex(hex, decoded.data()));
+    REQUIRE(decoded == bytes);
+    // Serial Modem answers in lowercase
+    REQUIRE(fromHex("abff", decoded.data()));
+    REQUIRE(decoded[0] == 0xAB);
 }
 
-TEST_CASE("parseModemTimestamp rejects malformed input") {
-    REQUIRE_FALSE(parseModemTimestamp("").has_value());
-    REQUIRE_FALSE(parseModemTimestamp("2026/10/03").has_value());
-    REQUIRE_FALSE(parseModemTimestamp("2026/13/03,12:34:56").has_value());
-    REQUIRE_FALSE(parseModemTimestamp("2026/10/03,12-34-56").has_value());
-    REQUIRE_FALSE(parseModemTimestamp("2026/10/03,12:34:56*08").has_value());
+TEST_CASE("fromHex rejects odd lengths and non-hex digits") {
+    std::array<uint8_t, 2> out {};
+    REQUIRE_FALSE(fromHex("ABC", out.data()));
+    REQUIRE_FALSE(fromHex("AG", out.data()));
 }
 
-TEST_CASE("parseCtzeu reads the universal time") {
-    REQUIRE(parseCtzeu("+CTZEU: \"+08\",1,\"2026/10/03,12:34:56\"") == 1791030896);
-    // Time zone only: the network doesn't have to send the time
-    REQUIRE_FALSE(parseCtzeu("+CTZEU: \"+08\",1").has_value());
+TEST_CASE("parseXsocket reads the handle of a new socket") {
+    // Handles start at 1, even with nothing else open
+    REQUIRE(parseXsocket("#XSOCKET: 1,1,6") == 1);
+    REQUIRE(parseXsocket("#XSOCKET: 2,2,17") == 2);
+    REQUIRE_FALSE(parseXsocket("#XSOCKET: -1,1,6").has_value());
+    // The read command's lines have five fields
+    REQUIRE_FALSE(parseXsocket("#XSOCKET: 1,1,0,1,0").has_value());
 }
 
-TEST_CASE("parseQntp reads the time of a successful sync") {
-    REQUIRE(parseQntp("+QNTP: 0,\"2026/10/03,12:34:56\"") == 1791030896);
-    REQUIRE_FALSE(parseQntp("+QNTP: 565").has_value());
+TEST_CASE("parseXconnect only accepts a connected status for the socket") {
+    REQUIRE(parseXconnect("#XCONNECT: 1,1", 1));
+    REQUIRE_FALSE(parseXconnect("#XCONNECT: 1,0", 1));
+    REQUIRE_FALSE(parseXconnect("#XCONNECT: 2,1", 1));
+}
+
+TEST_CASE("parseXsend reads how much the modem took") {
+    REQUIRE(parseXsend("#XSEND: 1,0,56", "#XSEND:", 1) == 56);
+    REQUIRE(parseXsend("#XSENDTO: 1,0,48", "#XSENDTO:", 1) == 48);
+    REQUIRE_FALSE(parseXsend("#XSEND: 2,0,56", "#XSEND:", 1).has_value());
+    REQUIRE_FALSE(parseXsend("#XSENDTO: 1,0,48", "#XSEND:", 1).has_value());
+}
+
+TEST_CASE("parseXrecvHeader reads the size of a hex mode read") {
+    REQUIRE(parseXrecvHeader("#XRECV: 1,1,828", "#XRECV:", 1) == 828);
+    REQUIRE(parseXrecvHeader(R"(#XRECVFROM: 1,1,48,"94.130.184.193",123)", "#XRECVFROM:", 1) == 48);
+    // Binary mode, or another socket
+    REQUIRE_FALSE(parseXrecvHeader("#XRECV: 1,0,828", "#XRECV:", 1).has_value());
+    REQUIRE_FALSE(parseXrecvHeader("#XRECV: 2,1,828", "#XRECV:", 1).has_value());
+}
+
+TEST_CASE("parseXapoll reads the poll events") {
+    auto readable = parseXapoll("#XAPOLL: 1,1");
+    REQUIRE(readable.has_value());
+    REQUIRE(readable->handle == 1);
+    REQUIRE(readable->readable());
+    REQUIRE_FALSE(readable->closed());
+
+    // POLLHUP: the peer closed the connection
+    auto hangUp = parseXapoll("#XAPOLL: 1,16");
+    REQUIRE(hangUp.has_value());
+    REQUIRE_FALSE(hangUp->readable());
+    REQUIRE(hangUp->closed());
+
+    // POLLIN and POLLHUP together
+    REQUIRE(parseXapoll("#XAPOLL: 0,17")->readable());
+    REQUIRE(parseXapoll("#XAPOLL: 0,17")->closed());
+    // The test command's answer isn't an event
+    REQUIRE_FALSE(parseXapoll("#XAPOLL: <handle>,(0,1),(0,1,4,5)").has_value());
 }
 
 TEST_CASE("parseCsconUrc reads the RRC state") {
@@ -475,81 +340,227 @@ TEST_CASE("parseCsconRead reads the mode after <n>") {
     REQUIRE_FALSE(parseCsconRead("+CSCON: 1").has_value());
 }
 
-TEST_CASE("parseQr14feature reads MAC RAI on both sides while connected") {
-    auto support = parseQr14feature({ "+QR14FEATURE: 14,1", "+QR14FEATURE: 1", "+QR14FEATURE: 1,0,0,0,1" });
-    REQUIRE(support.module == true);
-    REQUIRE(support.network == false);
+TEST_CASE("parseXmonitor reads the serving cell") {
+    auto cell = parseXmonitor(R"(%XMONITOR: 5,"One HU","One HU","21670","13F9",7,20,"00177A01",478,6200,42,29,"","11100000","11100000","01001001")");
+
+    REQUIRE(cell.has_value());
+    REQUIRE(cell->isCamped());
+    REQUIRE(cell->rat == Rat::LteM);
+    REQUIRE(cell->operatorName == "One HU");
+    REQUIRE(cell->plmn == "21670");
+    REQUIRE(cell->trackingAreaCode == "13F9");
+    REQUIRE(cell->band == 20);
+    REQUIRE(cell->cellId == "00177A01");
+    REQUIRE(cell->pci == 478);
+    REQUIRE(cell->earfcn == 6200);
+    REQUIRE(cell->rsrp == -99);
+    REQUIRE(cell->sinr == 4);
+    REQUIRE_FALSE(cell->rsrq.has_value());
 }
 
-TEST_CASE("parseQr14feature leaves the network side unknown while idle") {
-    auto support = parseQr14feature({ "+QR14FEATURE: 14,0", "+QR14FEATURE: 0" });
-    REQUIRE(support.module == false);
-    REQUIRE_FALSE(support.network.has_value());
+TEST_CASE("parseXmonitor recognizes a modem without a cell") {
+    auto cell = parseXmonitor("%XMONITOR: 4");
+
+    REQUIRE(cell.has_value());
+    REQUIRE_FALSE(cell->isCamped());
+    REQUIRE(describe(*cell) == "no serving cell");
+    REQUIRE_FALSE(parseXmonitor("%XMONITOR: ").has_value());
+    REQUIRE_FALSE(parseXmonitor("+CEREG: 4").has_value());
 }
 
-TEST_CASE("parseQr14feature ignores other lines") {
-    auto support = parseQr14feature({ "+CSCON: 0,1", "+QR14FEATURE: 14,2" });
-    REQUIRE_FALSE(support.module.has_value());
-    REQUIRE_FALSE(support.network.has_value());
+TEST_CASE("parseXmonitor leaves unknown signal values out") {
+    auto cell = parseXmonitor(R"(%XMONITOR: 1,"","","21630","6216",9,20,"0014B307",184,6449,255,127,"","","","")");
+
+    REQUIRE(cell.has_value());
+    REQUIRE(cell->rat == Rat::NbIot);
+    REQUIRE_FALSE(cell->rsrp.has_value());
+    REQUIRE_FALSE(cell->sinr.has_value());
 }
 
-TEST_CASE("encodeEdrxCycle gives the 4-bit code of NB-IoT cycles") {
-    REQUIRE(encodeEdrxCycle(20480ms) == "0010");
-    REQUIRE(encodeEdrxCycle(40960ms) == "0011");
-    REQUIRE(encodeEdrxCycle(163840ms) == "1001");
-    REQUIRE(encodeEdrxCycle(10485760ms) == "1111");
+TEST_CASE("addConeval adds RSRQ, coverage enhancement level and transmit power") {
+    auto cell = *parseXmonitor(R"(%XMONITOR: 5,"One HU","One HU","21670","13F9",7,20,"00177A01",478,6200,42,29,"","11100000","11100000","01001001")");
+
+    addConeval(cell, R"(%CONEVAL: 0,0,7,41,19,29,"00177A01","21670",478,6200,20,0,0,13,1,8,117)");
+
+    // Index 19 is -10.5 to -10 dB
+    REQUIRE(cell.rsrq == -11);
+    REQUIRE(cell.ecl == 0);
+    REQUIRE(cell.txPower == 13);
+    REQUIRE(describe(cell) == "LTE-M on One HU (21670), band 20, EARFCN 6200, PCI 478, cell 00177A01, RSRP -99 dBm, RSRQ -11 dB, SINR 4 dB, ECL 0, TX power 13 dBm");
 }
 
-TEST_CASE("encodeEdrxCycle rejects other lengths") {
-    REQUIRE_FALSE(encodeEdrxCycle(41000ms).has_value());
+TEST_CASE("addConeval ignores a failed evaluation and another cell") {
+    auto cell = *parseXmonitor(R"(%XMONITOR: 5,"One HU","One HU","21670","13F9",7,20,"00177A01",478,6200,42,29,"","11100000","11100000","01001001")");
+
+    addConeval(cell, "%CONEVAL: 1");
+    addConeval(cell, R"(%CONEVAL: 0,0,7,41,19,29,"00177A02","21670",478,6200,20,0,0,13,1,8,117)");
+
+    REQUIRE_FALSE(cell.rsrq.has_value());
+    REQUIRE_FALSE(cell.ecl.has_value());
+}
+
+TEST_CASE("parseRat reads network-config's names") {
+    REQUIRE(parseRat("lte-m") == Rat::LteM);
+    REQUIRE(parseRat("nb-iot") == Rat::NbIot);
+    REQUIRE_FALSE(parseRat("LTE-M").has_value());
+    REQUIRE(toConfigName(Rat::NbIot) == std::string_view("nb-iot"));
+}
+
+TEST_CASE("parseRats keeps the order, and defaults to both with LTE-M first") {
+    REQUIRE(parseRats({}) == std::vector<Rat> { Rat::LteM, Rat::NbIot });
+    REQUIRE(parseRats({ "nb-iot", "lte-m" }) == std::vector<Rat> { Rat::NbIot, Rat::LteM });
+    REQUIRE(parseRats({ "nb-iot", "nb-iot", "5g" }) == std::vector<Rat> { Rat::NbIot });
+    REQUIRE(parseRats({ "5g" }) == std::vector<Rat> { Rat::LteM, Rat::NbIot });
+}
+
+TEST_CASE("toSystemMode enables the RATs with the preference in front, GNSS off") {
+    REQUIRE(toSystemMode({ Rat::LteM, Rat::NbIot }) == "1,1,0,1");
+    REQUIRE(toSystemMode({ Rat::NbIot, Rat::LteM }) == "1,1,0,2");
+    REQUIRE(toSystemMode({ Rat::LteM }) == "1,0,0,0");
+    REQUIRE(toSystemMode({ Rat::NbIot }) == "0,1,0,0");
+    REQUIRE_FALSE(toSystemMode({}).has_value());
+}
+
+TEST_CASE("fromAccessTechnology maps <AcT> to the RAT") {
+    REQUIRE(fromAccessTechnology(7) == Rat::LteM);
+    REQUIRE(fromAccessTechnology(9) == Rat::NbIot);
+    REQUIRE_FALSE(fromAccessTechnology(4).has_value());
+    REQUIRE_FALSE(fromAccessTechnology(std::nullopt).has_value());
+}
+
+TEST_CASE("encodeEdrxCycle gives the 4-bit code of each RAT's cycles") {
+    REQUIRE(encodeEdrxCycle(Rat::LteM, 5120ms) == "0000");
+    REQUIRE(encodeEdrxCycle(Rat::LteM, 81920ms) == "0101");
+    REQUIRE(encodeEdrxCycle(Rat::NbIot, 20480ms) == "0010");
+    REQUIRE(encodeEdrxCycle(Rat::NbIot, 81920ms) == "0101");
+    REQUIRE(encodeEdrxCycle(Rat::NbIot, 10485760ms) == "1111");
+}
+
+TEST_CASE("encodeEdrxCycle rejects lengths the RAT doesn't have") {
+    REQUIRE_FALSE(encodeEdrxCycle(Rat::LteM, 41000ms).has_value());
     // LTE-M only
-    REQUIRE_FALSE(encodeEdrxCycle(61440ms).has_value());
-    REQUIRE_FALSE(encodeEdrxCycle(0ms).has_value());
+    REQUIRE_FALSE(encodeEdrxCycle(Rat::NbIot, 61440ms).has_value());
+    REQUIRE_FALSE(encodeEdrxCycle(Rat::NbIot, 5120ms).has_value());
+    REQUIRE_FALSE(encodeEdrxCycle(Rat::LteM, 0ms).has_value());
 }
 
-TEST_CASE("parseCedrxrdp reads what the network granted") {
+TEST_CASE("parseCedrxp reads what the network granted on LTE-M") {
+    auto edrx = parseCedrxp(R"(+CEDRXP: 4,"0101","0101","0001")");
+
+    REQUIRE(edrx.has_value());
+    REQUIRE(edrx->active);
+    REQUIRE(edrx->rat == Rat::LteM);
+    REQUIRE(edrx->granted == 81920ms);
+    // 1.28 s steps on LTE-M
+    REQUIRE(edrx->pagingTimeWindow == 2560ms);
+    REQUIRE(describe(*edrx) == "81920 ms on LTE-M, paging window 2560 ms");
+}
+
+TEST_CASE("parseCedrxrdp reads what the network granted on NB-IoT") {
     auto edrx = parseCedrxrdp(R"(+CEDRXRDP: 5,"0011","0101","0011")");
 
     REQUIRE(edrx.has_value());
     REQUIRE(edrx->active);
     REQUIRE(edrx->requested == 40960ms);
     REQUIRE(edrx->granted == 81920ms);
+    // 2.56 s steps on NB-IoT
     REQUIRE(edrx->pagingTimeWindow == 10240ms);
-    REQUIRE(describe(*edrx) == "81920 ms (requested 40960 ms), paging window 10240 ms");
+    REQUIRE(describe(*edrx) == "81920 ms on NB-IoT (requested 40960 ms), paging window 10240 ms");
 }
 
-TEST_CASE("parseCedrxrdp reports a cell without eDRX") {
-    auto edrx = parseCedrxrdp("+CEDRXRDP: 0");
+TEST_CASE("parseCedrxrdp reports eDRX not granted") {
+    // LTE-M, nothing requested or granted
+    auto notGranted = parseCedrxrdp(R"(+CEDRXRDP: 4,"","","")");
+    REQUIRE(notGranted.has_value());
+    REQUIRE_FALSE(notGranted->active);
+    REQUIRE(notGranted->rat == Rat::LteM);
+    REQUIRE(describe(*notGranted) == "not used on this cell");
 
-    REQUIRE(edrx.has_value());
-    REQUIRE_FALSE(edrx->active);
-    REQUIRE(describe(*edrx) == "not used on this cell");
+    // A cell without eDRX
+    auto unsupported = parseCedrxrdp("+CEDRXRDP: 0");
+    REQUIRE(unsupported.has_value());
+    REQUIRE_FALSE(unsupported->active);
+    REQUIRE_FALSE(unsupported->rat.has_value());
 }
 
-TEST_CASE("parseCedrxrdp leaves out codes it doesn't know") {
-    auto edrx = parseCedrxrdp(R"(+CEDRXRDP: 5,"0011","0100")");
-
-    REQUIRE(edrx.has_value());
-    REQUIRE(edrx->requested == 40960ms);
-    REQUIRE_FALSE(edrx->granted.has_value());
-    REQUIRE_FALSE(edrx->pagingTimeWindow.has_value());
+TEST_CASE("parseXtime reads the universal time") {
+    // 2026-11-03T23:47:38Z, local time zone +1 h ("40": four quarters, swapped)
+    REQUIRE(parseXtime(R"(%XTIME: "40","62113032748340","00")") == 1793749658);
+    // 2026-11-03T23:52:49Z: every byte swapped, the seconds too
+    REQUIRE(parseXtime(R"(%XTIME: "40","62113032259440","00")") == 1793749969);
 }
 
-TEST_CASE("parseCedrxp reads the URC") {
-    auto edrx = parseCedrxp(R"(+CEDRXP: 5,"0011","0011","1111")");
-
-    REQUIRE(edrx.has_value());
-    REQUIRE(edrx->granted == 40960ms);
-    REQUIRE(describe(*edrx) == "40960 ms, paging window 40960 ms");
+TEST_CASE("parseXtime rejects a URC without the time, and malformed times") {
+    REQUIRE_FALSE(parseXtime(R"(%XTIME: "40",,"00")").has_value());
+    REQUIRE_FALSE(parseXtime(R"(%XTIME: "40","6211303274","00")").has_value());
+    // Month 31
+    REQUIRE_FALSE(parseXtime(R"(%XTIME: "40","62133032748340","00")").has_value());
+    REQUIRE_FALSE(parseXtime(R"(%XTIME: "40","6211303A748340","00")").has_value());
 }
 
-TEST_CASE("parseQdrxIdleCycle reads the paging cycle while idle") {
-    REQUIRE(parseQdrxIdleCycle("+QDRX: 1,1280") == 1280ms);
-    REQUIRE(parseQdrxIdleCycle("+QDRX: 1,10240") == 10240ms);
+TEST_CASE("parseCclk reads the local time, and takes the time zone off") {
+    // 2026-11-04T12:23:54Z, from a network at +1 h (four quarters)
+    REQUIRE(parseCclk(R"(+CCLK: "26/11/04,13:23:54+04")") == 1793795034);
+    REQUIRE(parseCclk(R"(+CCLK: "26/11/04,08:23:54-16")") == 1793795034);
+    REQUIRE(parseCclk(R"(+CCLK: "26/11/04,12:23:54+00")") == 1793795034);
+    // 00:30 local on New Year's Day at +1 h is still the old year in UTC
+    REQUIRE(parseCclk(R"(+CCLK: "26/01/01,00:30:00+04")") == 1767223800);
 }
 
-TEST_CASE("parseQdrxIdleCycle ignores connected mode and missing cycles") {
-    REQUIRE_FALSE(parseQdrxIdleCycle("+QDRX: 2,8,4,10,4,2560,8").has_value());
-    REQUIRE_FALSE(parseQdrxIdleCycle("+QDRX: 1").has_value());
-    REQUIRE_FALSE(parseQdrxIdleCycle("+QDRX: 0").has_value());
+TEST_CASE("parseCclk rejects other lines and malformed times") {
+    REQUIRE_FALSE(parseCclk(R"(%CCLK: "26/11/04,13:23:54+04",0)").has_value());
+    // Month 13
+    REQUIRE_FALSE(parseCclk(R"(+CCLK: "26/13/04,13:23:54+04")").has_value());
+    REQUIRE_FALSE(parseCclk(R"(+CCLK: "26/11/04 13:23:54+04")").has_value());
+    // No time zone, and one beyond ±12 h
+    REQUIRE_FALSE(parseCclk(R"(+CCLK: "26/11/04,13:23:54")").has_value());
+    REQUIRE_FALSE(parseCclk(R"(+CCLK: "26/11/04,13:23:54+49")").has_value());
+    REQUIRE_FALSE(parseCclk(R"(+CCLK: "26/11/04,13:23:54*04")").has_value());
+}
+
+TEST_CASE("formatCclk writes UTC for AT+CCLK=") {
+    REQUIRE(formatCclk(1793795034) == "26/11/04,12:23:54+00");
+    REQUIRE(parseCclk(R"(+CCLK: ")" + *formatCclk(1767232800) + "\"") == 1767232800);
+    // The two-digit year only holds 2000–2099
+    REQUIRE_FALSE(formatCclk(0).has_value());
+}
+
+TEST_CASE("makeSntpRequest asks as an SNTP version 4 client") {
+    auto request = makeSntpRequest();
+
+    REQUIRE(request.size() == 48);
+    REQUIRE(request[0] == 0x23);
+    REQUIRE(toHex(request.data() + 1, request.size() - 1) == std::string(94, '0'));
+}
+
+TEST_CASE("parseSntpResponse reads the server's transmit time") {
+    // pool.ntp.org through Serial Modem (AT#XRECVFROM in hex mode)
+    std::array<uint8_t, SNTP_PACKET_SIZE> reply {};
+    REQUIRE(fromHex("240200e400000249000000008145fd01ee94e9e0f500e7ff0000000000000000ee94f238314b37ffee94f238314b57ff", reply.data()));
+
+    // 2026-11-03T23:52:24Z
+    REQUIRE(parseSntpResponse(reply.data(), reply.size()) == 1793749944);
+}
+
+TEST_CASE("parseSntpResponse rejects short packets, client packets and kiss-o'-death") {
+    std::array<uint8_t, SNTP_PACKET_SIZE> reply {};
+    REQUIRE(fromHex("240200e400000249000000008145fd01ee94e9e0f500e7ff0000000000000000ee94f238314b37ffee94f238314b57ff", reply.data()));
+    REQUIRE_FALSE(parseSntpResponse(reply.data(), 47).has_value());
+
+    auto client = reply;
+    client[0] = 0x23;
+    REQUIRE_FALSE(parseSntpResponse(client.data(), client.size()).has_value());
+
+    auto kissOfDeath = reply;
+    kissOfDeath[1] = 0;
+    REQUIRE_FALSE(parseSntpResponse(kissOfDeath.data(), kissOfDeath.size()).has_value());
+}
+
+TEST_CASE("parseSntpResponse handles NTP era 1, from 2036") {
+    std::array<uint8_t, SNTP_PACKET_SIZE> reply {};
+    reply[0] = 0x24;
+    reply[1] = 2;
+    // 1 second into era 1: 2036-02-07T06:28:17Z
+    reply[43] = 1;
+    REQUIRE(parseSntpResponse(reply.data(), reply.size()) == 2085978497);
 }

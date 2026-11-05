@@ -272,16 +272,6 @@ dependencies:
       registry_url: https://components.espressif.com
       type: service
     version: 0.5.3
-  espressif/esp_modem:
-    component_hash: 06abed971065e9cb88039e011fd85ec1412c7416d3a3d84541a7a432e8d3f94d
-    dependencies:
-    - name: idf
-      require: private
-      version: '>=4.1'
-    source:
-      registry_url: https://components.espressif.com/
-      type: service
-    version: 2.1.0
   espressif/i2c_bus:
     component_hash: fe8f85b3859544fabb960d7bcec24278cd3c88e3f1777e8a2075b0aca202fd9f
     dependencies:
@@ -337,10 +327,9 @@ direct_dependencies:
 - esp-idf-lib/tsl2591
 - espressif/bq27220
 - espressif/catch2
-- espressif/esp_modem
 - espressif/mqtt
 - espressif/network_provisioning
 - idf
-manifest_hash: 62a838965f46e77316bd488bcc285e28063d14ba47cddd4bbe9d88985736291c
+manifest_hash: 001ef15389d8f78a23ad66e1e2faf2fd5e99171290d555b2862416550d74494e
 target: esp32c6
 version: 3.0.0

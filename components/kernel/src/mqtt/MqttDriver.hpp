@@ -313,7 +313,7 @@ private:
     // esp-mqtt pings at half the keepalive, and every ping costs about 200 bytes over the air
     // with TLS, TCP and their ACKs: at 120 s that would be twice the SIM's daily data budget. It
     // also has to stay under the carrier's NAT idle timeout, which isn't measured yet
-    // (docs/specs/NB-IoT.md, "Keepalive and session expiry"); 10 minutes, so pings every 5
+    // (docs/specs/abandoned/NB-IoT.md, "Keepalive and session expiry"); 10 minutes, so pings every 5
     // minutes (about 58 KB a day), until it is.
     static constexpr milliseconds MODEM_SESSION_KEEP_ALIVE = 10min;
     static constexpr uint32_t MODEM_TASK_STACK_SIZE = 8192;

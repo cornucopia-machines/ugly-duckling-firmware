@@ -39,6 +39,9 @@ public:
         return motorA;
     }
 
+    /**
+     * @brief Bridge B, or nullptr when the board leaves it unused (no bin1/bin2 pins given).
+     */
     std::shared_ptr<PwmMotorDriver> getMotorB() {
         return motorB;
     }
@@ -69,6 +72,14 @@ public:
             faultPin->getName().c_str());
 
         faultPin->pinMode(Pin::Mode::Input);
+
+        if (bin1Pin == nullptr || bin2Pin == nullptr) {
+            LOGI("Initializing motor on pins ain1 = %s, ain2 = %s (bridge B unused)",
+                ain1Pin->getName().c_str(),
+                ain2Pin->getName().c_str());
+            motorA = std::make_shared<Drv8833MotorDriver>(pwm, ain1Pin, ain2Pin, enable, reverse);
+            return;
+        }
 
         LOGI("Initializing motors on pins ain1 = %s, ain2 = %s, bin1 = %s, bin2 = %s",
             ain1Pin->getName().c_str(),

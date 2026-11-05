@@ -70,7 +70,8 @@ The current network-config shape (delivered via `UPDATE`):
   },
   "links": ["wifi"], // link to reach the broker over: "wifi" (default) or "cellular"
   "cellular": {
-    "edrxCycle": 0, // NB-IoT modem settings, only used with the "cellular" link
+    "rats": ["lte-m", "nb-iot"], // cellular modem settings, only used with the "cellular" link:
+    "edrxCycle": 0, // radios in order of preference (default both, LTE-M first), eDRX cycle in ms
   },
 }
 ```
@@ -246,16 +247,15 @@ report. See `components/kernel/src/PowerManager.hpp` and `sdkconfig.pm_diagnosti
 idf.py build -DUD_PM_DIAGNOSTICS=1
 ```
 
-Carrot builds can also connect over the NB-IoT modem on the Desert Lark daughter board, on boards
-that have the connector (MK13+). Which link a device uses is a runtime choice: `"links":
-["cellular"]` in network-config (see [Network configuration](#network-configuration)) instead of
-the default WiFi. The modem then replaces WiFi: MQTT (with TLS) runs over the modem's TCP sockets,
-and the time comes from the network or the modem's NTP client. Work in progress: no firmware
-updates over NB-IoT yet (the device rejects them), and no WiFi provisioning over BLE. See
-[docs/specs/NB-IoT.md](docs/specs/NB-IoT.md) for the plan. The console must not be on UART0
-(`UD_UART0_CONSOLE`), which uses the modem's pins; the driver then leaves the modem alone and the
-device stays offline. Asking for `cellular` on Spinach or on a board without the modem connector
-logs an error and falls back to WiFi.
+Carrot builds can also connect over the cellular modem (LTE-M or NB-IoT, an nRF9151) on the
+Desert Lark MK2 daughter board, on MK14 boards. Which link a device uses is a runtime choice:
+`"links": ["cellular"]` in network-config (see [Network configuration](#network-configuration))
+instead of the default WiFi. The modem then replaces WiFi: MQTT (with TLS) and firmware updates run
+over the modem's TCP sockets, and the time comes from the network or SNTP over the modem. See
+[docs/Connectivity.md](docs/Connectivity.md) for how it works. The console must not be on UART0
+(`UD_UART0_CONSOLE`), which is the modem's; the driver then leaves the modem alone and the device
+stays offline. Asking for `cellular` on Spinach, or on a board without the modem connector (MK13
+included: its BC660K-GL Desert Lark is no longer supported), logs an error and falls back to WiFi.
 
 #### Pinning to a specific model (development / simulation)
 
@@ -326,7 +326,13 @@ idf.py monitor
 ```
 
 On Carrot the console is on USB Serial/JTAG, not UART0: the UART0 pins (GPIO16/17) belong to
-the NB-IoT modem on the Desert Lark daughter board.
+the cellular modem on the Desert Lark daughter board.
+
+USB Serial/JTAG doesn't survive light sleep, so a Carrot board stays awake while a computer is
+connected to its USB port (`CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION`), and logs
+`USB host connected, staying awake while it is` at boot. Unplugged, it sleeps as usual, and
+logs (to MQTT) that it does. Plugging a sleeping board in doesn't bring the console back: press
+reset after connecting. Don't measure power with the computer connected.
 
 #### Console on UART0 (early-boot debugging)
 
@@ -336,9 +342,9 @@ to move the console back to UART0 (USB Serial/JTAG stays on as a secondary conso
 connect to it via the pogo-pin header.
 
 **Unplug the Desert Lark daughter board first.** Console output and the modem share the same
-lines, so they collide, and the NB-IoT connection is unavailable in this build. (The ROM
+lines, so they collide, and the cellular connection is unavailable in this build. (The ROM
 bootloader banner goes out on GPIO16 at every reset regardless of this setting; that is
-harmless, the modem does not parse it as AT.)
+harmless: DTR is deasserted then, so the modem's UART is off.)
 
 Use a separate build directory: an existing `build-*/sdkconfig` takes precedence over the
 defaults files, so toggling the flag in an existing tree does not change the console:

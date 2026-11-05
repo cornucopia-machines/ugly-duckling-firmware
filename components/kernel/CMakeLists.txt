@@ -17,6 +17,7 @@ idf_component_register(
         esp_driver_i2c
         esp_driver_ledc
         esp_driver_uart
+        esp_driver_usb_serial_jtag
         esp_event
         esp_http_client
         esp_https_ota
@@ -43,9 +44,6 @@ idf_component_register(
 
         # BQ27220 fuel gauge
         espressif__bq27220
-
-        # Cellular modem (AT commands over UART)
-        espressif__esp_modem
 
         # ArduinoJSON
         bblanchon__arduinojson

@@ -13,7 +13,7 @@ CONFIG_RTC_CLK_SRC_EXT_CRYS=y
 # Console
 #
 
-# USB Serial/JTAG is the primary console, leaving UART0 (GPIO16/17) to the NB-IoT modem on the
+# USB Serial/JTAG is the primary console, leaving UART0 (GPIO16/17) to the cellular modem on the
 # Desert Lark daughter board (issue #640). Build with -DUD_UART0_CONSOLE=1 to move it back to UART0
 # for early-boot debugging (see sdkconfig.uart0_console.defaults).
 CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
@@ -23,9 +23,9 @@ CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
 #
 
 # Flash erases and writes disable the cache, and with it every interrupt whose handler lives in
-# flash. The UART's 128-byte hardware FIFO holds under 3 ms of modem data at 460800 baud, while a
-# sector erase takes tens of milliseconds, so during an OTA download, which writes flash constantly,
-# the FIFO overflows unless the UART ISR runs from IRAM.
+# flash. The UART's 128-byte hardware FIFO holds about 1.4 ms of modem data at 921600 baud, while a
+# sector erase takes tens of milliseconds. Flow control would stop the modem rather than lose data,
+# but only an ISR in IRAM keeps the UART going during an OTA download, which writes flash constantly.
 CONFIG_UART_ISR_IN_IRAM=y
 
 #
@@ -84,3 +84,14 @@ CONFIG_ULP_COPROC_ENABLED=y
 CONFIG_ULP_COPROC_TYPE_LP_CORE=y
 # Reserve 4 KB of LP RAM for LP core firmware + shared variables
 CONFIG_ULP_COPROC_RESERVE_MEM=4096
+
+#
+# USB Serial/JTAG
+#
+
+# The USB Serial/JTAG console stops working at the first automatic light sleep, and doesn't come
+# back after it. With this, IDF holds a no-light-sleep lock while a USB host is sending frames
+# (start-of-frame every 1 ms), so a board on a computer keeps its console even with sleepWhenIdle.
+# IDF watches for the frames from the tick hook anyway; without a host (on battery, or on a plain
+# charger, which sends none) the lock goes a few milliseconds after boot and costs nothing.
+CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION=y

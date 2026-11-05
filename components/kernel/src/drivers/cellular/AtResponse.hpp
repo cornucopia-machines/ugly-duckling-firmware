@@ -4,6 +4,7 @@
 #include <charconv>
 #include <cstddef>
 #include <cstdint>
+#include <initializer_list>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -24,10 +25,10 @@ struct AtResponse {
     AtResult result;
 
     // Information lines between the command and the final result code, without line endings.
-    // A URC that arrives while the command is in flight lands here too.
+    // URCs the channel recognizes as such go to the URC handler instead (see AtChannel).
     std::vector<std::string> lines;
 
-    // The error text of a +CME ERROR (with AT+CMEE=2 a readable message, otherwise a number)
+    // The error text of a +CME ERROR (a number with AT+CMEE=1)
     std::string error;
 
     bool ok() const {
@@ -36,7 +37,7 @@ struct AtResponse {
 
     /**
      * @brief The first information line starting with the given prefix, with the prefix and any
-     * following spaces removed -- e.g. "+QCCID:" on "+QCCID: 8988..." gives "8988...".
+     * following spaces removed -- e.g. "%XICCID:" on "%XICCID: 8988..." gives "8988...".
      */
     std::optional<std::string_view> find(std::string_view prefix) const {
         for (const auto& line : lines) {
@@ -190,88 +191,78 @@ inline const char* toString(AtResult result) {
 }
 
 /**
- * @brief Parses the response to an AT command, as accumulated so far.
+ * @brief Collects the response to an AT command from the lines the modem sends, one at a time.
  *
- * Returns nullopt until a final result code (OK, ERROR or +CME ERROR) has arrived on a complete
- * line, so it can be called on every chunk the UART delivers. Only complete lines count: a
- * response cut off in the middle of "OK" is not mistaken for a finished one, and an information
- * line merely containing "OK" or "ERROR" is not a final result code.
- *
- * @param command the command as sent, without the trailing CR; its echo is dropped, in case the
- * module still has echo on (ATE1 is the power-on default)
- * @param awaitAfterOk for commands whose actual outcome follows the OK on a line of its own, such
- * as "SEND OK" after AT+QISEND or "+QIOPEN: 0,0" after AT+QIOPEN: the prefix of that line. The
- * response is then only complete once such a line has arrived; it ends up among the lines.
- * @param consumed set to how much of the buffer the response took up, once it's complete. What
- * follows arrived after the final result code, such as a URC, and isn't part of the response.
+ * Information lines are kept until a final result code (OK, ERROR, +CME ERROR or +CMS ERROR)
+ * completes the response. An information line merely containing "OK" or "ERROR" is not a final
+ * result code: only a whole line counts.
  */
-inline std::optional<AtResponse> parseAtResponse(std::string_view buffer, std::string_view command, std::string_view awaitAfterOk = {}, size_t* consumed = nullptr) {
-    AtResponse response { .result = AtResult::Timeout, .lines = {}, .error = {} };
-    const auto* start = buffer.data();    // NOLINT(bugprone-suspicious-stringview-data-usage)
-    auto complete = [&]() {
-        if (consumed != nullptr) {
-            *consumed = static_cast<size_t>(buffer.data() - start);
-        }
-        return response;
-    };
-    bool gotOk = false;
-    while (true) {
-        auto newline = buffer.find('\n');
-        if (newline == std::string_view::npos) {
-            // Incomplete line, if any: wait for more
-            return std::nullopt;
-        }
-        std::string_view line = buffer.substr(0, newline);
-        buffer.remove_prefix(newline + 1);
-        while (!line.empty() && (line.back() == '\r' || line.back() == '\n')) {
-            line.remove_suffix(1);
-        }
-        // With echo on, the module repeats the command, terminated by the CR we sent
-        while (!line.empty() && line.front() == '\r') {
-            line.remove_prefix(1);
-        }
+class AtResponseCollector {
+public:
+    /**
+     * @param command the command as sent, without the trailing CR; its echo is dropped, in case
+     * the modem has echo on
+     */
+    explicit AtResponseCollector(std::string_view command)
+        : command(command) {
+    }
 
+    /**
+     * @brief Takes the next line, without its line ending.
+     *
+     * @return whether the response is complete with it
+     */
+    bool feed(std::string_view line) {
         if (line.empty() || line == command) {
-            continue;
-        }
-        if (gotOk) {
-            response.lines.emplace_back(line);
-            if (line.starts_with(awaitAfterOk)) {
-                return complete();
-            }
-            continue;
+            return false;
         }
         if (line == "OK") {
             response.result = AtResult::Ok;
-            if (awaitAfterOk.empty()) {
-                return complete();
-            }
-            gotOk = true;
-            continue;
+            return true;
         }
         if (line == "ERROR") {
             response.result = AtResult::Error;
-            return complete();
+            return true;
         }
-        static constexpr std::string_view CME_ERROR = "+CME ERROR:";
-        if (line.starts_with(CME_ERROR)) {
-            line.remove_prefix(CME_ERROR.size());
-            while (line.starts_with(' ')) {
-                line.remove_prefix(1);
+        for (std::string_view prefix : { std::string_view("+CME ERROR:"), std::string_view("+CMS ERROR:") }) {
+            if (line.starts_with(prefix)) {
+                line.remove_prefix(prefix.size());
+                while (line.starts_with(' ')) {
+                    line.remove_prefix(1);
+                }
+                response.result = AtResult::CmeError;
+                response.error = line;
+                return true;
             }
-            response.result = AtResult::CmeError;
-            response.error = line;
-            return complete();
         }
         response.lines.emplace_back(line);
+        return false;
     }
+
+    /**
+     * @brief The response so far; its result stays Timeout until the response is complete.
+     */
+    AtResponse take() {
+        return std::move(response);
+    }
+
+private:
+    const std::string command;
+    AtResponse response { .result = AtResult::Timeout, .lines = {}, .error = {} };
+};
+
+/**
+ * @brief Whether a line is a final result code, the end of some command's response.
+ */
+inline bool isFinalResultCode(std::string_view line) {
+    return line == "OK" || line == "ERROR" || line.starts_with("+CME ERROR:") || line.starts_with("+CMS ERROR:");
 }
 
 /**
- * @brief Splits what the module sends outside of commands into lines, as it arrives in chunks.
+ * @brief Splits what the modem sends into lines, as it arrives from the UART in chunks.
  *
- * A line cut off at the end of a chunk is kept here until the rest arrives. In direct push mode a
- * single URC carries up to a TCP segment of data as hex, far more than one UART read.
+ * A line cut off at the end of a chunk is kept here until the rest arrives. Socket data comes as
+ * a single hex line of up to 4 KB, far more than one UART read.
  */
 class AtLineAssembler {
 public:
@@ -284,7 +275,7 @@ public:
      * lines are skipped.
      *
      * A line longer than maxLine is handed over cut off at that length, and the rest of it is
-     * dropped: the module never sends one, so it can only be garbled.
+     * dropped: the modem never sends one, so it can only be garbled.
      */
     template <typename Handler>
     void feed(std::string_view data, Handler handle) {
@@ -309,6 +300,14 @@ public:
             }
             discarding = false;
         }
+    }
+
+    /**
+     * @brief Drops the line started so far.
+     */
+    void reset() {
+        pending.clear();
+        discarding = false;
     }
 
     /**
