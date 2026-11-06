@@ -15,8 +15,6 @@ motor (H-bridge) outputs:
 | MK5 to MK13 | `a`, `b` |
 | MK14 | `a` only (connector JDRIVE1) |
 
-The end switches must be on the board's own GPIO pins; pins on an I/O expander can't be used.
-
 ## Wiring
 
 - **Motor:** connect it to the motor output named in `motor`. The board drives the output

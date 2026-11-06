@@ -8,8 +8,7 @@ Not in use on any deployed device today, and likely to change substantially befo
 
 ## Hardware support
 
-Each pin connects to a GPIO of the microcontroller, which counts the pulses on it. Pins of an I/O
-expander such as the [XL9535](XL9535.md) can't be used.
+Each pin connects to a GPIO of the microcontroller, which counts the pulses on it.
 
 ## Configuration
 

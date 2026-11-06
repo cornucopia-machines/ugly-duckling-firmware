@@ -1,8 +1,8 @@
 # Valve
 
 A `valve` opens and closes a water valve. Usually it is a solenoid valve driven by one of the
-board's motor (H-bridge) outputs, but it can also be switched by a single pin, for example a relay
-on an I/O expander. A [plot controller](../Components.md) function decides when the valve is
+board's motor (H-bridge) outputs, but it can also be switched by a single pin, for example one
+driving a relay. A [plot controller](../Components.md) function decides when the valve is
 open; the valve itself only carries out the transitions and reports its state.
 
 ## Hardware support
@@ -61,26 +61,10 @@ A latching valve on motor output `a`:
 }
 ```
 
-A valve switched by output 0 of an I/O expander peripheral named `relay`:
-
-```json
-{
-  "peripherals": [
-    {
-      "name": "valve-1",
-      "type": "valve",
-      "params": {
-        "pin": "relay:0"
-      }
-    }
-  ]
-}
-```
-
 | Parameter | Default | Meaning |
 | --- | --- | --- |
 | `motor` | (required unless `pin` is set) | The motor output that drives the valve: `a` or `b`. Can be left out on a board with a single output (MK14) |
-| `pin` | (none) | A pin to switch the valve with instead of a motor output. An on-board pin or an I/O expander pin such as `relay:0`. When set, all other parameters are ignored |
+| `pin` | (none) | A pin to switch the valve with instead of a motor output. An on-board pin. When set, all other parameters are ignored |
 | `strategy` | `latching` | How the valve is driven: `latching`, `NC` or `NO` |
 | `switchDuration` | `30` for `latching`, `500` for `NC` and `NO` | Milliseconds to drive the valve at full power when switching it |
 | `holdDuty` | `100` | `NC` and `NO`: power, in percent, used to keep the valve in its driven state after `switchDuration`. Latching: power of the switching pulse |
@@ -98,9 +82,7 @@ Leave it at the default `100` for latching valves.
 An unknown `strategy` value is logged as an error and treated as `NC`.
 
 Templates: the `plot-controller-mk*.json` files in
-[`config-templates/`](../../config-templates/) (one per board), and
-[`multiplexer-mk6.json`](../../config-templates/multiplexer-mk6.json) for a valve on an I/O
-expander pin.
+[`config-templates/`](../../config-templates/) (one per board).
 
 ## Telemetry
 

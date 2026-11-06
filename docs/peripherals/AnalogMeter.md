@@ -7,8 +7,7 @@ average.
 ## Hardware support
 
 The sensor's output connects to a GPIO of the microcontroller that can do analog reads. A pin
-without an ADC channel fails the peripheral with `Pin ... cannot be used for analog reads`. Pins
-of an I/O expander such as the [XL9535](XL9535.md) can't be used.
+without an ADC channel fails the peripheral with `Pin ... cannot be used for analog reads`.
 
 ## Configuration
 

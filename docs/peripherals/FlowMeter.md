@@ -16,8 +16,7 @@ flow meter inputs:
 | MK9–MK13 | `IFLOWA`, `IFLOWB` |
 | MK14 | `IFLOWA` only (MK13 and earlier had a second one) |
 
-Any other internal pin name, or a raw GPIO number, works too. Pins of an I/O expander such as the
-[XL9535](XL9535.md) don't: pulse counting needs a GPIO of the microcontroller.
+Any other internal pin name, or a raw GPIO number, works too.
 
 ## Configuration
 
