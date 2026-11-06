@@ -14,6 +14,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <tuple>
 #include <utility>
 
 using namespace std::chrono;
@@ -207,7 +208,7 @@ private:
         char buffer[32] = "";
         struct tm timeInfo {};
         gmtime_r(&now, &timeInfo);
-        (void) strftime(buffer, sizeof(buffer), "%Y-%m-%dT%H:%M:%SZ", &timeInfo);
+        std::ignore = strftime(buffer, sizeof(buffer), "%Y-%m-%dT%H:%M:%SZ", &timeInfo);
         // Log every arming event with the clock value it armed on, so that a device that ends up
         // running on a bogus clock can be traced back to the source that set it.
         bool alreadyInSync = rtcInSync.isSet();
@@ -228,7 +229,7 @@ private:
             unsigned int reachability = 0;
             esp_netif_sntp_reachability(index, &reachability);
             char entry[128];
-            (void) snprintf(entry, sizeof(entry), "#%u '%s' (reachability 0x%x)",
+            std::ignore = snprintf(entry, sizeof(entry), "#%u '%s' (reachability 0x%x)",
                 static_cast<unsigned>(index), describeServer(index).c_str(), reachability);
             if (!result.empty()) {
                 result += ", ";

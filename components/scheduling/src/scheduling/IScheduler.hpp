@@ -8,6 +8,7 @@
 
 #include <chrono>
 #include <optional>
+#include <tuple>
 
 namespace cornucopia::ugly_duckling::utils::scheduling {
 
@@ -52,12 +53,12 @@ struct Converter<system_clock::time_point> {
         time_t t = system_clock::to_time_t(src);
         tm tm {};
 #ifdef _WIN32
-        (void) localtime_s(&tm, &t);
+        std::ignore = localtime_s(&tm, &t);
 #else
-        (void) localtime_r(&t, &tm);
+        std::ignore = localtime_r(&t, &tm);
 #endif
         char buf[64];
-        (void) strftime(buf, sizeof(buf), "%FT%TZ", &tm);
+        std::ignore = strftime(buf, sizeof(buf), "%FT%TZ", &tm);
         dst.set(buf);
     }
 

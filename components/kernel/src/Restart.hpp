@@ -6,6 +6,7 @@
 #include <esp_system.h>
 
 #include <cstdio>
+#include <tuple>
 
 namespace cornucopia::ugly_duckling::kernel {
 
@@ -21,7 +22,7 @@ namespace cornucopia::ugly_duckling::kernel {
     // so this is where the calling task's peak stack usage is known
     LOGD("Restarting from task '%s', stack high-water mark: %u bytes unused",
         pcTaskGetName(nullptr), static_cast<unsigned int>(uxTaskGetStackHighWaterMark(nullptr)));
-    (void) fflush(stdout);
+    std::ignore = fflush(stdout);
     fsync(fileno(stdout));
     Task::delay(5s);
     esp_restart();
