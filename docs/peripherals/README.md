@@ -6,14 +6,14 @@ reaches the device, see [`Configuration.md`](../Configuration.md).
 
 ## Sensor power on MK14
 
-From MK14 on, the I²C port is only powered while a peripheral is using it. It shares its power
+From MK14 on, the I²C and RS485 ports are only powered while a peripheral is using them. It shares its power
 switch (LOADEN) with the valve driver and its boost converter, so a reading powers those up too.
 A sensor loses its settings whenever the port goes off, so after each power-up the firmware waits
 for the sensor to start up and sets it up again before reading it. All sensors read in one
 telemetry pass share a single power-up. Earlier boards power the port all the time.
 
 The start-up wait and setup of each sensor are listed under
-[switched sensor supply](../Architecture.md#switched-sensor-supply).
+[sensor power](../SensorPower.md#writing-a-driver-for-a-port-sensor).
 
 ## Actuators
 
@@ -27,7 +27,8 @@ The start-up wait and setup of each sensor are listed under
 | Peripheral | Type | Measures / controls | Connection |
 | --- | --- | --- | --- |
 | [Spadefoot Toad](SpadefootToad.md) | `soil:spadefoot-toad`, `soil:spadefoot-toad-bb` | Soil moisture and temperature (two depths, averaged) | I²C, 100 kHz (`-bb`: software I²C, MK10 only) |
-| [Truebner SMT100](SMT100.md) | `soil:smt100` | Soil moisture and temperature | I²C, through a Mole Cricket UART bridge (LV UART variant) |
+| [Truebner SMT100](SMT100.md) | `soil:smt100` | Soil moisture and temperature | I²C, through a Mole Cricket UART bridge (LV UART variant); or RS485 (RS485 variant, MK14 only) |
+| [ZTS-3002](ZTS-3002.md) | `soil:zts-3002` | Soil moisture, temperature and conductivity (N/P/K estimates optional) | RS485, Modbus RTU (MK14 only) |
 | [Chirp](Chirp.md) | `soil:chirp` | Soil moisture and temperature | I²C |
 | [HW-390](HW-390.md) | `soil:hw390`, `environment:soil-moisture` | Soil moisture | Analog (ADC pin), optional disable pin |
 | [DS18B20](DS18B20.md) | `environment:ds18b20` | Soil temperature | 1-Wire (GPIO, external 4.7 kΩ pull-up) |

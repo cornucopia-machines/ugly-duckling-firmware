@@ -253,7 +253,7 @@ public:
     }
 
     Result<> readCalibration(JsonObject& res) {
-        auto device = TRY(railDevice.power());
+        auto device = TRY(switchedDevice.power());
         auto calibration = TRY(device->readBytes(CMD_READ_CALIBRATION, 17));
         uint8_t csum = 0;
         for (size_t i = 0; i < 16; i++) {
@@ -305,7 +305,7 @@ private:
     SpadefootToadSensor(const std::string& name, const std::shared_ptr<SwitchedRail>& rail, std::unique_ptr<SpadefootToadTransport> probeTransport, bool logRawValues)
         : Peripheral(name)
         // Keeps its settings in EEPROM, so there is nothing to set up after a power-up
-        , railDevice(rail, STARTUP_TIME, NO_POWER_ON_SETUP, std::move(probeTransport))
+        , switchedDevice(rail, STARTUP_TIME, NO_POWER_ON_SETUP, std::move(probeTransport))
         , logRawValues(logRawValues) {
     }
 
@@ -316,7 +316,7 @@ private:
         LOGTI(ENV, "Initializing Spadefoot Toad soil sensor '%s' with %s",
             getName().c_str(), configDescription.c_str());
 
-        auto device = TRY(railDevice.power());
+        auto device = TRY(switchedDevice.power());
 
         uint16_t mfrId = TRY(device->readWord(CMD_GET_MFR_ID));
         if (mfrId != EXPECTED_MFR_ID) {
@@ -359,7 +359,7 @@ private:
 
     // Sends a command that measures the probes before it writes to EEPROM, and keeps the sensor powered until it is done
     Result<> runToCompletion(uint8_t cmd) {
-        auto device = TRY(railDevice.power());
+        auto device = TRY(switchedDevice.power());
         TRY(device->writeByte(cmd));
         Task::delay(MEASUREMENT_TIME);
         return {};
@@ -367,10 +367,10 @@ private:
 
     static constexpr std::chrono::seconds MEASUREMENT_TIME { 1 };
 
-    using RailTransport = RailDevice<std::unique_ptr<SpadefootToadTransport>>;
+    using RailTransport = SwitchedDevice<std::unique_ptr<SpadefootToadTransport>>;
     using PoweredTransport = RailTransport::Powered;
 
-    RailTransport railDevice;
+    RailTransport switchedDevice;
     const bool logRawValues;
 
     void logRawReading(const PoweredTransport& device) {
@@ -401,7 +401,7 @@ private:
 
     utils::DebouncedMeasurement<SpadefootToadReading> measurement {
         [this](const utils::DebouncedParams<SpadefootToadReading>) -> std::optional<SpadefootToadReading> {
-            auto device = railDevice.power();
+            auto device = switchedDevice.power();
             if (!device) {
                 LOGTW(ENV, "Spadefoot Toad '%s': failed to power up: %s",
                     getName().c_str(), device.error().message.c_str());

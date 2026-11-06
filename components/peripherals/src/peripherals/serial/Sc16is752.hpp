@@ -273,6 +273,32 @@ public:
         }
     }
 
+    Result<std::string> read(size_t length, std::chrono::milliseconds timeout) override {
+        auto waited = std::chrono::milliseconds::zero();
+        while (pending.size() < length) {
+            size_t available = TRY(chip.rxLevel(channel));
+            if (available > 0) {
+                size_t start = pending.size();
+                pending.resize(start + available);
+                TRY(chip.readFifo(channel, pending.data() + start, available));
+                continue;
+            }
+            if (waited >= timeout) {
+                auto received = std::string(pending.begin(), pending.end());
+                pending.clear();
+                return failure(received.empty()
+                        ? "no response within " + std::to_string(timeout.count()) + " ms"
+                        : "only " + std::to_string(received.size()) + " of " + std::to_string(length)
+                            + " bytes within " + std::to_string(timeout.count()) + " ms: '" + escape(received) + "'");
+            }
+            chip.sleepFor(pollInterval);
+            waited += pollInterval;
+        }
+        std::string data(pending.begin(), pending.begin() + static_cast<std::ptrdiff_t>(length));
+        pending.erase(pending.begin(), pending.begin() + static_cast<std::ptrdiff_t>(length));
+        return data;
+    }
+
     Result<> flushRx() override {
         pending.clear();
         // Drain rather than reset the FIFO: a reset would also drop anything queued for TX

@@ -39,12 +39,12 @@ public:
             sensorType.c_str(), name.c_str(), config.toString().c_str());
 
         auto sensor = std::shared_ptr<Sht2xSensor>(new Sht2xSensor(name, bus, rail));
-        ESP_TRY(si7021_init_desc(&sensor->railDevice.unpowered(), bus->port, bus->sda->getGpio(), bus->scl->getGpio()));
+        ESP_TRY(si7021_init_desc(&sensor->switchedDevice.unpowered(), bus->port, bus->sda->getGpio(), bus->scl->getGpio()));
         return sensor;
     }
 
     ~Sht2xSensor() override {
-        si7021_free_desc(&railDevice.unpowered());
+        si7021_free_desc(&switchedDevice.unpowered());
     }
 
     Sht2xSensor(const Sht2xSensor&) = delete;
@@ -53,7 +53,7 @@ public:
     Sht2xSensor& operator=(Sht2xSensor&&) = delete;
 
     double getTemperature() override {
-        auto device = railDevice.power();
+        auto device = switchedDevice.power();
         if (!device) {
             return std::numeric_limits<double>::quiet_NaN();
         }
@@ -67,7 +67,7 @@ public:
     }
 
     double getMoisture() override {
-        auto device = railDevice.power();
+        auto device = switchedDevice.power();
         if (!device) {
             return std::numeric_limits<double>::quiet_NaN();
         }
@@ -85,14 +85,14 @@ private:
         : Peripheral(name)
         , bus(bus)
         // Keeps no settings we change, so there is nothing to set up after a power-up
-        , railDevice(rail, POWER_UP_TIME, NO_POWER_ON_SETUP) {
+        , switchedDevice(rail, POWER_UP_TIME, NO_POWER_ON_SETUP) {
     }
 
     // SHT21 / HTU21D power-up time
     static constexpr std::chrono::milliseconds POWER_UP_TIME { 15 };
 
     std::shared_ptr<I2CBus> bus;
-    RailDevice<i2c_dev_t> railDevice;
+    SwitchedDevice<i2c_dev_t> switchedDevice;
 };
 
 inline PeripheralFactory makeFactoryForSht2x(const std::string& sensorKey) {

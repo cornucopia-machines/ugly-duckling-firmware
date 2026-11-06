@@ -8,8 +8,10 @@
 #include <drivers/LedDriver.hpp>
 #include <peripherals/Peripheral.hpp>
 #include <peripherals/door/Door.hpp>
+#include <peripherals/serial/Rs485Bus.hpp>
 #include <peripherals/valve/ValveFactory.hpp>
 
+#include <driver/uart.h>
 #include <soc/rtc.h>
 
 #include <cstdio>
@@ -93,6 +95,16 @@ protected:
         peripheralManager->registerFactory(valve::makeFactory(motors, ValveControlStrategyType::Latching));
         peripheralManager->registerFactory(door::makeFactory(motors));
     }
+
+    // UART0 belongs to the cellular modem
+    Result<std::shared_ptr<serial::ISerialBus>> getRs485Bus(const std::shared_ptr<SwitchedRail>& rail) override {
+        if (!rs485) {
+            rs485 = TRY(serial::Rs485Bus::create(UART_NUM_1, RS485_TX, RS485_RX, rail));
+        }
+        return rs485;
+    }
+
+    std::shared_ptr<serial::Rs485Bus> rs485;
 
     // 32 kHz external crystal
     DEFINE_PIN(GPIO_NUM_0, XTAL32K_P, "XTAL_32K_P")

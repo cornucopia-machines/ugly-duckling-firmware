@@ -25,6 +25,7 @@
 #include <peripherals/environment/Sht3xSensor.hpp>
 #include <peripherals/environment/Smt100Sensor.hpp>
 #include <peripherals/environment/SpadefootToadSensor.hpp>
+#include <peripherals/environment/ZtsSoilSensor.hpp>
 #include <peripherals/fence/ElectricFenceMonitor.hpp>
 #include <peripherals/flow_meter/FlowMeter.hpp>
 #include <peripherals/light_sensor/AnalogLightSensor.hpp>
@@ -87,7 +88,12 @@ public:
         peripheralManager->registerFactory(environment::makeFactoryForHw390SoilMoisture("environment:soil-moisture"));
         peripheralManager->registerFactory(environment::makeFactoryForChirpSoilSensor());
         peripheralManager->registerFactory(environment::makeFactoryForSpadefootToadSensor());
-        peripheralManager->registerFactory(environment::makeFactoryForSmt100());
+        // The RS485 probes fail on boards without an RS485 port when configured, not at registration
+        serial::SerialBusProvider rs485 = [this, rail = services.switchedRail]() {
+            return getRs485Bus(rail);
+        };
+        peripheralManager->registerFactory(environment::makeFactoryForSmt100(rs485));
+        peripheralManager->registerFactory(environment::makeFactoryForZtsSoilSensor(rs485));
         peripheralManager->registerFactory(environment::makeFactoryForDs18b20());
         peripheralManager->registerFactory(environment::makeFactoryForKalmanSoilMoisture());
 
@@ -143,6 +149,13 @@ protected:
     }
 
     virtual void registerDeviceSpecificFunctionFactories(const std::shared_ptr<FunctionRegistry>& _functionRegistry) {
+    }
+
+    /**
+     * @brief The board's RS485 bus, set up on first use. Called only once a peripheral asks for it.
+     */
+    virtual Result<std::shared_ptr<serial::ISerialBus>> getRs485Bus(const std::shared_ptr<SwitchedRail>& _rail) {
+        return failure("RS485 sensors need a board with an RS485 port (MK14 or later); " + model + " has none");
     }
 
     /**

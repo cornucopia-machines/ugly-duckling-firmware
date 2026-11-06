@@ -266,7 +266,7 @@ private:
 };
 
 /**
- * @brief For a RailDevice whose device keeps no settings we'd have to restore after a power-up.
+ * @brief For a SwitchedDevice whose device keeps no settings we'd have to restore after a power-up.
  */
 struct NoPowerOnSetup { };
 inline constexpr NoPowerOnSetup NO_POWER_ON_SETUP {};
@@ -280,7 +280,7 @@ inline constexpr NoPowerOnSetup NO_POWER_ON_SETUP {};
  * on MK14 doesn't compile.
  */
 template <typename T>
-class RailDevice {
+class SwitchedDevice {
 public:
     using PowerOnSetup = std::function<Result<>(T&)>;
 
@@ -306,7 +306,7 @@ public:
         }
 
     private:
-        friend class RailDevice;
+        friend class SwitchedDevice;
 
         Powered(SwitchedRail::Session session, T* device)
             : session(std::move(session))
@@ -323,7 +323,7 @@ public:
      * @param args Constructs the `T` that the driver talks to the device through.
      */
     template <typename... Args>
-    RailDevice(std::shared_ptr<SwitchedRail> rail, std::chrono::microseconds startupTime, PowerOnSetup powerOnSetup, Args&&... args)
+    SwitchedDevice(std::shared_ptr<SwitchedRail> rail, std::chrono::microseconds startupTime, PowerOnSetup powerOnSetup, Args&&... args)
         : rail(std::move(rail))
         , startupTime(startupTime)
         , powerOnSetup(std::move(powerOnSetup))
@@ -334,8 +334,8 @@ public:
      * @brief A device with nothing to set up after a power-up; it only needs its start-up time.
      */
     template <typename... Args>
-    RailDevice(std::shared_ptr<SwitchedRail> rail, std::chrono::microseconds startupTime, NoPowerOnSetup /*unused*/, Args&&... args)
-        : RailDevice(std::move(rail), startupTime, PowerOnSetup {}, std::forward<Args>(args)...) {
+    SwitchedDevice(std::shared_ptr<SwitchedRail> rail, std::chrono::microseconds startupTime, NoPowerOnSetup /*unused*/, Args&&... args)
+        : SwitchedDevice(std::move(rail), startupTime, PowerOnSetup {}, std::forward<Args>(args)...) {
     }
 
     /**

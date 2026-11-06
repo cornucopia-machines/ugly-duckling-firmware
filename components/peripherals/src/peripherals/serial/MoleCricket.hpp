@@ -44,13 +44,13 @@ public:
     static constexpr std::chrono::milliseconds POLL_INTERVAL { 5 };
 
 private:
-    using RailChip = kernel::drivers::RailDevice<Sc16is752>;
+    using RailChip = kernel::drivers::SwitchedDevice<Sc16is752>;
     using PoweredChip = RailChip::Powered;
 
 public:
     static Result<std::shared_ptr<MoleCricket>> create(std::unique_ptr<ISc16is752Bus> bus, std::shared_ptr<kernel::drivers::SwitchedRail> rail, DelayFunction delay, std::string description) {
         auto board = std::shared_ptr<MoleCricket>(new MoleCricket(std::move(bus), std::move(rail), std::move(delay), std::move(description)));
-        TRY(board->railDevice.initialize());
+        TRY(board->switchedDevice.initialize());
         return board;
     }
 
@@ -85,12 +85,24 @@ private:
             return port.write(data);
         }
 
+        Result<std::string> read(size_t length, std::chrono::milliseconds timeout) override {
+            return port.read(length, timeout);
+        }
+
         Result<std::string> readUntil(char terminator, size_t maxLength, std::chrono::milliseconds timeout) override {
             return port.readUntil(terminator, maxLength, timeout);
         }
 
         Result<> flushRx() override {
             return port.flushRx();
+        }
+
+        // The probe supply switches on when the session opens, never earlier
+        void waitPoweredFor(std::chrono::milliseconds duration) override {
+            auto poweredFor = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - openedAt);
+            if (poweredFor < duration) {
+                chip->sleepFor(duration - poweredFor);
+            }
         }
 
     private:
@@ -100,6 +112,7 @@ private:
         PoweredChip chip;
         Sc16is752Port port;
         const Channel channel;
+        const std::chrono::steady_clock::time_point openedAt = std::chrono::steady_clock::now();
     };
 
     class Link final : public ISerialLink {
@@ -125,7 +138,7 @@ private:
     MoleCricket(std::unique_ptr<ISc16is752Bus> bus, std::shared_ptr<kernel::drivers::SwitchedRail> rail, DelayFunction delay, std::string description)
         : description(std::move(description))
         // The bridge loses its UART and GPIO setup whenever the rail turns off
-        , railDevice(
+        , switchedDevice(
               std::move(rail),
               std::chrono::microseconds::zero(),
               [this](Sc16is752& chip) { return initialize(chip); },
@@ -155,7 +168,7 @@ private:
 
     Result<std::unique_ptr<ISerialSession>> open(Channel channel) {
         std::unique_lock lock(mutex);
-        auto device = TRY(railDevice.power());
+        auto device = TRY(switchedDevice.power());
         TRY(device->setSleep(channel, false));
         TRY(device->resetFifos(channel));
         // Probe supply on, LED on (active low)
@@ -182,7 +195,7 @@ private:
     }
 
     const std::string description;
-    RailChip railDevice;
+    RailChip switchedDevice;
     std::mutex mutex;
 };
 
