@@ -46,8 +46,8 @@ class ChirpSoilSensorSettings
     : public I2CSettings {
 public:
     // Raw capacitance calibration values
-    Property<uint16_t> air { this, "air", 300 };
-    Property<uint16_t> water { this, "water", 700 };
+    Property<uint16_t> air { this, "air", 250 };
+    Property<uint16_t> water { this, "water", 550 };
 };
 
 class ChirpSoilSensor final
@@ -150,8 +150,8 @@ In `DeviceDefinition.hpp`:
     "address": "0x20",
     "sda": "GPIO4",
     "scl": "GPIO5",
-    "air": 300,
-    "water": 700
+    "air": 250,
+    "water": 550
   }
 }
 ```

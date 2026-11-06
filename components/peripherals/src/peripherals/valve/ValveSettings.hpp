@@ -48,7 +48,8 @@ public:
     /**
      * @brief Duty to use to hold the motorized valve in place.
      *
-     * @details This is a percentage from 0 to 100, default is 100%. This is ignored for latching strategies and when the pin is specified.
+     * @details This is a percentage from 0 to 100, default is 100%. Latching strategies have nothing to
+     * hold, and use it as the duty of their switching pulse instead. Ignored when the pin is specified.
      */
     Property<double> holdDuty { this, "holdDuty", 100 };    // This is a percentage
 

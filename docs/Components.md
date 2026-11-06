@@ -58,7 +58,7 @@ graph TD
 * Peripherals publish telemetry as **features**
 
   An SHT3x peripheral for example will publish two numeric features: the `temperature` of the air and the `moisture` percentage,
-  A `valve` will publish a sigle `valve` feature that includes the state of the valve and any overrides being active at the time.
+  A `valve` will publish a single `valve` feature with the state of the valve.
 
   Features are addressed by their type and the name of the peripheral they belong to.
 
@@ -87,11 +87,11 @@ graph TD
 Motor-driven valves (`strategy` of `NO`, `NC` or `latching`) are driven through an H-bridge.
 Their timing is set by these properties:
 
-| Property         | Strategies | Default                                | Meaning                                                                  |
-|------------------|------------|----------------------------------------|--------------------------------------------------------------------------|
-| `switchDuration` | all        | 500 ms (`NO`/`NC`), 30 ms (`latching`) | How long to drive the valve at full duty when switching it.              |
-| `holdDuty`       | `NO`, `NC` | 100 %                                  | Duty used to hold the valve in its non-default state after switching.    |
-| `brakeDuration`  | `latching` | 10 ms                                  | How long to brake the bridge after a pulse, before releasing the driver. |
+| Property         | Strategies | Default                                | Meaning                                                                                                                   |
+|------------------|------------|----------------------------------------|---------------------------------------------------------------------------------------------------------------------------|
+| `switchDuration` | all        | 500 ms (`NO`/`NC`), 30 ms (`latching`) | How long to drive the valve at full duty when switching it.                                                               |
+| `holdDuty`       | all        | 100 %                                  | `NO`/`NC`: duty used to hold the valve in its non-default state after switching. `latching`: duty of the switching pulse. |
+| `brakeDuration`  | `latching` | 10 ms                                  | How long to brake the bridge after a pulse, before releasing the driver.                                                  |
 
 A latching solenoid only needs its rated pulse (25–30 ms for the S211B and Transol coils).
 A longer pulse only heats the coil and loads the supply rail, so a `switchDuration` set

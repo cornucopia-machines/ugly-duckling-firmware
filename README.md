@@ -16,7 +16,7 @@ See [docs/Architecture.md](docs/Architecture.md) for the system architecture and
 
 ## Hardware platforms and models
 
-Ugly Duckling hardware is organised into two layers:
+Ugly Duckling hardware is organized into two layers:
 
 ### Platforms
 
@@ -125,8 +125,8 @@ freshly flashed or erased device boots with none and reconciles the full set fro
         "openPin": "B2",
         "closedPin": "B1",
         "lightSensor": {
-          "scl": "C2",
-          "sda": "C3",
+          "scl": "C3",
+          "sda": "C2",
         },
       },
     },
@@ -138,7 +138,7 @@ Devices communicate using their MQTT topic root: `d/$ID` for re-addressed device
 `/devices/ugly-duckling/$DEVICE_INSTANCE` for legacy devices still pending migration. We refer to
 this as `$DEVICE_ROOT`. For example, during boot, the device publishes to `$DEVICE_ROOT/boot`.
 
-Peripherals communicate using the topic `$DEVICE_ROOT/peripheral/$PERIPHERAL_NAME`, or `$PERIPHERAL_ROOT` for short.
+Peripherals communicate using the topic `$DEVICE_ROOT/peripherals/$PERIPHERAL_NAME`, or `$PERIPHERAL_ROOT` for short.
 
 ## Peripheral configuration
 
