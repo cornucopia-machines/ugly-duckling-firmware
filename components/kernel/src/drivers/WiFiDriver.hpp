@@ -11,6 +11,7 @@
 #include <ArduinoJson.h>
 #include <esp_event.h>
 #include <esp_sleep.h>
+#include <esp_system.h>
 #include <esp_wifi.h>
 #include <network_provisioning/manager.h>
 #include <network_provisioning/scheme_softap.h>
@@ -59,6 +60,11 @@ public:
         wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
         ESP_ERROR_CHECK(esp_wifi_init(&cfg));
         ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_FLASH));
+
+        // esp_restart() runs the shutdown handlers in reverse registration order, and ESP-IDF registered
+        // esp_wifi_stop() in esp_netif_create_default_wifi_sta() above. So this one runs first, and the
+        // driver stops reconnecting before WiFi goes down (#707).
+        ESP_ERROR_CHECK(esp_register_shutdown_handler(&WiFiDriver::onShutdown));
 
         Task::run("wifi-driver", 4096, [this](Task&) {
             runLoop();
@@ -123,6 +129,23 @@ public:
     }
 
 private:
+    // Shutdown handlers take no context, hence the static flag. Runs in the task calling esp_restart(),
+    // while the driver task keeps running.
+    static void onShutdown() {
+        shuttingDown.store(true);
+    }
+
+    // Like ESP_ERROR_CHECK, but tolerates the WiFi stack stopping under us during a restart: a
+    // connect() already under way when the shutdown handler ran can still race esp_wifi_stop().
+    static bool checkUnlessShuttingDown(esp_err_t err, const char* what) {
+        if (err == ESP_ERR_WIFI_STOP_STATE && shuttingDown.load()) {
+            LOGTD(WIFI, "%s failed during shutdown: %s", what, esp_err_to_name(err));
+            return false;
+        }
+        ESP_ERROR_CHECK(err);
+        return true;
+    }
+
     // Only called from runLoop() — no mutex needed.
     void setWifiStatusInternal(const std::string& newStatus) {
         if (wifiStatus != newStatus) {
@@ -309,6 +332,12 @@ private:
         steady_clock::time_point connectingSince;
         std::optional<std::function<void(std::vector<WifiApRecord>)>> pendingScanCallback;
         while (true) {
+            if (shuttingDown.load()) {
+                // The device is restarting and ESP-IDF is stopping WiFi: leave it alone, and drop
+                // the events the shutdown causes (STA_STOP, STA_DISCONNECTED) instead of reconnecting
+                eventQueue.drainIn(duration_cast<ticks>(WIFI_CHECK_INTERVAL), [](const auto&) { });
+                continue;
+            }
             if (!connected) {
                 if (disabled) {
                     // nothing — just drain events
@@ -489,9 +518,11 @@ private:
 #endif
 
             LOGTD(WIFI, "Starting station");
-            ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
-            ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &config));
-            ESP_ERROR_CHECK(esp_wifi_start());
+            if (!checkUnlessShuttingDown(esp_wifi_set_mode(WIFI_MODE_STA), "esp_wifi_set_mode")
+                || !checkUnlessShuttingDown(esp_wifi_set_config(WIFI_IF_STA, &config), "esp_wifi_set_config")
+                || !checkUnlessShuttingDown(esp_wifi_start(), "esp_wifi_start")) {
+                return;
+            }
             stationStarted.awaitSet();
         }
     }
@@ -597,6 +628,8 @@ private:
     static constexpr milliseconds WIFI_CHECK_INTERVAL = 1min;
 
     std::atomic<int> disconnectCount { 0 };
+    // Set by the shutdown handler when esp_restart() begins; never cleared
+    static inline std::atomic<bool> shuttingDown { false };
     // True by default (assumed provisioning-owned); cleared to false when we
     // call esp_wifi_scan_start() so WIFI_EVENT_SCAN_DONE knows to consume the
     // results, then reset to true via exchange.
