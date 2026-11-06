@@ -11,7 +11,7 @@
         "probeAddress": "000000",
         "protocol": "ascii",
         "startupTime": 500,
-        "responseTimeout": 1000
+        "responseTimeout": 500
       }
     }
   ]

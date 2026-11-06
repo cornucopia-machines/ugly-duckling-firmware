@@ -44,10 +44,11 @@ public:
     Property<std::string> probeAddress { this, "probeAddress", Smt100AsciiProtocol::BROADCAST_ADDRESS };
     // Only "ascii" for now; "modbus" may follow
     Property<std::string> protocol { this, "protocol", "ascii" };
-    // Wait after powering the probe before querying it (the manual gives < 500 ms until stable)
+    // Wait after powering the probe before querying it. The manual gives < 500 ms until stable;
+    // 100 ms worked on the bench, but we keep the manual's margin
     Property<milliseconds> startupTime { this, "startupTime", 500ms };
-    // Wait for each response
-    Property<milliseconds> responseTimeout { this, "responseTimeout", 1000ms };
+    // Wait for each response. GetTemperature took 330 ms on the bench, and 200 ms was too short
+    Property<milliseconds> responseTimeout { this, "responseTimeout", 500ms };
 };
 
 class Smt100Sensor final
