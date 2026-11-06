@@ -47,7 +47,7 @@ public:
             config.toString().c_str());
 
         auto sensor = std::shared_ptr<Tsl2591>(new Tsl2591(name, bus, rail, measurementFrequency, latencyInterval));
-        ESP_TRY(tsl2591_init_desc(&sensor->sensor, bus->port, bus->sda->getGpio(), bus->scl->getGpio()));
+        ESP_TRY(tsl2591_init_desc(&sensor->railDevice.unpowered(), bus->port, bus->sda->getGpio(), bus->scl->getGpio()));
         TRY(sensor->railDevice.initialize());
 
         sensor->runLoop();
@@ -55,7 +55,7 @@ public:
     }
 
     ~Tsl2591() override {
-        tsl2591_free_desc(&sensor);
+        tsl2591_free_desc(&railDevice.unpowered());
     }
 
     Tsl2591(const Tsl2591&) = delete;
@@ -72,12 +72,10 @@ private:
         seconds latencyInterval)
         : LightSensor(name, measurementFrequency, latencyInterval)
         , bus(bus)
-        , railDevice(rail, 0us, [this]() -> Result<> {
-            return configure();
-        }) {
+        , railDevice(rail, 0us, powerOnSetup) {
     }
 
-    Result<> configure() {
+    static Result<> powerOnSetup(tsl2591_t& sensor) {
         auto* device = &sensor;
         ESP_TRY(tsl2591_init(device));
 
@@ -95,13 +93,13 @@ private:
 
 protected:
     std::optional<double> readLightLevel() override {
-        auto session = railDevice.power();
-        if (!session) {
-            LOGD("Could not set up light sensor: %s", session.error().message.c_str());
+        auto device = railDevice.power();
+        if (!device) {
+            LOGD("Could not set up light sensor: %s", device.error().message.c_str());
             return std::nullopt;
         }
         float lux;
-        esp_err_t res = tsl2591_get_lux(&sensor, &lux);
+        esp_err_t res = tsl2591_get_lux(&**device, &lux);
         if (res != ESP_OK) {
             LOGD("Could not read light level: %s", esp_err_to_name(res));
             return std::nullopt;
@@ -111,8 +109,7 @@ protected:
 
 private:
     std::shared_ptr<I2CBus> bus;
-    tsl2591_t sensor {};
-    RailDevice railDevice;
+    RailDevice<tsl2591_t> railDevice;
 };
 
 inline PeripheralFactory makeFactoryForTsl2591() {

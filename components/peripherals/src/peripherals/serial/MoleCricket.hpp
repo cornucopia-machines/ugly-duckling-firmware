@@ -43,6 +43,11 @@ public:
     static constexpr uint32_t BAUD = 9600;
     static constexpr std::chrono::milliseconds POLL_INTERVAL { 5 };
 
+private:
+    using RailChip = kernel::drivers::RailDevice<Sc16is752>;
+    using PoweredChip = RailChip::Powered;
+
+public:
     static Result<std::shared_ptr<MoleCricket>> create(std::unique_ptr<ISc16is752Bus> bus, std::shared_ptr<kernel::drivers::SwitchedRail> rail, DelayFunction delay, std::string description) {
         auto board = std::shared_ptr<MoleCricket>(new MoleCricket(std::move(bus), std::move(rail), std::move(delay), std::move(description)));
         TRY(board->railDevice.initialize());
@@ -61,16 +66,16 @@ public:
 private:
     class Session final : public ISerialSession {
     public:
-        Session(std::shared_ptr<MoleCricket> board, Channel channel, std::unique_lock<std::mutex> lock, kernel::drivers::SwitchedRail::Session railSession)
+        Session(std::shared_ptr<MoleCricket> board, Channel channel, std::unique_lock<std::mutex> lock, PoweredChip chip)
             : board(std::move(board))
             , lock(std::move(lock))
-            , railSession(std::move(railSession))
-            , port(this->board->chip, channel, POLL_INTERVAL)
+            , chip(std::move(chip))
+            , port(*this->chip, channel, POLL_INTERVAL)
             , channel(channel) {
         }
 
         ~Session() override {
-            board->powerDown(channel, port);
+            board->powerDown(*chip, channel, port);
         }
 
         Session(const Session&) = delete;
@@ -92,7 +97,7 @@ private:
         const std::shared_ptr<MoleCricket> board;
         std::unique_lock<std::mutex> lock;
         // Keeps the board powered until the destructor has powered the probe down
-        kernel::drivers::SwitchedRail::Session railSession;
+        PoweredChip chip;
         Sc16is752Port port;
         const Channel channel;
     };
@@ -118,13 +123,18 @@ private:
     };
 
     MoleCricket(std::unique_ptr<ISc16is752Bus> bus, std::shared_ptr<kernel::drivers::SwitchedRail> rail, DelayFunction delay, std::string description)
-        : chip(std::move(bus), CRYSTAL_HZ, std::move(delay))
-        , description(std::move(description))
+        : description(std::move(description))
         // The bridge loses its UART and GPIO setup whenever the rail turns off
-        , railDevice(std::move(rail), std::chrono::microseconds::zero(), [this]() { return initialize(); }) {
+        , railDevice(
+              std::move(rail),
+              std::chrono::microseconds::zero(),
+              [this](Sc16is752& chip) { return initialize(chip); },
+              std::move(bus),
+              CRYSTAL_HZ,
+              std::move(delay)) {
     }
 
-    Result<> initialize() {
+    Result<> initialize(Sc16is752& chip) {
         if (auto present = chip.checkPresent(); !present) {
             return failure("Mole Cricket not found (" + description + "): " + present.error().message
                 + ". Check the cable and JP1: both jumpers fitted, A1/A0 at VDD/VDD = 0x48, "
@@ -145,16 +155,16 @@ private:
 
     Result<std::unique_ptr<ISerialSession>> open(Channel channel) {
         std::unique_lock lock(mutex);
-        auto railSession = TRY(railDevice.power());
-        TRY(chip.setSleep(channel, false));
-        TRY(chip.resetFifos(channel));
+        auto device = TRY(railDevice.power());
+        TRY(device->setSleep(channel, false));
+        TRY(device->resetFifos(channel));
         // Probe supply on, LED on (active low)
-        TRY(chip.setGpio(GPIO_PROBE_POWER | GPIO_LED, GPIO_PROBE_POWER));
-        return std::make_unique<Session>(shared_from_this(), channel, std::move(lock), std::move(railSession));
+        TRY(device->setGpio(GPIO_PROBE_POWER | GPIO_LED, GPIO_PROBE_POWER));
+        return std::make_unique<Session>(shared_from_this(), channel, std::move(lock), std::move(device));
     }
 
     // Called with the session's lock still held
-    void powerDown(Channel channel, Sc16is752Port& port) {
+    void powerDown(Sc16is752& chip, Channel channel, Sc16is752Port& port) {
         if (auto result = chip.setGpio(GPIO_PROBE_POWER | GPIO_LED, GPIO_LED); !result) {
             LOGTW(MOLE_CRICKET, "Failed to switch probe supply off (%s): %s",
                 description.c_str(), result.error().message.c_str());
@@ -171,9 +181,8 @@ private:
         }
     }
 
-    Sc16is752 chip;
     const std::string description;
-    kernel::drivers::RailDevice railDevice;
+    RailChip railDevice;
     std::mutex mutex;
 };
 

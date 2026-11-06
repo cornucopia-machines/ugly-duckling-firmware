@@ -235,10 +235,14 @@ Three classes in `kernel/drivers` share LOADEN:
   time. Time the rail has already been on, for any client, counts towards that wait. MK14 creates
   the rail from its LOADEN `SharedEnable`; every other board uses `SwitchedRail::alwaysOn()`, whose
   sessions never wait and whose activation never changes.
-- **`RailDevice`** wraps one sensor on the rail. Sensors lose their settings when the rail goes
-  off, so `RailDevice::power()` opens a session, waits for the sensor's start-up time, and re-runs
-  the driver's setup whenever the activation has changed since it last ran. On an always-on rail
-  that setup runs exactly once, at creation, as it did before.
+- **`RailDevice<T>`** wraps one sensor on the rail. It owns whatever the driver talks to the
+  sensor through (an I²C descriptor, an `I2CDevice`, a bridge chip), and hands it out only from
+  `power()`, so a driver can't reach its sensor without powering the rail: a sensor that would
+  work on MK13 but not on MK14 doesn't compile. `power()` opens a session, waits for the sensor's
+  start-up time, and re-runs the driver's power-on setup whenever the activation has changed since
+  it last ran, because sensors lose their settings when the rail goes off. On an always-on rail
+  that setup runs exactly once, at creation, as it did before. `unpowered()` gives access without
+  power, only for setting up and freeing the driver's own descriptor.
 
 A `Batch` keeps the rail on between sessions without turning it on by itself. Peripheral creation
 and each telemetry pass run inside one, so all the sensors share one power-up, and a device with

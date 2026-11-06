@@ -44,7 +44,7 @@ public:
 
         auto sensor = std::shared_ptr<Bh1750>(new Bh1750(name, rail, measurementFrequency, latencyInterval));
         // TODO Use I2CManager to create device
-        ESP_TRY(bh1750_init_desc(&sensor->sensor, config.address, I2C_NUM_0, config.sda->getGpio(), config.scl->getGpio()));
+        ESP_TRY(bh1750_init_desc(&sensor->railDevice.unpowered(), config.address, I2C_NUM_0, config.sda->getGpio(), config.scl->getGpio()));
         TRY(sensor->railDevice.initialize());
 
         sensor->runLoop();
@@ -52,7 +52,7 @@ public:
     }
 
     ~Bh1750() override {
-        bh1750_free_desc(&sensor);
+        bh1750_free_desc(&railDevice.unpowered());
     }
 
     Bh1750(const Bh1750&) = delete;
@@ -62,13 +62,13 @@ public:
 
 protected:
     std::optional<double> readLightLevel() override {
-        auto session = railDevice.power();
-        if (!session) {
-            LOGE("Could not set up light sensor: %s", session.error().message.c_str());
+        auto device = railDevice.power();
+        if (!device) {
+            LOGE("Could not set up light sensor: %s", device.error().message.c_str());
             return std::nullopt;
         }
         uint16_t lightLevel;
-        if (bh1750_read(&sensor, &lightLevel) != ESP_OK) {
+        if (bh1750_read(&**device, &lightLevel) != ESP_OK) {
             LOGE("Could not read light level");
             return std::nullopt;
         }
@@ -82,7 +82,7 @@ private:
         seconds measurementFrequency,
         seconds latencyInterval)
         : LightSensor(name, measurementFrequency, latencyInterval)
-        , railDevice(rail, 0us, [this]() -> Result<> {
+        , railDevice(rail, 0us, [](i2c_dev_t& sensor) -> Result<> {
             ESP_TRY(bh1750_setup(&sensor, BH1750_MODE_CONTINUOUS, BH1750_RES_LOW));
             // Wait for the first measurement after a power-up, or we'd read zero
             Task::delay(FIRST_MEASUREMENT_TIME);
@@ -93,8 +93,7 @@ private:
     // Maximum L-resolution measurement time
     static constexpr milliseconds FIRST_MEASUREMENT_TIME { 24 };
 
-    i2c_dev_t sensor {};
-    RailDevice railDevice;
+    RailDevice<i2c_dev_t> railDevice;
 };
 
 inline PeripheralFactory makeFactoryForBh1750() {

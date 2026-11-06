@@ -47,13 +47,11 @@ public:
     }
 
 private:
-    Hdc2010Sensor(const std::string& name, const std::shared_ptr<I2CDevice>& device, const std::shared_ptr<SwitchedRail>& rail)
+    Hdc2010Sensor(const std::string& name, const std::shared_ptr<I2CDevice>& i2cDevice, const std::shared_ptr<SwitchedRail>& rail)
         : Peripheral(name)
-        , device(device)
-        , railDevice(rail, STARTUP_TIME, [this]() -> Result<> {
+        , railDevice(rail, STARTUP_TIME, [](std::shared_ptr<I2CDevice>& device) -> Result<> {
             // On-demand mode (ODR=000), heater off, DRDY output disabled
-            return this->device->writeRegByte(0x0E, 0x00);
-        }) {
+            return device->writeRegByte(0x0E, 0x00); }, i2cDevice) {
     }
 
     // Datasheet §7.5.2: ready at most 3 ms after power-up
@@ -62,8 +60,7 @@ private:
     using Reading = std::pair<double, double>;
     static constexpr double NaN = std::numeric_limits<double>::quiet_NaN();
 
-    const std::shared_ptr<I2CDevice> device;
-    RailDevice railDevice;
+    RailDevice<std::shared_ptr<I2CDevice>> railDevice;
 
     utils::DebouncedMeasurement<Reading> measurement {
         [this](const utils::DebouncedParams<Reading>) -> std::optional<Reading> {
@@ -79,7 +76,7 @@ private:
     };
 
     Result<Reading> measure() {
-        auto session = TRY(railDevice.power());
+        auto device = TRY(railDevice.power());
         // Trigger a single measurement (14-bit temp + humidity); meas_trig self-clears on completion
         TRY(device->writeRegByte(0x0F, 0x01));
         // 14-bit conversion takes ~1.3 ms; wait with margin

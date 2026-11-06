@@ -13,7 +13,7 @@
  *   2. ESP-IDF adapters (#ifdef ESP_PLATFORM): EspBitbangPin wraps
  *      InternalPin with ISR-safe setLevel/getLevel; EspBitbangI2CBus adds
  *      5 µs half-bit delays and per-byte portENTER_CRITICAL sections.
- *      SpadefootToadSensorWithBitbangI2C uses these two classes directly.
+ *      SpadefootToadBitbangTransport uses these two classes directly.
  */
 
 #include <Result.hpp>
@@ -194,7 +194,7 @@ private:
 
 // ---------------------------------------------------------------------------
 // ESP-IDF adapters — only compiled when building for ESP32.
-// These are the two classes SpadefootToadSensorWithBitbangI2C uses directly.
+// These are the two classes SpadefootToadBitbangTransport uses directly.
 // ---------------------------------------------------------------------------
 
 #ifdef ESP_PLATFORM

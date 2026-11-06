@@ -266,35 +266,91 @@ private:
 };
 
 /**
- * @brief A device on a switched rail that loses its configuration whenever the rail turns off.
+ * @brief For a RailDevice whose device keeps no settings we'd have to restore after a power-up.
  */
+struct NoPowerOnSetup { };
+inline constexpr NoPowerOnSetup NO_POWER_ON_SETUP {};
+
+/**
+ * @brief A device on a switched rail that loses its settings whenever the rail turns off.
+ *
+ * @details Owns `T`, whatever the driver talks to the device through (an I²C descriptor, a bus
+ * wrapper, a chip driver), and hands it out only through power(). So a driver cannot reach the
+ * device without powering it: a driver that would work on a board with an always-on rail but not
+ * on MK14 doesn't compile.
+ */
+template <typename T>
 class RailDevice {
 public:
-    using Configure = std::function<Result<>()>;
+    using PowerOnSetup = std::function<Result<>(T&)>;
+
+    /**
+     * @brief Access to the powered device; keeps the rail on while it lives.
+     */
+    class Powered {
+    public:
+        T& operator*() const {
+            return *device;
+        }
+
+        /**
+         * @brief Reaches through a smart pointer, so a device held as e.g. `std::shared_ptr<I2CDevice>`
+         * reads `powered->readReg(...)`.
+         */
+        auto operator->() const {
+            if constexpr (requires { device->operator->(); }) {
+                return device->operator->();
+            } else {
+                return device;
+            }
+        }
+
+    private:
+        friend class RailDevice;
+
+        Powered(SwitchedRail::Session session, T* device)
+            : session(std::move(session))
+            , device(device) {
+        }
+
+        SwitchedRail::Session session;
+        T* device;
+    };
 
     /**
      * @param startupTime How long the device needs after power-on before it responds.
-     * @param configure Sets the device up after a power-on; also run once on a rail that is always on.
+     * @param powerOnSetup Sets the device up after a power-on; also run once on a rail that is always on.
+     * @param args Constructs the `T` that the driver talks to the device through.
      */
-    RailDevice(std::shared_ptr<SwitchedRail> rail, std::chrono::microseconds startupTime, Configure configure)
+    template <typename... Args>
+    RailDevice(std::shared_ptr<SwitchedRail> rail, std::chrono::microseconds startupTime, PowerOnSetup powerOnSetup, Args&&... args)
         : rail(std::move(rail))
         , startupTime(startupTime)
-        , configure(std::move(configure)) {
+        , powerOnSetup(std::move(powerOnSetup))
+        , device(std::forward<Args>(args)...) {
+    }
+
+    /**
+     * @brief A device with nothing to set up after a power-up; it only needs its start-up time.
+     */
+    template <typename... Args>
+    RailDevice(std::shared_ptr<SwitchedRail> rail, std::chrono::microseconds startupTime, NoPowerOnSetup /*unused*/, Args&&... args)
+        : RailDevice(std::move(rail), startupTime, PowerOnSetup {}, std::forward<Args>(args)...) {
     }
 
     /**
      * @brief Power the device, wait for it to start up, and set it up again if it lost power since it
-     * was last set up. Keep the session while talking to the device.
+     * was last set up.
      */
-    Result<SwitchedRail::Session> power() {
+    Result<Powered> power() {
         auto session = rail->acquire();
         session.waitPoweredFor(startupTime);
         std::scoped_lock lock(mutex);
-        if (configuredActivation != session.getActivation()) {
-            TRY(configure());
-            configuredActivation = session.getActivation();
+        if (powerOnSetup && setUpActivation != session.getActivation()) {
+            TRY(powerOnSetup(device));
+            setUpActivation = session.getActivation();
         }
-        return session;
+        return Powered(std::move(session), &device);
     }
 
     /**
@@ -305,13 +361,22 @@ public:
         return {};
     }
 
+    /**
+     * @brief Access the device without powering it, only for what doesn't talk to it: setting up or
+     * freeing the driver's own descriptor.
+     */
+    T& unpowered() {
+        return device;
+    }
+
 private:
     const std::shared_ptr<SwitchedRail> rail;
     const std::chrono::microseconds startupTime;
-    const Configure configure;
+    const PowerOnSetup powerOnSetup;
+    T device;
 
     std::mutex mutex;
-    std::optional<uint32_t> configuredActivation;
+    std::optional<uint32_t> setUpActivation;
 };
 
 }    // namespace cornucopia::ugly_duckling::kernel::drivers

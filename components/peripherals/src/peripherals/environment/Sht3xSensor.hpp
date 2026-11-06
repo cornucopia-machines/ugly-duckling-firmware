@@ -36,15 +36,16 @@ public:
             sensorType.c_str(), name.c_str(), config.toString().c_str());
 
         auto sensor = std::shared_ptr<Sht3xSensor>(new Sht3xSensor(name, bus, rail));
-        ESP_TRY(sht3x_init_desc(&sensor->sensor, config.address, bus->port, bus->sda->getGpio(), bus->scl->getGpio()));
+        auto& descriptor = sensor->railDevice.unpowered();
+        ESP_TRY(sht3x_init_desc(&descriptor, config.address, bus->port, bus->sda->getGpio(), bus->scl->getGpio()));
         // sht3x_init_desc() hard-codes 1 MHz; use the configured clock like every other I²C device
-        sensor->sensor.i2c_dev.cfg.master.clk_speed = config.clkSpeed;
-        TRY(sensor->device.initialize());
+        descriptor.i2c_dev.cfg.master.clk_speed = config.clkSpeed;
+        TRY(sensor->railDevice.initialize());
         return sensor;
     }
 
     ~Sht3xSensor() override {
-        sht3x_free_desc(&sensor);
+        sht3x_free_desc(&railDevice.unpowered());
     }
 
     Sht3xSensor(const Sht3xSensor&) = delete;
@@ -64,7 +65,7 @@ private:
     Sht3xSensor(const std::string& name, const std::shared_ptr<I2CBus>& bus, const std::shared_ptr<SwitchedRail>& rail)
         : Peripheral(name)
         , bus(bus)
-        , device(rail, POWER_UP_TIME, [this]() -> Result<> {
+        , railDevice(rail, POWER_UP_TIME, [](sht3x_t& sensor) -> Result<> {
             ESP_TRY(sht3x_init(&sensor));
             return {};
         }) {
@@ -77,19 +78,18 @@ private:
     static constexpr double NaN = std::numeric_limits<double>::quiet_NaN();
 
     std::shared_ptr<I2CBus> bus;
-    sht3x_t sensor {};
-    RailDevice device;
+    RailDevice<sht3x_t> railDevice;
 
     utils::DebouncedMeasurement<Reading> measurement {
         [this](const utils::DebouncedParams<Reading>) -> std::optional<Reading> {
-            auto session = device.power();
-            if (!session) {
-                LOGTD(ENV, "Could not set up sensor: %s", session.error().message.c_str());
+            auto device = railDevice.power();
+            if (!device) {
+                LOGTD(ENV, "Could not set up sensor: %s", device.error().message.c_str());
                 return Reading { NaN, NaN };
             }
             float fTemp;
             float fHumidity;
-            esp_err_t res = sht3x_measure(&sensor, &fTemp, &fHumidity);
+            esp_err_t res = sht3x_measure(&**device, &fTemp, &fHumidity);
             if (res == ESP_OK) {
                 LOGTV(ENV, "Measured temperature: %.2f °C, humidity: %.2f %%",
                     static_cast<double>(fTemp), static_cast<double>(fHumidity));

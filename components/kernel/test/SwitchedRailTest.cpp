@@ -193,50 +193,50 @@ TEST_CASE("always-on rail never waits and keeps its activation") {
     REQUIRE_FALSE(rail->isSwitched());
 }
 
-TEST_CASE("rail device configures on first power-up") {
+TEST_CASE("rail device runs its power-on setup on first power-up") {
     Fixture f;
-    int configured = 0;
-    RailDevice device(f.rail, 10ms, [&]() -> Result<> {
-        configured++;
+    int setUps = 0;
+    RailDevice<int> device(f.rail, 10ms, [&](int&) -> Result<> {
+        setUps++;
         return {};
     });
     REQUIRE(device.initialize());
-    REQUIRE(configured == 1);
+    REQUIRE(setUps == 1);
     REQUIRE(f.slept == 10ms);
 }
 
-TEST_CASE("rail device configures again only after a power cycle") {
+TEST_CASE("rail device runs its power-on setup again only after a power cycle") {
     Fixture f;
-    int configured = 0;
-    RailDevice device(f.rail, 0ms, [&]() -> Result<> {
-        configured++;
+    int setUps = 0;
+    RailDevice<int> device(f.rail, 0ms, [&](int&) -> Result<> {
+        setUps++;
         return {};
     });
     {
         auto batch = f.rail->batch();
         REQUIRE(device.initialize());
         REQUIRE(device.initialize());
-        REQUIRE(configured == 1);
+        REQUIRE(setUps == 1);
     }
     REQUIRE(device.initialize());
-    REQUIRE(configured == 2);
+    REQUIRE(setUps == 2);
 }
 
-TEST_CASE("rail device on an always-on rail configures once") {
-    int configured = 0;
-    RailDevice device(SwitchedRail::alwaysOn(), 0ms, [&]() -> Result<> {
-        configured++;
+TEST_CASE("rail device on an always-on rail runs its power-on setup once") {
+    int setUps = 0;
+    RailDevice<int> device(SwitchedRail::alwaysOn(), 0ms, [&](int&) -> Result<> {
+        setUps++;
         return {};
     });
     REQUIRE(device.initialize());
     REQUIRE(device.initialize());
-    REQUIRE(configured == 1);
+    REQUIRE(setUps == 1);
 }
 
-TEST_CASE("rail device retries configuration after it failed") {
+TEST_CASE("rail device retries its power-on setup after it failed") {
     Fixture f;
     int attempts = 0;
-    RailDevice device(f.rail, 0ms, [&]() -> Result<> {
+    RailDevice<int> device(f.rail, 0ms, [&](int&) -> Result<> {
         if (++attempts == 1) {
             return failure("not responding");
         }
@@ -246,4 +246,27 @@ TEST_CASE("rail device retries configuration after it failed") {
     REQUIRE_FALSE(device.initialize());
     REQUIRE(device.initialize());
     REQUIRE(attempts == 2);
+}
+
+TEST_CASE("rail device hands out the device it owns while powered") {
+    Fixture f;
+    RailDevice<int> device(f.rail, 0ms, [](int& value) -> Result<> {
+        value = 42;
+        return {}; }, 0);
+    {
+        auto powered = device.power();
+        REQUIRE(powered);
+        REQUIRE(**powered == 42);
+        REQUIRE(f.railSwitch->on);
+    }
+    REQUIRE_FALSE(f.railSwitch->on);
+}
+
+TEST_CASE("rail device without power-on setup only waits for start-up") {
+    Fixture f;
+    RailDevice<int> device(f.rail, 10ms, NO_POWER_ON_SETUP, 7);
+    auto powered = device.power();
+    REQUIRE(powered);
+    REQUIRE(**powered == 7);
+    REQUIRE(f.slept == 10ms);
 }

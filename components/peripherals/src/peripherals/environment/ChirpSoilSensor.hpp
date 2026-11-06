@@ -59,14 +59,13 @@ public:
 private:
     ChirpSoilSensor(
         const std::string& name,
-        const std::shared_ptr<I2CDevice>& device,
+        const std::shared_ptr<I2CDevice>& i2cDevice,
         const std::shared_ptr<SwitchedRail>& rail,
         int airValue,
         int waterValue)
         : Peripheral(name)
-        , device(device)
         // Keeps no settings we change, so there is nothing to set up after a power-up
-        , railDevice(rail, STARTUP_TIME, []() -> Result<> { return {}; })
+        , railDevice(rail, STARTUP_TIME, NO_POWER_ON_SETUP, i2cDevice)
         , airValue(airValue)
         , waterValue(waterValue) {
     }
@@ -77,8 +76,7 @@ private:
     // The reference driver waits this long for the sensor to boot after a reset
     static constexpr std::chrono::seconds STARTUP_TIME { 1 };
 
-    const std::shared_ptr<I2CDevice> device;
-    RailDevice railDevice;
+    RailDevice<std::shared_ptr<I2CDevice>> railDevice;
     const int airValue;
     const int waterValue;
 
@@ -86,14 +84,14 @@ private:
         [this](const utils::DebouncedParams<ChirpReading>) -> std::optional<ChirpReading> {
             ChirpReading reading;
 
-            auto session = railDevice.power();
-            if (!session) {
-                LOGTW(ENV, "Failed to power Chirp sensor: %s", session.error().message.c_str());
+            auto device = railDevice.power();
+            if (!device) {
+                LOGTW(ENV, "Failed to power Chirp sensor: %s", device.error().message.c_str());
                 return reading;
             }
 
             // Capacitance: 16-bit big-endian
-            if (auto capacitance = device->readRegWord(REG_CAPACITANCE)) {
+            if (auto capacitance = (*device)->readRegWord(REG_CAPACITANCE)) {
                 uint16_t rawMoisture = __builtin_bswap16(*capacitance);
 
                 double run = waterValue - airValue;
@@ -106,7 +104,7 @@ private:
             }
 
             // Temperature: 16-bit big-endian, units of 1/10 °C
-            if (auto temperature = device->readRegWord(REG_TEMPERATURE)) {
+            if (auto temperature = (*device)->readRegWord(REG_TEMPERATURE)) {
                 uint16_t rawTemp = __builtin_bswap16(*temperature);
                 reading.temperature = rawTemp / 10.0;
 
