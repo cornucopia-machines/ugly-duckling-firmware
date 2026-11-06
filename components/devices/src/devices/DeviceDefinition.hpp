@@ -22,6 +22,7 @@
 #include <peripherals/environment/NtcTemperatureSensor.hpp>
 #include <peripherals/environment/Sht2xSensor.hpp>
 #include <peripherals/environment/Sht3xSensor.hpp>
+#include <peripherals/environment/Smt100Sensor.hpp>
 #include <peripherals/environment/SpadefootToadSensor.hpp>
 #include <peripherals/fence/ElectricFenceMonitor.hpp>
 #include <peripherals/flow_meter/FlowMeter.hpp>
@@ -86,6 +87,7 @@ public:
         peripheralManager->registerFactory(environment::makeFactoryForHw390SoilMoisture("environment:soil-moisture"));
         peripheralManager->registerFactory(environment::makeFactoryForChirpSoilSensor());
         peripheralManager->registerFactory(environment::makeFactoryForSpadefootToadSensor());
+        peripheralManager->registerFactory(environment::makeFactoryForSmt100());
         peripheralManager->registerFactory(environment::makeFactoryForDs18b20());
         peripheralManager->registerFactory(environment::makeFactoryForKalmanSoilMoisture());
 
