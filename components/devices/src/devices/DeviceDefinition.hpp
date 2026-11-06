@@ -29,7 +29,6 @@
 #include <peripherals/light_sensor/AnalogLightSensor.hpp>
 #include <peripherals/light_sensor/Bh1750.hpp>
 #include <peripherals/light_sensor/Tsl2591.hpp>
-#include <peripherals/multiplexer/Xl9535.hpp>
 
 #include <ArduinoJson.h>
 
@@ -96,8 +95,6 @@ public:
         peripheralManager->registerFactory(light_sensor::makeFactoryForAnalogLightSensor());
         peripheralManager->registerFactory(light_sensor::makeFactoryForBh1750());
         peripheralManager->registerFactory(light_sensor::makeFactoryForTsl2591());
-
-        peripheralManager->registerFactory(multiplexer::makeFactoryForXl9535());
 
         peripheralManager->registerFactory(analog_meter::makeFactory());
         peripheralManager->registerFactory(flow_meter::makeFactory());

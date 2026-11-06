@@ -8,7 +8,7 @@ reaches the device, see [`Configuration.md`](../Configuration.md).
 
 | Peripheral | Type | Measures / controls | Connection |
 | --- | --- | --- | --- |
-| [Valve](Valve.md) | `valve` | Opens and closes a water valve (latching, NC or NO) | Motor driver output on the board, or a pin (e.g. I/O expander output) |
+| [Valve](Valve.md) | `valve` | Opens and closes a water valve (latching, NC or NO) | Motor driver output on the board, or a pin |
 | [Door](Door.md) | `door` | Moves a motorized door between open and closed end switches | Motor driver output on the board, plus two GPIO end-switch inputs |
 
 ## Soil
@@ -46,9 +46,3 @@ reaches the device, see [`Configuration.md`](../Configuration.md).
 | [Flow meter](FlowMeter.md) | `flow-meter` | Water volume (l) and flow rate (l/min) from a pulse-output meter | Pulse input on an internal GPIO (`IFLOWA`/`IFLOWB` on MK9 and later) |
 | [Analog meter](AnalogMeter.md) | `analog-meter` | Any analog voltage sensor (e.g. pressure), linearly scaled | ADC-capable internal GPIO |
 | [Electric fence monitor](ElectricFence.md) | `electric-fence` | Fence voltage level (V), from pulses on per-voltage pins; not deployed yet | Pulse inputs on internal GPIOs |
-
-## Expanders
-
-| Peripheral | Type | Measures / controls | Connection |
-| --- | --- | --- | --- |
-| [XL9535 I/O expander](XL9535.md) | `multiplexer:xl9535` | Adds 16 digital pins (`<name>:0`–`<name>:15`) for other peripherals | I²C |
