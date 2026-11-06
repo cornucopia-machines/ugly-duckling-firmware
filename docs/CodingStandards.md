@@ -53,6 +53,7 @@ The firmware is built without C++ exceptions (`CONFIG_COMPILER_CXX_EXCEPTIONS=n`
 - Classes that can fail to set up get a `static Result<std::shared_ptr<T>> create(...)` factory and a private constructor. Peripheral and function factories may return either the instance or a `Result` of it.
 - Configuration values that ArduinoJson converts but which can still be invalid (such as pin names) are rejected by specializing `PropertyValidator<T>`.
 - Where a failure can only mean the firmware itself is broken (hardware the board definition hard-codes, resources the firmware allocates at boot), abort with `ESP_ERROR_CHECK` or `esp_system_abort("reason")`, so the crash says why.
+- To discard a return value on purpose (one that `bugprone-unused-return-value`, `cert-err33-c` or `[[nodiscard]]` would flag), assign it to `std::ignore` (from `<tuple>`) rather than casting it to `(void)`: `std::ignore = snprintf(...);`. Say why in a comment unless it's obvious, e.g. when a failed `Result` is expected.
 - Code that calls into the standard library still aborts on its errors (out-of-range `substr`, constructing a `std::string` from `nullptr`, running out of memory): check the inputs instead.
 
 ## Naming Conventions

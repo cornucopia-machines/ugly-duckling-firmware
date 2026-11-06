@@ -19,6 +19,7 @@
 #include <chrono>
 #include <functional>
 #include <string>
+#include <tuple>
 #include <variant>
 #include <vector>
 
@@ -540,7 +541,7 @@ private:
         uint8_t mac[6];
         const char* ssid_prefix = "PROV_";
         esp_wifi_get_mac(WIFI_IF_STA, mac);
-        (void) snprintf(serviceName, sizeof(serviceName), "%s%02X%02X%02X",
+        std::ignore = snprintf(serviceName, sizeof(serviceName), "%s%02X%02X%02X",
             ssid_prefix, mac[3], mac[4], mac[5]);
         LOGTD(WIFI, "Starting provisioning service '%s'",
             serviceName);

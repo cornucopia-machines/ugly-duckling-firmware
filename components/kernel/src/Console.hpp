@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <tuple>
 #include <utility>
 
 namespace cornucopia::ugly_duckling::kernel {
@@ -138,7 +139,7 @@ private:
         // The buffer was too small, try again with a heap-allocated buffer instead, but still limit length
         auto size = static_cast<size_t>(std::min(length, 2048));
         char* heapBuffer = new char[size + 1];
-        (void) vsnprintf(heapBuffer, size + 1, format, args);
+        std::ignore = vsnprintf(heapBuffer, size + 1, format, args);
         std::string result(heapBuffer, size);
         delete[] heapBuffer;
         return result;

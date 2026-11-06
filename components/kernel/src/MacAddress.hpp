@@ -4,6 +4,7 @@
 #include <esp_mac.h>
 
 #include <string>
+#include <tuple>
 #include <vector>
 
 namespace cornucopia::ugly_duckling::kernel {
@@ -25,7 +26,7 @@ inline const std::string& getMacAddress() {
     if (macAddress.empty()) {
         auto rawMac = getRawMacAddress();
         char mac[4 * MAC_ADDRESS_LENGTH];    // "xx:xx:xx:xx:xx:xx" + null terminator
-        (void) sprintf(mac, "%02x:%02x:%02x:%02x:%02x:%02x",
+        std::ignore = sprintf(mac, "%02x:%02x:%02x:%02x:%02x:%02x",
             rawMac[0], rawMac[1], rawMac[2], rawMac[3],
             rawMac[4], rawMac[5]);
         macAddress = mac;

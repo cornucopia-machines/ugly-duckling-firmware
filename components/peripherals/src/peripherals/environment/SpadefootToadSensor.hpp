@@ -42,6 +42,7 @@
 #include <limits>
 #include <memory>
 #include <mutex>
+#include <tuple>
 #include <vector>
 
 using namespace cornucopia::ugly_duckling::kernel;
@@ -377,7 +378,7 @@ public:
 
         auto sensor = std::shared_ptr<SpadefootToadSensorWithBitbangI2C>(new SpadefootToadSensorWithBitbangI2C(name, sda, scl, address, logRawValues));
         char addrBuf[5];
-        (void) snprintf(addrBuf, sizeof(addrBuf), "%02X", address);
+        std::ignore = snprintf(addrBuf, sizeof(addrBuf), "%02X", address);
         TRY(sensor->initializeProtocol("bitbang I2C SDA:" + sda->getName() + " SCL:" + scl->getName() + " addr:0x" + addrBuf));
         return sensor;
     }

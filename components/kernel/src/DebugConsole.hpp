@@ -15,6 +15,7 @@
 #include <chrono>
 #include <memory>
 #include <string>
+#include <tuple>
 
 using namespace std::chrono;
 
@@ -79,7 +80,7 @@ private:
         }
 
         printf("\033[1G\033[0K%s", status.c_str());
-        (void) fflush(stdout);
+        std::ignore = fflush(stdout);
         fsync(fileno(stdout));
     }
 
@@ -171,7 +172,7 @@ private:
         if (ip_info.ip.addr != 0) {
             static char ip_str[32];
             // NOLINTNEXTLINE(cppcoreguidelines-pro-type-cstyle-cast)
-            (void) snprintf(ip_str, sizeof(ip_str), "\033[0;33m" IPSTR "\033[0m", IP2STR(&ip_info.ip));
+            std::ignore = snprintf(ip_str, sizeof(ip_str), "\033[0;33m" IPSTR "\033[0m", IP2STR(&ip_info.ip));
             return ip_str;
         }
         return "\033[0;33mIP?\033[0m";

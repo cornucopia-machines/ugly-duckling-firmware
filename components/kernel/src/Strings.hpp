@@ -3,6 +3,7 @@
 #include <stdint.h>
 
 #include <string>
+#include <tuple>
 
 namespace cornucopia::ugly_duckling::kernel {
 
@@ -26,7 +27,7 @@ inline std::string toHexString(uint64_t value) {
 
 inline std::string toStringWithPrecision(double value, int precision) {
     char buffer[32];
-    (void) std::snprintf(buffer, sizeof(buffer), "%.*f", precision, value);
+    std::ignore = std::snprintf(buffer, sizeof(buffer), "%.*f", precision, value);
     return { buffer };
 }
 
