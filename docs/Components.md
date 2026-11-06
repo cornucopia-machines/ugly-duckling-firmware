@@ -53,6 +53,8 @@ graph TD
   Peripherals are initialized based on parameters in the **device configuration**, a reconciled
   configuration the server pushes via `UPDATE` (see [`Configuration.md`](Configuration.md)); `config-templates/*device-config*.json` are schema/fixture examples, not a runtime source.
 
+  How to connect and configure each supported peripheral is in [`peripherals/`](peripherals/README.md).
+
 * Peripherals publish telemetry as **features**
 
   An SHT3x peripheral for example will publish two numeric features: the `temperature` of the air and the `moisture` percentage,
