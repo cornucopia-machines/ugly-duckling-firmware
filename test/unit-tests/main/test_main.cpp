@@ -3,8 +3,6 @@
 #include <catch2/reporters/catch_reporter_event_listener.hpp>
 #include <catch2/reporters/catch_reporter_registrars.hpp>
 
-#include <stdio.h>
-
 #include <iomanip>
 #include <iostream>
 #include <string_view>
@@ -44,13 +42,7 @@ int main(int argc, char* argv[]) {
     Catch::Session session;
     session.configData().rngSeed = 12345;
 
-    int result = session.run(argc, argv);
-
-    if (result != 0) {
-        printf("Test failed with result %d\n", result);
-    } else {
-        printf("Test passed.\n");
-    }
-
-    return result;
+    // No summary line of our own: Catch2 prints one, and catch_discover_tests() would read ours,
+    // printed after --list-test-names-only, as the name of a test
+    return session.run(argc, argv);
 }

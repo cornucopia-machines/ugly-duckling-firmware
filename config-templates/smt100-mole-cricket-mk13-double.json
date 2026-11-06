@@ -1,0 +1,28 @@
+{
+  "peripherals": [
+    {
+      "name": "soil-a",
+      "type": "soil:smt100",
+      "params": {
+        "sda": "EXT_SDA",
+        "scl": "EXT_SCL",
+        "address": "0x48",
+        "channel": "a",
+        "probeAddress": "000000",
+        "protocol": "ascii",
+        "startupTime": 500,
+        "responseTimeout": 500
+      }
+    },
+    {
+      "name": "soil-b",
+      "type": "soil:smt100",
+      "params": {
+        "sda": "EXT_SDA",
+        "scl": "EXT_SCL",
+        "address": "0x48",
+        "channel": "b"
+      }
+    }
+  ]
+}
