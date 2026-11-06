@@ -24,6 +24,7 @@ public:
         const std::string& name,
         const std::string& sensorType,
         const std::shared_ptr<I2CManager>& i2c,
+        const std::shared_ptr<SwitchedRail>& rail,
         const I2CConfig& config) {
         auto bus = TRY(i2c->getBusFor(config));
 
@@ -34,16 +35,17 @@ public:
         LOGTI(ENV, "Initializing %s environment sensor '%s' with %s",
             sensorType.c_str(), name.c_str(), config.toString().c_str());
 
-        auto sensor = std::shared_ptr<Sht3xSensor>(new Sht3xSensor(name, bus));
-        ESP_TRY(sht3x_init_desc(&sensor->sensor, config.address, bus->port, bus->sda->getGpio(), bus->scl->getGpio()));
+        auto sensor = std::shared_ptr<Sht3xSensor>(new Sht3xSensor(name, bus, rail));
+        auto& descriptor = sensor->railDevice.unpowered();
+        ESP_TRY(sht3x_init_desc(&descriptor, config.address, bus->port, bus->sda->getGpio(), bus->scl->getGpio()));
         // sht3x_init_desc() hard-codes 1 MHz; use the configured clock like every other I²C device
-        sensor->sensor.i2c_dev.cfg.master.clk_speed = config.clkSpeed;
-        ESP_TRY(sht3x_init(&sensor->sensor));
+        descriptor.i2c_dev.cfg.master.clk_speed = config.clkSpeed;
+        TRY(sensor->railDevice.initialize());
         return sensor;
     }
 
     ~Sht3xSensor() override {
-        sht3x_free_desc(&sensor);
+        sht3x_free_desc(&railDevice.unpowered());
     }
 
     Sht3xSensor(const Sht3xSensor&) = delete;
@@ -60,22 +62,34 @@ public:
     }
 
 private:
-    Sht3xSensor(const std::string& name, const std::shared_ptr<I2CBus>& bus)
+    Sht3xSensor(const std::string& name, const std::shared_ptr<I2CBus>& bus, const std::shared_ptr<SwitchedRail>& rail)
         : Peripheral(name)
-        , bus(bus) {
+        , bus(bus)
+        , railDevice(rail, POWER_UP_TIME, [](sht3x_t& sensor) -> Result<> {
+            ESP_TRY(sht3x_init(&sensor));
+            return {};
+        }) {
     }
+
+    // Datasheet: power-up time tPU is at most 1.5 ms
+    static constexpr std::chrono::microseconds POWER_UP_TIME { 1500 };
 
     using Reading = std::pair<double, double>;
     static constexpr double NaN = std::numeric_limits<double>::quiet_NaN();
 
     std::shared_ptr<I2CBus> bus;
-    sht3x_t sensor {};
+    RailDevice<sht3x_t> railDevice;
 
     utils::DebouncedMeasurement<Reading> measurement {
         [this](const utils::DebouncedParams<Reading>) -> std::optional<Reading> {
+            auto device = railDevice.power();
+            if (!device) {
+                LOGTD(ENV, "Could not set up sensor: %s", device.error().message.c_str());
+                return Reading { NaN, NaN };
+            }
             float fTemp;
             float fHumidity;
-            esp_err_t res = sht3x_measure(&sensor, &fTemp, &fHumidity);
+            esp_err_t res = sht3x_measure(&**device, &fTemp, &fHumidity);
             if (res == ESP_OK) {
                 LOGTV(ENV, "Measured temperature: %.2f °C, humidity: %.2f %%",
                     static_cast<double>(fTemp), static_cast<double>(fHumidity));
@@ -95,7 +109,7 @@ inline PeripheralFactory makeFactoryForSht3x() {
         "environment",
         [](PeripheralInitParameters& params, const std::shared_ptr<I2CSettings>& settings) -> Result<std::shared_ptr<Sht3xSensor>> {
             I2CConfig i2cConfig = settings->parse(0x44 /* Also supports 0x45 */);
-            auto sensor = TRY(Sht3xSensor::create(params.name, "sht3x", params.services.i2c, i2cConfig));
+            auto sensor = TRY(Sht3xSensor::create(params.name, "sht3x", params.services.i2c, params.services.switchedRail, i2cConfig));
             params.registerFeature("temperature", [sensor](JsonObject& telemetryJson) {
                 telemetryJson["value"] = sensor->getTemperature();
             });

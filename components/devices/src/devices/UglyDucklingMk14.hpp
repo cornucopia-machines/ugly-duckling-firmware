@@ -68,15 +68,14 @@ public:
         };
     }
 
+    std::shared_ptr<SwitchedRail> createSwitchedRail() override {
+        return loadEnable->createSwitchedRail();
+    }
+
     std::shared_ptr<BuzzerDriver> buzzer;
 
 protected:
     void registerDeviceSpecificPeripheralFactories(const std::shared_ptr<PeripheralManager>& peripheralManager, const PeripheralServices& services, const std::shared_ptr<DeviceConfiguration>& /*deviceConfig*/) override {
-        // LOADEN switches the 6.5 V VLOAD boost, the DRV8847's nSLEEP and the +3V3_BUS load switch
-        // (RS485 transceiver and I2C port) together. 5 ms covers the boost's soft start and the
-        // DRV8847's 1.5 ms wake time.
-        auto loadEnable = SharedEnable::forActiveHighPin({ .pin = LOADEN, .settleTime = 5ms });
-
         // Only bridge A is wired (to JDRIVE1); IN3/IN4 are tied to GND on the board
         auto motorDriver = Drv8847Driver::create(
             services.pwmManager,
@@ -152,6 +151,11 @@ protected:
 
     // Buzzer
     DEFINE_PIN(GPIO_NUM_23, BUZZER)
+
+    // LOADEN switches the 6.5 V VLOAD boost, the DRV8847's nSLEEP and the +3V3_BUS load switch
+    // (RS485 transceiver and I2C port) together. 5 ms covers the boost's soft start and the
+    // DRV8847's 1.5 ms wake time. Declared after the pins, so LOADEN exists when this is initialized.
+    const std::shared_ptr<SharedEnable> loadEnable = SharedEnable::forActiveHighPin({ .pin = LOADEN, .settleTime = 5ms });
 };
 
 }    // namespace cornucopia::ugly_duckling::devices

@@ -9,6 +9,7 @@
 #include <Telemetry.hpp>
 #include <config/Configuration.hpp>
 #include <drivers/SwitchManager.hpp>
+#include <drivers/SwitchedRail.hpp>
 #include <mqtt/MqttRoot.hpp>
 #include <peripherals/api/IPeripheral.hpp>
 
@@ -49,6 +50,10 @@ struct PeripheralServices {
     const std::shared_ptr<PulseCounterManager> pulseCounterManager;
     const std::shared_ptr<PwmManager> pwmManager;
     const std::shared_ptr<SwitchManager> switches;
+    /**
+     * @brief Supplies the sensors on the external I2C and RS485 ports; hold a session while talking to them.
+     */
+    const std::shared_ptr<SwitchedRail> switchedRail;
     const std::shared_ptr<TelemetryPublisher> telemetryPublisher;
 };
 

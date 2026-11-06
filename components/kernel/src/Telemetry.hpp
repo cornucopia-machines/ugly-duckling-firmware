@@ -1,6 +1,7 @@
 #pragma once
 #include <Log.hpp>
 #include <Queue.hpp>
+#include <drivers/SwitchedRail.hpp>
 
 #include <ArduinoJson.h>
 
@@ -14,7 +15,15 @@ namespace cornucopia::ugly_duckling::kernel {
 
 class TelemetryCollector {
 public:
+    /**
+     * @param switchedRail Kept powered for the whole collection, so the sensors on it share one power-up.
+     */
+    explicit TelemetryCollector(std::shared_ptr<drivers::SwitchedRail> switchedRail)
+        : switchedRail(std::move(switchedRail)) {
+    }
+
     void collect(JsonArray& featuresJson) {
+        auto railBatch = switchedRail->batch();
         for (auto& feature : features) {
             auto featureJson = featuresJson.add<JsonObject>();
             featureJson["type"] = feature.type;
@@ -42,6 +51,7 @@ private:
         std::function<void(JsonObject&)> populate;
     };
 
+    const std::shared_ptr<drivers::SwitchedRail> switchedRail;
     std::vector<Feature> features;
 };
 

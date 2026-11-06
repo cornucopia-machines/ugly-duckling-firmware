@@ -8,6 +8,7 @@
 #include <drivers/BatteryDriver.hpp>
 #include <drivers/Ina219Driver.hpp>
 #include <drivers/LedDriver.hpp>
+#include <drivers/SwitchedRail.hpp>
 #include <drivers/cellular/CellularModemPins.hpp>
 #include <functions/chicken_door/ChickenDoor.hpp>
 #include <functions/plot_controller/PlotController.hpp>
@@ -121,6 +122,15 @@ public:
      */
     virtual std::optional<cellular::CellularModemPins> getCellularModemPins() const {
         return std::nullopt;
+    }
+
+    /**
+     * @brief Create the supply of the external I2C and RS485 sensors; called once, while setting up peripherals.
+     *
+     * @details Always on, unless the board can switch it.
+     */
+    virtual std::shared_ptr<SwitchedRail> createSwitchedRail() {
+        return SwitchedRail::alwaysOn();
     }
 
     const std::string model;

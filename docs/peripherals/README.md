@@ -4,6 +4,17 @@ How to connect and configure the peripherals Ugly Duckling supports. For what pe
 features and functions are, see [`Components.md`](../Components.md); for how configuration
 reaches the device, see [`Configuration.md`](../Configuration.md).
 
+## Sensor power on MK14
+
+From MK14 on, the I²C port is only powered while a peripheral is using it. It shares its power
+switch (LOADEN) with the valve driver and its boost converter, so a reading powers those up too.
+A sensor loses its settings whenever the port goes off, so after each power-up the firmware waits
+for the sensor to start up and sets it up again before reading it. All sensors read in one
+telemetry pass share a single power-up. Earlier boards power the port all the time.
+
+The start-up wait and setup of each sensor are listed under
+[switched sensor supply](../Architecture.md#switched-sensor-supply).
+
 ## Actuators
 
 | Peripheral | Type | Measures / controls | Connection |

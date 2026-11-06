@@ -37,6 +37,7 @@ public:
     static Result<std::shared_ptr<ChirpSoilSensor>> create(
         const std::string& name,
         const std::shared_ptr<I2CManager>& i2c,
+        const std::shared_ptr<SwitchedRail>& rail,
         const I2CConfig& config,
         int airValue,
         int waterValue) {
@@ -44,7 +45,7 @@ public:
 
         LOGTI(ENV, "Initializing Chirp soil sensor '%s' with %s; air value: %d; water value: %d",
             name.c_str(), config.toString().c_str(), airValue, waterValue);
-        return std::shared_ptr<ChirpSoilSensor>(new ChirpSoilSensor(name, device, airValue, waterValue));
+        return std::shared_ptr<ChirpSoilSensor>(new ChirpSoilSensor(name, device, rail, airValue, waterValue));
     }
 
     Percent getMoisture() override {
@@ -58,11 +59,13 @@ public:
 private:
     ChirpSoilSensor(
         const std::string& name,
-        const std::shared_ptr<I2CDevice>& device,
+        const std::shared_ptr<I2CDevice>& i2cDevice,
+        const std::shared_ptr<SwitchedRail>& rail,
         int airValue,
         int waterValue)
         : Peripheral(name)
-        , device(device)
+        // Keeps no settings we change, so there is nothing to set up after a power-up
+        , railDevice(rail, STARTUP_TIME, NO_POWER_ON_SETUP, i2cDevice)
         , airValue(airValue)
         , waterValue(waterValue) {
     }
@@ -70,7 +73,10 @@ private:
     static constexpr uint8_t REG_CAPACITANCE = 0x00;
     static constexpr uint8_t REG_TEMPERATURE = 0x05;
 
-    const std::shared_ptr<I2CDevice> device;
+    // The reference driver waits this long for the sensor to boot after a reset
+    static constexpr std::chrono::seconds STARTUP_TIME { 1 };
+
+    RailDevice<std::shared_ptr<I2CDevice>> railDevice;
     const int airValue;
     const int waterValue;
 
@@ -78,8 +84,14 @@ private:
         [this](const utils::DebouncedParams<ChirpReading>) -> std::optional<ChirpReading> {
             ChirpReading reading;
 
+            auto device = railDevice.power();
+            if (!device) {
+                LOGTW(ENV, "Failed to power Chirp sensor: %s", device.error().message.c_str());
+                return reading;
+            }
+
             // Capacitance: 16-bit big-endian
-            if (auto capacitance = device->readRegWord(REG_CAPACITANCE)) {
+            if (auto capacitance = (*device)->readRegWord(REG_CAPACITANCE)) {
                 uint16_t rawMoisture = __builtin_bswap16(*capacitance);
 
                 double run = waterValue - airValue;
@@ -92,7 +104,7 @@ private:
             }
 
             // Temperature: 16-bit big-endian, units of 1/10 °C
-            if (auto temperature = device->readRegWord(REG_TEMPERATURE)) {
+            if (auto temperature = (*device)->readRegWord(REG_TEMPERATURE)) {
                 uint16_t rawTemp = __builtin_bswap16(*temperature);
                 reading.temperature = rawTemp / 10.0;
 
@@ -113,7 +125,7 @@ inline PeripheralFactory makeFactoryForChirpSoilSensor() {
         "environment",
         [](PeripheralInitParameters& params, const std::shared_ptr<ChirpSoilSensorSettings>& settings) -> Result<std::shared_ptr<ChirpSoilSensor>> {
             I2CConfig i2cConfig = settings->parse(0x20);
-            auto sensor = TRY(ChirpSoilSensor::create(params.name, params.services.i2c, i2cConfig, settings->air.get(), settings->water.get()));
+            auto sensor = TRY(ChirpSoilSensor::create(params.name, params.services.i2c, params.services.switchedRail, i2cConfig, settings->air.get(), settings->water.get()));
             params.registerFeature("moisture", [sensor](JsonObject& telemetryJson) {
                 telemetryJson["value"] = sensor->getMoisture();
             });

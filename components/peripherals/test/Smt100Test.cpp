@@ -17,6 +17,7 @@ using namespace cornucopia::ugly_duckling::peripherals::environment;
 using namespace cornucopia::ugly_duckling::peripherals::serial;
 using cornucopia::ugly_duckling::kernel::failure;
 using cornucopia::ugly_duckling::kernel::Result;
+using cornucopia::ugly_duckling::kernel::drivers::SwitchedRail;
 
 // ---------------------------------------------------------------------------
 // Fakes
@@ -266,7 +267,7 @@ uint8_t lastIoState(const FakeSc16is752Bus::State& state) {
 
 TEST_CASE("Mole Cricket starts with the probes off and the LED off") {
     auto state = std::make_shared<FakeSc16is752Bus::State>();
-    auto board = MoleCricket::create(std::make_unique<FakeSc16is752Bus>(state), NO_DELAY, "test");
+    auto board = MoleCricket::create(std::make_unique<FakeSc16is752Bus>(state), SwitchedRail::alwaysOn(), NO_DELAY, "test");
     REQUIRE(board.has_value());
 
     // GPIO0 (probe power) low, GPIO1 (LED, active low) high
@@ -284,12 +285,12 @@ TEST_CASE("Mole Cricket starts with the probes off and the LED off") {
 TEST_CASE("Mole Cricket fails to initialize when the bridge is missing") {
     auto state = std::make_shared<FakeSc16is752Bus::State>();
     state->present = false;
-    CHECK_FALSE(MoleCricket::create(std::make_unique<FakeSc16is752Bus>(state), NO_DELAY, "test").has_value());
+    CHECK_FALSE(MoleCricket::create(std::make_unique<FakeSc16is752Bus>(state), SwitchedRail::alwaysOn(), NO_DELAY, "test").has_value());
 }
 
 TEST_CASE("Mole Cricket session powers the probe only while open") {
     auto state = std::make_shared<FakeSc16is752Bus::State>();
-    auto board = *MoleCricket::create(std::make_unique<FakeSc16is752Bus>(state), NO_DELAY, "test");
+    auto board = *MoleCricket::create(std::make_unique<FakeSc16is752Bus>(state), SwitchedRail::alwaysOn(), NO_DELAY, "test");
     auto link = board->link(MoleCricket::Channel::B);
     {
         auto session = link->open();
@@ -364,7 +365,7 @@ TEST_CASE("SMT100 ASCII over a Mole Cricket session") {
             queueRx(*state, channel, "-1.5\r\n");
         }
     };
-    auto board = *MoleCricket::create(std::make_unique<FakeSc16is752Bus>(state), NO_DELAY, "test");
+    auto board = *MoleCricket::create(std::make_unique<FakeSc16is752Bus>(state), SwitchedRail::alwaysOn(), NO_DELAY, "test");
     auto protocol = *Smt100AsciiProtocol::create("000000", std::chrono::milliseconds(1000));
 
     auto session = *board->link(MoleCricket::Channel::A)->open();
