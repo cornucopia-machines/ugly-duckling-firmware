@@ -105,8 +105,6 @@ private:
     };
 };
 
-using SerialBusProvider = std::function<Result<std::shared_ptr<ISerialBus>>()>;
-
 /**
  * @param rs485 Returns the board's RS485 bus, setting it up on first use.
  */

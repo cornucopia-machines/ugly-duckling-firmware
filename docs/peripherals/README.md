@@ -27,7 +27,7 @@ The start-up wait and setup of each sensor are listed under
 | Peripheral | Type | Measures / controls | Connection |
 | --- | --- | --- | --- |
 | [Spadefoot Toad](SpadefootToad.md) | `soil:spadefoot-toad`, `soil:spadefoot-toad-bb` | Soil moisture and temperature (two depths, averaged) | I²C, 100 kHz (`-bb`: software I²C, MK10 only) |
-| [Truebner SMT100](SMT100.md) | `soil:smt100` | Soil moisture and temperature | I²C, through a Mole Cricket UART bridge (LV UART variant) |
+| [Truebner SMT100](SMT100.md) | `soil:smt100` | Soil moisture and temperature | I²C, through a Mole Cricket UART bridge (LV UART variant); or RS485 (RS485 variant, MK14 only) |
 | [ZTS-3002](ZTS-3002.md) | `soil:zts-3002` | Soil moisture, temperature and conductivity (N/P/K estimates optional) | RS485, Modbus RTU (MK14 only) |
 | [Chirp](Chirp.md) | `soil:chirp` | Soil moisture and temperature | I²C |
 | [HW-390](HW-390.md) | `soil:hw390`, `environment:soil-moisture` | Soil moisture | Analog (ADC pin), optional disable pin |

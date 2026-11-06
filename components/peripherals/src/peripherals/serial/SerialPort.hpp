@@ -15,6 +15,8 @@
 #include <Result.hpp>
 
 #include <chrono>
+#include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -67,5 +69,8 @@ struct ISerialBus {
 
     virtual std::shared_ptr<ISerialLink> link(uint32_t baud) = 0;
 };
+
+// Returns the board's RS485 bus, setting it up on first use; fails on boards without one.
+using SerialBusProvider = std::function<Result<std::shared_ptr<ISerialBus>>()>;
 
 }    // namespace cornucopia::ugly_duckling::peripherals::serial

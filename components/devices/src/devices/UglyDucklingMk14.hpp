@@ -8,7 +8,6 @@
 #include <drivers/LedDriver.hpp>
 #include <peripherals/Peripheral.hpp>
 #include <peripherals/door/Door.hpp>
-#include <peripherals/environment/ZtsSoilSensor.hpp>
 #include <peripherals/serial/Rs485Bus.hpp>
 #include <peripherals/valve/ValveFactory.hpp>
 
@@ -95,15 +94,14 @@ protected:
 
         peripheralManager->registerFactory(valve::makeFactory(motors, ValveControlStrategyType::Latching));
         peripheralManager->registerFactory(door::makeFactory(motors));
+    }
 
-        // UART0 belongs to the cellular modem; set up only once a peripheral asks for the bus
-        peripheralManager->registerFactory(environment::makeFactoryForZtsSoilSensor(
-            [this, rail = services.switchedRail]() -> Result<std::shared_ptr<serial::ISerialBus>> {
-                if (!rs485) {
-                    rs485 = TRY(serial::Rs485Bus::create(UART_NUM_1, RS485_TX, RS485_RX, rail));
-                }
-                return rs485;
-            }));
+    // UART0 belongs to the cellular modem
+    Result<std::shared_ptr<serial::ISerialBus>> getRs485Bus(const std::shared_ptr<SwitchedRail>& rail) override {
+        if (!rs485) {
+            rs485 = TRY(serial::Rs485Bus::create(UART_NUM_1, RS485_TX, RS485_RX, rail));
+        }
+        return rs485;
     }
 
     std::shared_ptr<serial::Rs485Bus> rs485;
