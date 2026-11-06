@@ -36,6 +36,8 @@ public:
 
         auto sensor = std::shared_ptr<Sht3xSensor>(new Sht3xSensor(name, bus));
         ESP_TRY(sht3x_init_desc(&sensor->sensor, config.address, bus->port, bus->sda->getGpio(), bus->scl->getGpio()));
+        // sht3x_init_desc() hard-codes 1 MHz; use the configured clock like every other I²C device
+        sensor->sensor.i2c_dev.cfg.master.clk_speed = config.clkSpeed;
         ESP_TRY(sht3x_init(&sensor->sensor));
         return sensor;
     }

@@ -2,7 +2,7 @@
 
 ## Overview
 
-Add support for the [Spadefoot Toad](https://github.com/cornucopia-machines/spadefoot-toad)
+Add support for the [Spadefoot Toad](https://github.com/cornucopia-machines/spadefoot-toad-hardware)
 capacitive soil sensor. The device is an ATtiny1616-based I2C slave that measures soil moisture and
 temperature at two depths (5 cm and 15 cm).
 
@@ -18,12 +18,14 @@ We report:
 - One `"temperature"` feature — the mean of the two temperature readings, in °C. Returns NaN if the
   temperature valid flag is not set or either reading is individually invalid.
 
-Calibration (CALIBRATE_DRY / CALIBRATE_WET) is permanently out of scope for this driver: calibration
-is performed by the manufacturer before the sensor ships. The driver never calibrates or reads raw values.
+Calibration (CALIBRATE_DRY / CALIBRATE_WET) was out of scope for the first version of this driver:
+calibration is performed by the manufacturer before the sensor ships. Since then the driver has gained
+`calibrate`, `read-calibration` and `factory-reset` commands and a `logRawValues` setting; see
+[`docs/peripherals/SpadefootToad.md`](../../peripherals/SpadefootToad.md).
 
 ## Device identifiers
 
-These are verified once during initialization. Log a warning and abort if any mismatches.
+These are verified once during initialization. If any mismatches, log an error and fail the peripheral.
 
 | Command | Expected response | Meaning |
 | ------- | ----------------- | ------- |

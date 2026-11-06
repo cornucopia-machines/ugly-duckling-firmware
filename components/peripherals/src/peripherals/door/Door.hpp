@@ -92,7 +92,8 @@ public:
     Property<InternalPinPtr> closedPin { this, "closedPin" };
 
     /**
-     * @brief By default, open/closed pins are high-active; set this to true to invert the logic.
+     * @brief By default, open/closed pins are active-low (pulled up, engaged when the pin reads low);
+     * set this to true for active-high switches (pulled down, engaged when the pin reads high).
      */
     Property<bool> invertSwitches { this, "invertSwitches", false };
 

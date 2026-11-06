@@ -213,7 +213,7 @@ The active device class is selected at boot:
 | Platform | ESP-IDF target | Models |
 | -------- | -------------- | ------ |
 | **Spinach** | `esp32s3` | MK5, MK6 (rev1–rev3), MK7, MK8 (rev1–rev2), MK9 rev1 |
-| **Carrot** | `esp32c6` | MK10 rev1 |
+| **Carrot** | `esp32c6` | MK10, MK11, MK12, MK13, MK14 (all rev1) |
 
 Each platform produces a single firmware binary. The model and revision are reported in boot logs and in the MQTT `init` message.
 
