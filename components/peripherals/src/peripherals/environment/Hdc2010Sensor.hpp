@@ -24,6 +24,7 @@ public:
     static Result<std::shared_ptr<Hdc2010Sensor>> create(
         const std::string& name,
         const std::shared_ptr<I2CManager>& i2c,
+        const std::shared_ptr<SwitchedRail>& rail,
         const I2CConfig& config) {
         auto device = TRY(i2c->createDevice(name, config));
 
@@ -32,9 +33,9 @@ public:
         LOGTI(ENV, "Initializing HDC2010 environment sensor '%s' with %s",
             name.c_str(), config.toString().c_str());
 
-        // On-demand mode (ODR=000), heater off, DRDY output disabled
-        TRY(device->writeRegByte(0x0E, 0x00));
-        return std::shared_ptr<Hdc2010Sensor>(new Hdc2010Sensor(name, device));
+        auto sensor = std::shared_ptr<Hdc2010Sensor>(new Hdc2010Sensor(name, device, rail));
+        TRY(sensor->railDevice.initialize());
+        return sensor;
     }
 
     double getTemperature() override {
@@ -46,15 +47,23 @@ public:
     }
 
 private:
-    Hdc2010Sensor(const std::string& name, const std::shared_ptr<I2CDevice>& device)
+    Hdc2010Sensor(const std::string& name, const std::shared_ptr<I2CDevice>& device, const std::shared_ptr<SwitchedRail>& rail)
         : Peripheral(name)
-        , device(device) {
+        , device(device)
+        , railDevice(rail, STARTUP_TIME, [this]() -> Result<> {
+            // On-demand mode (ODR=000), heater off, DRDY output disabled
+            return this->device->writeRegByte(0x0E, 0x00);
+        }) {
     }
+
+    // Datasheet §7.5.2: ready at most 3 ms after power-up
+    static constexpr std::chrono::milliseconds STARTUP_TIME { 3 };
 
     using Reading = std::pair<double, double>;
     static constexpr double NaN = std::numeric_limits<double>::quiet_NaN();
 
     const std::shared_ptr<I2CDevice> device;
+    RailDevice railDevice;
 
     utils::DebouncedMeasurement<Reading> measurement {
         [this](const utils::DebouncedParams<Reading>) -> std::optional<Reading> {
@@ -70,6 +79,7 @@ private:
     };
 
     Result<Reading> measure() {
+        auto session = TRY(railDevice.power());
         // Trigger a single measurement (14-bit temp + humidity); meas_trig self-clears on completion
         TRY(device->writeRegByte(0x0F, 0x01));
         // 14-bit conversion takes ~1.3 ms; wait with margin
@@ -94,7 +104,7 @@ inline PeripheralFactory makeFactoryForHdc2010() {
         "environment",
         [](PeripheralInitParameters& params, const std::shared_ptr<I2CSettings>& settings) -> Result<std::shared_ptr<Hdc2010Sensor>> {
             I2CConfig i2cConfig = settings->parse(0x40 /* Also supports 0x41 */);
-            auto sensor = TRY(Hdc2010Sensor::create(params.name, params.services.i2c, i2cConfig));
+            auto sensor = TRY(Hdc2010Sensor::create(params.name, params.services.i2c, params.services.switchedRail, i2cConfig));
             params.registerFeature("temperature", [sensor](JsonObject& telemetryJson) {
                 telemetryJson["value"] = sensor->getTemperature();
             });

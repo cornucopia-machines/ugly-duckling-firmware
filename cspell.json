@@ -113,6 +113,7 @@
     "UUID",
     "VBAT",
     "virt",
+    "VLOAD",
     "vprintf",
     "wakeup",
     "wakeups",

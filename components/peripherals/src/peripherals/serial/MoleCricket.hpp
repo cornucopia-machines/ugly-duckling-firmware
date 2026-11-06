@@ -22,6 +22,7 @@
 #include "SerialPort.hpp"
 #include <Log.hpp>
 #include <Result.hpp>
+#include <drivers/SwitchedRail.hpp>
 
 #include <chrono>
 #include <memory>
@@ -42,9 +43,9 @@ public:
     static constexpr uint32_t BAUD = 9600;
     static constexpr std::chrono::milliseconds POLL_INTERVAL { 5 };
 
-    static Result<std::shared_ptr<MoleCricket>> create(std::unique_ptr<ISc16is752Bus> bus, DelayFunction delay, std::string description) {
-        auto board = std::shared_ptr<MoleCricket>(new MoleCricket(std::move(bus), std::move(delay), std::move(description)));
-        TRY(board->initialize());
+    static Result<std::shared_ptr<MoleCricket>> create(std::unique_ptr<ISc16is752Bus> bus, std::shared_ptr<kernel::drivers::SwitchedRail> rail, DelayFunction delay, std::string description) {
+        auto board = std::shared_ptr<MoleCricket>(new MoleCricket(std::move(bus), std::move(rail), std::move(delay), std::move(description)));
+        TRY(board->railDevice.initialize());
         return board;
     }
 
@@ -60,9 +61,10 @@ public:
 private:
     class Session final : public ISerialSession {
     public:
-        Session(std::shared_ptr<MoleCricket> board, Channel channel, std::unique_lock<std::mutex> lock)
+        Session(std::shared_ptr<MoleCricket> board, Channel channel, std::unique_lock<std::mutex> lock, kernel::drivers::SwitchedRail::Session railSession)
             : board(std::move(board))
             , lock(std::move(lock))
+            , railSession(std::move(railSession))
             , port(this->board->chip, channel, POLL_INTERVAL)
             , channel(channel) {
         }
@@ -89,6 +91,8 @@ private:
     private:
         const std::shared_ptr<MoleCricket> board;
         std::unique_lock<std::mutex> lock;
+        // Keeps the board powered until the destructor has powered the probe down
+        kernel::drivers::SwitchedRail::Session railSession;
         Sc16is752Port port;
         const Channel channel;
     };
@@ -113,9 +117,11 @@ private:
         const Channel channel;
     };
 
-    MoleCricket(std::unique_ptr<ISc16is752Bus> bus, DelayFunction delay, std::string description)
+    MoleCricket(std::unique_ptr<ISc16is752Bus> bus, std::shared_ptr<kernel::drivers::SwitchedRail> rail, DelayFunction delay, std::string description)
         : chip(std::move(bus), CRYSTAL_HZ, std::move(delay))
-        , description(std::move(description)) {
+        , description(std::move(description))
+        // The bridge loses its UART and GPIO setup whenever the rail turns off
+        , railDevice(std::move(rail), std::chrono::microseconds::zero(), [this]() { return initialize(); }) {
     }
 
     Result<> initialize() {
@@ -139,11 +145,12 @@ private:
 
     Result<std::unique_ptr<ISerialSession>> open(Channel channel) {
         std::unique_lock lock(mutex);
+        auto railSession = TRY(railDevice.power());
         TRY(chip.setSleep(channel, false));
         TRY(chip.resetFifos(channel));
         // Probe supply on, LED on (active low)
         TRY(chip.setGpio(GPIO_PROBE_POWER | GPIO_LED, GPIO_PROBE_POWER));
-        return std::make_unique<Session>(shared_from_this(), channel, std::move(lock));
+        return std::make_unique<Session>(shared_from_this(), channel, std::move(lock), std::move(railSession));
     }
 
     // Called with the session's lock still held
@@ -166,6 +173,7 @@ private:
 
     Sc16is752 chip;
     const std::string description;
+    kernel::drivers::RailDevice railDevice;
     std::mutex mutex;
 };
 

@@ -3,9 +3,11 @@
 #include <Log.hpp>
 #include <Pin.hpp>
 #include <Task.hpp>
+#include <drivers/SwitchedRail.hpp>
 
 #include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -153,6 +155,46 @@ public:
     }
 
     /**
+     * @brief Create a rail switched by this output, e.g. MK14's +3V3_BUS on LOADEN.
+     */
+    std::shared_ptr<SwitchedRail> createSwitchedRail() {
+        class SharedEnableRailSwitch final : public IRailSwitch {
+        public:
+            explicit SharedEnableRailSwitch(const std::shared_ptr<SharedEnable>& enable)
+                : enable(enable)
+                , handle(enable->createHandle()) {
+            }
+
+            void acquire() override {
+                handle.acquire();
+            }
+
+            void release() override {
+                handle.release();
+            }
+
+            uint32_t getActivationCount() const override {
+                return enable->getActivationCount();
+            }
+
+            std::chrono::steady_clock::time_point getActivatedAt() const override {
+                return enable->getActivatedAt();
+            }
+
+        private:
+            const std::shared_ptr<SharedEnable> enable;
+            SharedEnable::Handle handle;
+        };
+
+        return SwitchedRail::switchedBy(
+            std::make_shared<SharedEnableRailSwitch>(shared_from_this()),
+            [](std::chrono::microseconds duration) {
+                // vTaskDelay(n) can return after as little as n - 1 full ticks, hence the extra tick
+                Task::delay(std::chrono::ceil<ticks>(duration) + ticks(1));
+            });
+    }
+
+    /**
      * @brief Whether the output is active and has been for at least the settle time.
      *
      * @details Use it to ignore status signals (e.g. an H-bridge's nFAULT, asserted while VM is below UVLO)
@@ -161,6 +203,21 @@ public:
     bool isSettled() const {
         return readyAt.load() != NOT_ACTIVE
             && remainingSettleTime() == std::chrono::microseconds::zero();
+    }
+
+    /**
+     * @brief How many times the output has been turned on; whatever it powers has been power-cycled
+     * whenever this changes.
+     */
+    uint32_t getActivationCount() const {
+        return activationCount.load();
+    }
+
+    /**
+     * @brief When the output was last turned on; meaningful only while it is active.
+     */
+    std::chrono::steady_clock::time_point getActivatedAt() const {
+        return readyAt.load() - settleTime;
     }
 
 private:
@@ -193,6 +250,7 @@ private:
         std::scoped_lock lock(mutex);
         if (++activeCount == 1) {
             actuate(true);
+            activationCount.fetch_add(1);
             readyAt.store(std::chrono::steady_clock::now() + settleTime);
         }
     }
@@ -210,6 +268,7 @@ private:
     Actuator actuate;
     const std::chrono::microseconds settleTime;
     std::atomic<std::chrono::steady_clock::time_point> readyAt = NOT_ACTIVE;
+    std::atomic<uint32_t> activationCount = 0;
     int activeCount = 0;
     std::mutex mutex;
 };

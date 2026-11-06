@@ -23,7 +23,7 @@ namespace cornucopia::ugly_duckling::peripherals::serial {
 // the GPIO shadow and the lock that keeps the two probes from measuring at once.
 class MoleCricketRegistry {
 public:
-    Result<std::shared_ptr<MoleCricket>> getOrCreate(const std::shared_ptr<kernel::I2CManager>& i2c, const kernel::I2CConfig& config) {
+    Result<std::shared_ptr<MoleCricket>> getOrCreate(const std::shared_ptr<kernel::I2CManager>& i2c, const std::shared_ptr<kernel::drivers::SwitchedRail>& rail, const kernel::I2CConfig& config) {
         std::scoped_lock lock(mutex);
         auto key = std::make_tuple(config.sda->getGpio(), config.scl->getGpio(), config.address);
         if (auto it = boards.find(key); it != boards.end()) {
@@ -34,6 +34,7 @@ public:
         auto device = TRY(i2c->createDevice("mole-cricket", config));
         auto board = TRY(MoleCricket::create(
             std::make_unique<Sc16is752I2CBus>(device),
+            rail,
             [](std::chrono::milliseconds duration) { kernel::Task::delay(duration); },
             config.toString()));
         boards[key] = board;

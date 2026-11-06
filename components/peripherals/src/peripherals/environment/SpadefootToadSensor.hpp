@@ -88,10 +88,11 @@ public:
         uint8_t cmd = (ref == CalibrationReference::Wet) ? CMD_CALIBRATE_WET : CMD_CALIBRATE_DRY;
         LOGTI(ENV, "Spadefoot Toad '%s': calibrating %s reference",
             getName().c_str(), ref == CalibrationReference::Wet ? "wet" : "dry");
-        return transportWriteByte(cmd);
+        return runToCompletion(cmd);
     }
 
     Result<> readCalibration(JsonObject& res) {
+        auto session = TRY(railDevice.power());
         auto calibration = TRY(transportReadBytes(CMD_READ_CALIBRATION, 17));
         uint8_t csum = 0;
         for (size_t i = 0; i < 16; i++) {
@@ -115,7 +116,7 @@ public:
 
     Result<> factoryReset() {
         LOGTW(ENV, "Spadefoot Toad '%s': factory reset issued", getName().c_str());
-        return transportWriteByte(CMD_FACTORY_RESET);
+        return runToCompletion(CMD_FACTORY_RESET);
     }
 
 protected:
@@ -140,15 +141,22 @@ protected:
     static constexpr uint8_t MOISTURE_INVALID = 0xFF;
     static constexpr int16_t TEMP_INVALID = INT16_MIN;
 
-    SpadefootToadSensorBase(const std::string& name, bool logRawValues)
+    SpadefootToadSensorBase(const std::string& name, const std::shared_ptr<SwitchedRail>& rail, bool logRawValues)
         : Peripheral(name)
+        // Keeps its settings in EEPROM, so there is nothing to set up after a power-up
+        , railDevice(rail, STARTUP_TIME, []() -> Result<> { return {}; })
         , logRawValues(logRawValues) {
     }
+
+    // The ATtiny1616's default start-up time (64 ms) plus the firmware's own initialization
+    static constexpr std::chrono::milliseconds STARTUP_TIME { 100 };
 
     // Must be called by the derived class's create() once the transport is ready.
     Result<> initializeProtocol(const std::string& configDescription) {
         LOGTI(ENV, "Initializing Spadefoot Toad soil sensor '%s' with %s",
             getName().c_str(), configDescription.c_str());
+
+        auto session = TRY(railDevice.power());
 
         uint16_t mfrId = TRY(transportReadWord(CMD_GET_MFR_ID));
         if (mfrId != EXPECTED_MFR_ID) {
@@ -196,6 +204,17 @@ protected:
     virtual Result<std::vector<uint8_t>> transportReadBytes(uint8_t cmd, size_t n) = 0;
 
 private:
+    // Sends a command that measures the probes before it writes to EEPROM, and keeps the sensor powered until it is done
+    Result<> runToCompletion(uint8_t cmd) {
+        auto session = TRY(railDevice.power());
+        TRY(transportWriteByte(cmd));
+        Task::delay(MEASUREMENT_TIME);
+        return {};
+    }
+
+    static constexpr std::chrono::seconds MEASUREMENT_TIME { 1 };
+
+    RailDevice railDevice;
     const bool logRawValues;
 
     void logRawReading() {
@@ -226,6 +245,13 @@ private:
 
     utils::DebouncedMeasurement<SpadefootToadReading> measurement {
         [this](const utils::DebouncedParams<SpadefootToadReading>) -> std::optional<SpadefootToadReading> {
+            auto session = railDevice.power();
+            if (!session) {
+                LOGTW(ENV, "Spadefoot Toad '%s': failed to power up: %s",
+                    getName().c_str(), session.error().message.c_str());
+                return std::nullopt;
+            }
+
             // Phase 1: trigger measurement
             if (auto triggered = transportWriteByte(CMD_TRIGGER); !triggered) {
                 LOGTW(ENV, "Spadefoot Toad '%s': failed to trigger measurement: %s",
@@ -234,7 +260,7 @@ private:
             }
 
             // Phase 2: wait 1 s, then read results
-            Task::delay(1s);
+            Task::delay(MEASUREMENT_TIME);
 
             // Log raw ADC ticks for debugging (temporary)
             if (logRawValues) {
@@ -309,10 +335,11 @@ public:
     static Result<std::shared_ptr<SpadefootToadSensor>> create(
         const std::string& name,
         const std::shared_ptr<I2CManager>& i2c,
+        const std::shared_ptr<SwitchedRail>& rail,
         const I2CConfig& config,
         bool logRawValues) {
         auto device = TRY(i2c->createDevice(name, config));
-        auto sensor = std::shared_ptr<SpadefootToadSensor>(new SpadefootToadSensor(name, device, logRawValues));
+        auto sensor = std::shared_ptr<SpadefootToadSensor>(new SpadefootToadSensor(name, device, rail, logRawValues));
         TRY(sensor->initializeProtocol(config.toString()));
         return sensor;
     }
@@ -335,8 +362,8 @@ protected:
     }
 
 private:
-    SpadefootToadSensor(const std::string& name, const std::shared_ptr<I2CDevice>& device, bool logRawValues)
-        : SpadefootToadSensorBase(name, logRawValues)
+    SpadefootToadSensor(const std::string& name, const std::shared_ptr<I2CDevice>& device, const std::shared_ptr<SwitchedRail>& rail, bool logRawValues)
+        : SpadefootToadSensorBase(name, rail, logRawValues)
         , device(device) {
     }
 
@@ -363,6 +390,7 @@ public:
         const InternalPinPtr& sda,
         const InternalPinPtr& scl,
         uint8_t address,
+        const std::shared_ptr<SwitchedRail>& rail,
         bool logRawValues) {
         gpio_config_t conf = {
             .pin_bit_mask = (1ULL << sda->getGpio()) | (1ULL << scl->getGpio()),
@@ -376,7 +404,7 @@ public:
         sda->digitalWrite(1);
         scl->digitalWrite(1);
 
-        auto sensor = std::shared_ptr<SpadefootToadSensorWithBitbangI2C>(new SpadefootToadSensorWithBitbangI2C(name, sda, scl, address, logRawValues));
+        auto sensor = std::shared_ptr<SpadefootToadSensorWithBitbangI2C>(new SpadefootToadSensorWithBitbangI2C(name, sda, scl, address, rail, logRawValues));
         char addrBuf[5];
         std::ignore = snprintf(addrBuf, sizeof(addrBuf), "%02X", address);
         TRY(sensor->initializeProtocol("bitbang I2C SDA:" + sda->getName() + " SCL:" + scl->getName() + " addr:0x" + addrBuf));
@@ -418,8 +446,9 @@ private:
         const InternalPinPtr& sda,
         const InternalPinPtr& scl,
         uint8_t address,
+        const std::shared_ptr<SwitchedRail>& rail,
         bool logRawValues)
-        : SpadefootToadSensorBase(name, logRawValues)
+        : SpadefootToadSensorBase(name, rail, logRawValues)
         , sdaPin(sda)
         , sclPin(scl)
         , bus(sdaPin, sclPin)
@@ -503,7 +532,7 @@ inline PeripheralFactory makeFactoryForSpadefootToadSensor() {
         [](PeripheralInitParameters& params, const std::shared_ptr<SpadefootToadSensorSettings>& settings) -> Result<std::shared_ptr<SpadefootToadSensor>> {
             I2CConfig i2cConfig = settings->parse(0x20);
             i2cConfig.clkSpeed = 100000;    // ATtiny TWI Address Match wakeup requires 100 kHz
-            auto sensor = TRY(SpadefootToadSensor::create(params.name, params.services.i2c, i2cConfig, settings->logRawValues.get()));
+            auto sensor = TRY(SpadefootToadSensor::create(params.name, params.services.i2c, params.services.switchedRail, i2cConfig, settings->logRawValues.get()));
             registerFeaturesAndCommands(params, sensor);
             return sensor;
         });
@@ -522,7 +551,7 @@ inline PeripheralFactory makeFactoryForSpadefootToadSensorWithBitbangI2C() {
             // No i2c service — raw pin pointers are passed directly.
             // Clock is fixed at 100 kHz by the bitbang transport.
             I2CConfig i2cConfig = settings->parse(0x20);
-            auto sensor = TRY(SpadefootToadSensorWithBitbangI2C::create(params.name, i2cConfig.sda, i2cConfig.scl, i2cConfig.address, settings->logRawValues.get()));
+            auto sensor = TRY(SpadefootToadSensorWithBitbangI2C::create(params.name, i2cConfig.sda, i2cConfig.scl, i2cConfig.address, params.services.switchedRail, settings->logRawValues.get()));
             registerFeaturesAndCommands(params, sensor);
             return sensor;
         });

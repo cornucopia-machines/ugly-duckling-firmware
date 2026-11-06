@@ -217,6 +217,54 @@ The active device class is selected at boot:
 
 Each platform produces a single firmware binary. The model and revision are reported in boot logs and in the MQTT `init` message.
 
+### Switched sensor supply
+
+From MK14 on, the external I²C port and the RS485 transceiver run off `+3V3_BUS`, a load switch on
+LOADEN (GPIO22). The same pin enables the 6.5 V VLOAD boost and wakes the H-bridge, so the sensor
+ports are powered exactly when LOADEN is. Earlier boards power their sensors all the time.
+
+Three classes in `kernel/drivers` share LOADEN:
+
+- **`SharedEnable`** owns the pin. Every client (motor driver, buzzer, sensor supply) holds a
+  handle. LOADEN is on while any handle is acquired, and goes off when the last one is released.
+  `acquire()` returns once LOADEN has been on for the 5 ms settle time, so a client that comes in
+  while LOADEN is already on only waits for whatever remains of it.
+- **`SwitchedRail`** is the sensor supply. Peripherals reach it as `PeripheralServices::switchedRail`
+  and hold a `Session` while they talk to a sensor. Each session also tells the sensor driver which
+  power-up it runs in (its *activation*), and `waitPoweredFor()` waits out a sensor's own start-up
+  time. Time the rail has already been on, for any client, counts towards that wait. MK14 creates
+  the rail from its LOADEN `SharedEnable`; every other board uses `SwitchedRail::alwaysOn()`, whose
+  sessions never wait and whose activation never changes.
+- **`RailDevice`** wraps one sensor on the rail. Sensors lose their settings when the rail goes
+  off, so `RailDevice::power()` opens a session, waits for the sensor's start-up time, and re-runs
+  the driver's setup whenever the activation has changed since it last ran. On an always-on rail
+  that setup runs exactly once, at creation, as it did before.
+
+A `Batch` keeps the rail on between sessions without turning it on by itself. Peripheral creation
+and each telemetry pass run inside one, so all the sensors share one power-up, and a device with
+no sensors on the rail never turns it on.
+
+| Peripheral | Start-up wait | Set up again after each power-up |
+| --- | --- | --- |
+| SHT3x | 1.5 ms | Status cleared |
+| SHT2x / HTU2x | 15 ms | Nothing to set up |
+| HDC2010 | 3 ms | On-demand mode |
+| Chirp | 1 s | Nothing to set up |
+| Spadefoot Toad | 100 ms | Nothing to set up (settings in its EEPROM) |
+| BH1750 | none | Continuous mode, then one 24 ms measurement |
+| TSL2591 | none | Gain and integration time, then one 300 ms integration cycle |
+| Mole Cricket (SMT100) | none | UARTs and GPIOs; the probe's own 500 ms start-up follows |
+
+**Light sensors read once a minute by default.** BH1750 and TSL2591 run their own reading loop
+instead of reading on demand, and every reading powers the rail.
+
+**Valves and sensors share LOADEN without locking each other out.** The I²C sensors draw from
+`+3V3_BUS`, which comes off the main 3.3 V rail, not off VLOAD, so a valve pulse during a reading
+costs at most a failed reading. RS485 probes are different: they draw up to 1 A from VLOAD, and
+that plus about 0.5 A of coil current exceeds the boost's worst case on a depleted cell. When the
+firmware gets an RS485 driver, `SwitchedRail::acquire()` is where valve moves and RS485 sessions
+should start excluding each other.
+
 ## Peripherals and functions
 
 See [Components.md](Components.md) for the full conceptual model. In brief:

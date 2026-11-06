@@ -25,8 +25,9 @@ namespace cornucopia::ugly_duckling::peripherals::light_sensor {
 class Bh1750Settings
     : public I2CSettings {
 public:
-    Property<seconds> measurementFrequency { this, "measurementFrequency", 1s };
-    Property<seconds> latencyInterval { this, "latencyInterval", 5s };
+    // Infrequent by default: on MK14 every reading powers up the switched rail
+    Property<seconds> measurementFrequency { this, "measurementFrequency", 1min };
+    Property<seconds> latencyInterval { this, "latencyInterval", 5min };
 };
 
 class Bh1750 final
@@ -34,16 +35,17 @@ class Bh1750 final
 public:
     static Result<std::shared_ptr<Bh1750>> create(
         const std::string& name,
+        const std::shared_ptr<SwitchedRail>& rail,
         const I2CConfig& config,
         seconds measurementFrequency,
         seconds latencyInterval) {
         LOGI("Initializing BH1750 light sensor with %s",
             config.toString().c_str());
 
-        auto sensor = std::shared_ptr<Bh1750>(new Bh1750(name, measurementFrequency, latencyInterval));
+        auto sensor = std::shared_ptr<Bh1750>(new Bh1750(name, rail, measurementFrequency, latencyInterval));
         // TODO Use I2CManager to create device
         ESP_TRY(bh1750_init_desc(&sensor->sensor, config.address, I2C_NUM_0, config.sda->getGpio(), config.scl->getGpio()));
-        ESP_TRY(bh1750_setup(&sensor->sensor, BH1750_MODE_CONTINUOUS, BH1750_RES_LOW));
+        TRY(sensor->railDevice.initialize());
 
         sensor->runLoop();
         return sensor;
@@ -60,6 +62,11 @@ public:
 
 protected:
     std::optional<double> readLightLevel() override {
+        auto session = railDevice.power();
+        if (!session) {
+            LOGE("Could not set up light sensor: %s", session.error().message.c_str());
+            return std::nullopt;
+        }
         uint16_t lightLevel;
         if (bh1750_read(&sensor, &lightLevel) != ESP_OK) {
             LOGE("Could not read light level");
@@ -71,12 +78,23 @@ protected:
 private:
     Bh1750(
         const std::string& name,
+        const std::shared_ptr<SwitchedRail>& rail,
         seconds measurementFrequency,
         seconds latencyInterval)
-        : LightSensor(name, measurementFrequency, latencyInterval) {
+        : LightSensor(name, measurementFrequency, latencyInterval)
+        , railDevice(rail, 0us, [this]() -> Result<> {
+            ESP_TRY(bh1750_setup(&sensor, BH1750_MODE_CONTINUOUS, BH1750_RES_LOW));
+            // Wait for the first measurement after a power-up, or we'd read zero
+            Task::delay(FIRST_MEASUREMENT_TIME);
+            return {};
+        }) {
     }
 
+    // Maximum L-resolution measurement time
+    static constexpr milliseconds FIRST_MEASUREMENT_TIME { 24 };
+
     i2c_dev_t sensor {};
+    RailDevice railDevice;
 };
 
 inline PeripheralFactory makeFactoryForBh1750() {
@@ -85,7 +103,7 @@ inline PeripheralFactory makeFactoryForBh1750() {
         "light-sensor",
         [](PeripheralInitParameters& params, const std::shared_ptr<Bh1750Settings>& settings) -> Result<std::shared_ptr<Bh1750>> {
             I2CConfig i2cConfig = settings->parse(0x23);
-            auto sensor = TRY(Bh1750::create(params.name, i2cConfig, settings->measurementFrequency.get(), settings->latencyInterval.get()));
+            auto sensor = TRY(Bh1750::create(params.name, params.services.switchedRail, i2cConfig, settings->measurementFrequency.get(), settings->latencyInterval.get()));
             params.registerFeature("light", [sensor](JsonObject& telemetryJson) {
                 telemetryJson["value"] = sensor->getLightLevel();
             });

@@ -27,6 +27,7 @@ public:
         const std::string& name,
         const std::string& sensorType,
         const std::shared_ptr<I2CManager>& i2c,
+        const std::shared_ptr<SwitchedRail>& rail,
         const I2CConfig& config) {
         auto bus = TRY(i2c->getBusFor(config));
 
@@ -37,7 +38,7 @@ public:
         LOGTI(ENV, "Initializing %s environment sensor '%s' with %s",
             sensorType.c_str(), name.c_str(), config.toString().c_str());
 
-        auto sensor = std::shared_ptr<Sht2xSensor>(new Sht2xSensor(name, bus));
+        auto sensor = std::shared_ptr<Sht2xSensor>(new Sht2xSensor(name, bus, rail));
         ESP_TRY(si7021_init_desc(&sensor->sensor, bus->port, bus->sda->getGpio(), bus->scl->getGpio()));
         return sensor;
     }
@@ -52,6 +53,10 @@ public:
     Sht2xSensor& operator=(Sht2xSensor&&) = delete;
 
     double getTemperature() override {
+        auto session = device.power();
+        if (!session) {
+            return std::numeric_limits<double>::quiet_NaN();
+        }
         float value;
         esp_err_t res = si7021_measure_temperature(&sensor, &value);
         if (res != ESP_OK) {
@@ -62,6 +67,10 @@ public:
     }
 
     double getMoisture() override {
+        auto session = device.power();
+        if (!session) {
+            return std::numeric_limits<double>::quiet_NaN();
+        }
         float value;
         esp_err_t res = si7021_measure_humidity(&sensor, &value);
         if (res != ESP_OK) {
@@ -72,13 +81,19 @@ public:
     }
 
 private:
-    Sht2xSensor(const std::string& name, const std::shared_ptr<I2CBus>& bus)
+    Sht2xSensor(const std::string& name, const std::shared_ptr<I2CBus>& bus, const std::shared_ptr<SwitchedRail>& rail)
         : Peripheral(name)
-        , bus(bus) {
+        , bus(bus)
+        // Keeps no settings we change, so there is nothing to set up after a power-up
+        , device(rail, POWER_UP_TIME, []() -> Result<> { return {}; }) {
     }
+
+    // SHT21 / HTU21D power-up time
+    static constexpr std::chrono::milliseconds POWER_UP_TIME { 15 };
 
     std::shared_ptr<I2CBus> bus;
     i2c_dev_t sensor {};
+    RailDevice device;
 };
 
 inline PeripheralFactory makeFactoryForSht2x(const std::string& sensorKey) {
@@ -89,7 +104,7 @@ inline PeripheralFactory makeFactoryForSht2x(const std::string& sensorKey) {
         [sensorKey](PeripheralInitParameters& params, const std::shared_ptr<I2CSettings>& settings) -> Result<std::shared_ptr<Sht2xSensor>> {
             // Address is fixed to 0x40 for these devices
             I2CConfig i2cConfig = settings->parse(0x40);
-            auto sensor = TRY(Sht2xSensor::create(params.name, sensorKey, params.services.i2c, i2cConfig));
+            auto sensor = TRY(Sht2xSensor::create(params.name, sensorKey, params.services.i2c, params.services.switchedRail, i2cConfig));
             params.registerFeature("temperature", [sensor](JsonObject& telemetryJson) {
                 telemetryJson["value"] = sensor->getTemperature();
             });

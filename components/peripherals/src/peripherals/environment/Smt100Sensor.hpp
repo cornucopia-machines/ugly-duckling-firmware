@@ -152,7 +152,7 @@ inline PeripheralFactory makeFactoryForSmt100() {
             i2cConfig.clkSpeed = 100000;
             auto channel = TRY(parseMoleCricketChannel(settings->channel.get()));
             auto protocol = TRY(createSmt100Protocol(*settings));
-            auto board = TRY(registry->getOrCreate(params.services.i2c, i2cConfig));
+            auto board = TRY(registry->getOrCreate(params.services.i2c, params.services.switchedRail, i2cConfig));
             auto sensor = std::make_shared<Smt100Sensor>(params.name, board->link(channel), std::move(protocol), settings->startupTime.get());
             sensor->logIdentity();
             params.registerFeature("moisture", [sensor](JsonObject& telemetryJson) {

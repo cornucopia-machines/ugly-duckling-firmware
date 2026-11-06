@@ -24,8 +24,8 @@ has hardware I²C and the regular type works.
 
 So on MK10, Spadefoot Toad is the only peripheral that works on the external I²C port.
 
-On MK14 the I²C port isn't powered for sensor readings yet
-([#713](https://github.com/cornucopia-machines/ugly-duckling-firmware/issues/713)).
+On MK14 the probe stays powered for the second a calibration or factory reset takes, so its
+EEPROM write completes (see [sensor power on MK14](README.md#sensor-power-on-mk14)).
 
 The two types behave the same apart from the transport.
 

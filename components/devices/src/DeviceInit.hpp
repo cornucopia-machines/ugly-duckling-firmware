@@ -58,7 +58,8 @@ inline DeviceRuntimeInit initDeviceRuntime(
     auto peripheralsNvs = std::make_shared<NvsStore>("perf-state");
     auto pulseCounterManager = std::make_shared<PulseCounterManager>();
     auto pwm = std::make_shared<PwmManager>();
-    auto telemetryCollector = std::make_shared<TelemetryCollector>();
+    auto switchedRail = deviceDefinition->createSwitchedRail();
+    auto telemetryCollector = std::make_shared<TelemetryCollector>(switchedRail);
 
     // Init peripherals
     auto peripheralServices = PeripheralServices {
@@ -68,6 +69,7 @@ inline DeviceRuntimeInit initDeviceRuntime(
         .pulseCounterManager = pulseCounterManager,
         .pwmManager = pwm,
         .switches = switches,
+        .switchedRail = switchedRail,
         .telemetryPublisher = telemetryPublisher,
     };
     auto peripheralManager = std::make_shared<PeripheralManager>(telemetryCollector, peripheralServices);
@@ -99,9 +101,13 @@ inline DeviceRuntimeInit initDeviceRuntime(
     const auto& peripheralsSettings = deviceConfig->peripherals.get();
     LOGI("Loading configuration for %d peripherals",
         peripheralsSettings.size());
-    for (const auto& peripheralSettings : peripheralsSettings) {
-        if (!peripheralManager->createPeripheral(peripheralSettings.get(), peripheralsInitJson)) {
-            initState = InitState::PeripheralError;
+    {
+        // Set up every sensor on the switched rail in one power-up
+        auto railBatch = switchedRail->batch();
+        for (const auto& peripheralSettings : peripheralsSettings) {
+            if (!peripheralManager->createPeripheral(peripheralSettings.get(), peripheralsInitJson)) {
+                initState = InitState::PeripheralError;
+            }
         }
     }
 
