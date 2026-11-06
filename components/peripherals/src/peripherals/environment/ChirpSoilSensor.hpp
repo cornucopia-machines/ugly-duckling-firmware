@@ -65,7 +65,7 @@ private:
         int waterValue)
         : Peripheral(name)
         // Keeps no settings we change, so there is nothing to set up after a power-up
-        , railDevice(rail, STARTUP_TIME, NO_POWER_ON_SETUP, i2cDevice)
+        , switchedDevice(rail, STARTUP_TIME, NO_POWER_ON_SETUP, i2cDevice)
         , airValue(airValue)
         , waterValue(waterValue) {
     }
@@ -76,7 +76,7 @@ private:
     // The reference driver waits this long for the sensor to boot after a reset
     static constexpr std::chrono::seconds STARTUP_TIME { 1 };
 
-    RailDevice<std::shared_ptr<I2CDevice>> railDevice;
+    SwitchedDevice<std::shared_ptr<I2CDevice>> switchedDevice;
     const int airValue;
     const int waterValue;
 
@@ -84,7 +84,7 @@ private:
         [this](const utils::DebouncedParams<ChirpReading>) -> std::optional<ChirpReading> {
             ChirpReading reading;
 
-            auto device = railDevice.power();
+            auto device = switchedDevice.power();
             if (!device) {
                 LOGTW(ENV, "Failed to power Chirp sensor: %s", device.error().message.c_str());
                 return reading;

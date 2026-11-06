@@ -44,15 +44,15 @@ public:
 
         auto sensor = std::shared_ptr<Bh1750>(new Bh1750(name, rail, measurementFrequency, latencyInterval));
         // TODO Use I2CManager to create device
-        ESP_TRY(bh1750_init_desc(&sensor->railDevice.unpowered(), config.address, I2C_NUM_0, config.sda->getGpio(), config.scl->getGpio()));
-        TRY(sensor->railDevice.initialize());
+        ESP_TRY(bh1750_init_desc(&sensor->switchedDevice.unpowered(), config.address, I2C_NUM_0, config.sda->getGpio(), config.scl->getGpio()));
+        TRY(sensor->switchedDevice.initialize());
 
         sensor->runLoop();
         return sensor;
     }
 
     ~Bh1750() override {
-        bh1750_free_desc(&railDevice.unpowered());
+        bh1750_free_desc(&switchedDevice.unpowered());
     }
 
     Bh1750(const Bh1750&) = delete;
@@ -62,7 +62,7 @@ public:
 
 protected:
     std::optional<double> readLightLevel() override {
-        auto device = railDevice.power();
+        auto device = switchedDevice.power();
         if (!device) {
             LOGE("Could not set up light sensor: %s", device.error().message.c_str());
             return std::nullopt;
@@ -82,7 +82,7 @@ private:
         seconds measurementFrequency,
         seconds latencyInterval)
         : LightSensor(name, measurementFrequency, latencyInterval)
-        , railDevice(rail, 0us, [](i2c_dev_t& sensor) -> Result<> {
+        , switchedDevice(rail, 0us, [](i2c_dev_t& sensor) -> Result<> {
             ESP_TRY(bh1750_setup(&sensor, BH1750_MODE_CONTINUOUS, BH1750_RES_LOW));
             // Wait for the first measurement after a power-up, or we'd read zero
             Task::delay(FIRST_MEASUREMENT_TIME);
@@ -93,7 +93,7 @@ private:
     // Maximum L-resolution measurement time
     static constexpr milliseconds FIRST_MEASUREMENT_TIME { 24 };
 
-    RailDevice<i2c_dev_t> railDevice;
+    SwitchedDevice<i2c_dev_t> switchedDevice;
 };
 
 inline PeripheralFactory makeFactoryForBh1750() {

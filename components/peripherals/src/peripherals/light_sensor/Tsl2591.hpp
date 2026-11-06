@@ -47,15 +47,15 @@ public:
             config.toString().c_str());
 
         auto sensor = std::shared_ptr<Tsl2591>(new Tsl2591(name, bus, rail, measurementFrequency, latencyInterval));
-        ESP_TRY(tsl2591_init_desc(&sensor->railDevice.unpowered(), bus->port, bus->sda->getGpio(), bus->scl->getGpio()));
-        TRY(sensor->railDevice.initialize());
+        ESP_TRY(tsl2591_init_desc(&sensor->switchedDevice.unpowered(), bus->port, bus->sda->getGpio(), bus->scl->getGpio()));
+        TRY(sensor->switchedDevice.initialize());
 
         sensor->runLoop();
         return sensor;
     }
 
     ~Tsl2591() override {
-        tsl2591_free_desc(&railDevice.unpowered());
+        tsl2591_free_desc(&switchedDevice.unpowered());
     }
 
     Tsl2591(const Tsl2591&) = delete;
@@ -72,7 +72,7 @@ private:
         seconds latencyInterval)
         : LightSensor(name, measurementFrequency, latencyInterval)
         , bus(bus)
-        , railDevice(rail, 0us, powerOnSetup) {
+        , switchedDevice(rail, 0us, powerOnSetup) {
     }
 
     static Result<> powerOnSetup(tsl2591_t& sensor) {
@@ -93,7 +93,7 @@ private:
 
 protected:
     std::optional<double> readLightLevel() override {
-        auto device = railDevice.power();
+        auto device = switchedDevice.power();
         if (!device) {
             LOGD("Could not set up light sensor: %s", device.error().message.c_str());
             return std::nullopt;
@@ -109,7 +109,7 @@ protected:
 
 private:
     std::shared_ptr<I2CBus> bus;
-    RailDevice<tsl2591_t> railDevice;
+    SwitchedDevice<tsl2591_t> switchedDevice;
 };
 
 inline PeripheralFactory makeFactoryForTsl2591() {
