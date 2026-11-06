@@ -13,7 +13,7 @@ for the sensor to start up and sets it up again before reading it. All sensors r
 telemetry pass share a single power-up. Earlier boards power the port all the time.
 
 The start-up wait and setup of each sensor are listed under
-[switched sensor supply](../Architecture.md#switched-sensor-supply).
+[sensor power](../SensorPower.md#writing-a-driver-for-a-port-sensor).
 
 ## Actuators
 
