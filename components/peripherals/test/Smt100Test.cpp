@@ -131,6 +131,10 @@ public:
         return response;
     }
 
+    Result<std::string> read(size_t /*length*/, std::chrono::milliseconds /*timeout*/) override {
+        return failure("not used by the ASCII protocol");
+    }
+
     Result<> flushRx() override {
         flushes++;
         return {};

@@ -85,12 +85,24 @@ private:
             return port.write(data);
         }
 
+        Result<std::string> read(size_t length, std::chrono::milliseconds timeout) override {
+            return port.read(length, timeout);
+        }
+
         Result<std::string> readUntil(char terminator, size_t maxLength, std::chrono::milliseconds timeout) override {
             return port.readUntil(terminator, maxLength, timeout);
         }
 
         Result<> flushRx() override {
             return port.flushRx();
+        }
+
+        // The probe supply switches on when the session opens, never earlier
+        void waitPoweredFor(std::chrono::milliseconds duration) override {
+            auto poweredFor = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - openedAt);
+            if (poweredFor < duration) {
+                chip->sleepFor(duration - poweredFor);
+            }
         }
 
     private:
@@ -100,6 +112,7 @@ private:
         PoweredChip chip;
         Sc16is752Port port;
         const Channel channel;
+        const std::chrono::steady_clock::time_point openedAt = std::chrono::steady_clock::now();
     };
 
     class Link final : public ISerialLink {

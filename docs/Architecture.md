@@ -290,7 +290,7 @@ on, steps 2, 3 and 6 do nothing, and setup only ever runs at creation.
 
 #### Writing a driver for a port sensor
 
-Any peripheral on the external I²C port (or, later, on RS485) should be built on `RailDevice`,
+Any peripheral on the external I²C port should be built on `RailDevice` (RS485 sensors use `Rs485Bus`, see below),
 using `PeripheralServices::switchedRail`:
 
 ```cpp
@@ -334,6 +334,13 @@ TRY(device->readRegWord(...));
 | BH1750 | none | Continuous mode, then one 24 ms measurement |
 | TSL2591 | none | Gain and integration time, then one 300 ms integration cycle |
 | Mole Cricket (SMT100) | none | UARTs and GPIOs; the probe's own 500 ms start-up follows |
+| ZTS-3002 (RS485) | 1 s | Nothing to set up |
+
+**RS485 sensors** reach the board's port through `Rs485Bus` (MK14: UART1 behind the THVD1406)
+rather than `RailDevice`, because the bus is shared and each session needs its own baud rate. A
+session holds the bus, a rail session and a no-light-sleep lock. It attaches the UART to the pins
+only once the rail is on, and detaches them before it releases the rail: the transceiver's logic
+inputs pull up to its own supply, so an idle-high TX would back-power it while the rail is off.
 
 **Light sensors read once a minute by default.** BH1750 and TSL2591 run their own reading loop
 instead of reading on demand, and every reading powers the rail.
@@ -341,9 +348,8 @@ instead of reading on demand, and every reading powers the rail.
 **Valves and sensors share LOADEN without locking each other out.** The I²C sensors draw from
 `+3V3_BUS`, which comes off the main 3.3 V rail, not off VLOAD, so a valve pulse during a reading
 costs at most a failed reading. RS485 probes are different: they draw up to 1 A from VLOAD, and
-that plus about 0.5 A of coil current exceeds the boost's worst case on a depleted cell. When the
-firmware gets an RS485 driver, `SwitchedRail::acquire()` is where valve moves and RS485 sessions
-should start excluding each other.
+that plus about 0.5 A of coil current exceeds the boost's worst case on a depleted cell. RS485
+sessions don't exclude valve moves yet; `SwitchedRail::acquire()` is where they should start to.
 
 ## Peripherals and functions
 

@@ -1,0 +1,38 @@
+{
+  "peripherals": [
+    {
+      "name": "flow-meter",
+      "type": "flow-meter",
+      "params": {
+        "pin": "IFLOWA",
+        "qFactor": 7.463
+      }
+    },
+    {
+      "name": "valve",
+      "type": "valve",
+      "params": {
+        "motor": "a"
+      }
+    },
+    {
+      "name": "soil",
+      "type": "soil:zts-3002",
+      "params": {
+        "address": 1,
+        "baud": 4800
+      }
+    }
+  ],
+  "functions": [
+    {
+      "name": "plot",
+      "type": "plot-controller",
+      "params": {
+        "flowMeter": "flow-meter",
+        "valve": "valve",
+        "soilMoistureSensor": "soil"
+      }
+    }
+  ]
+}

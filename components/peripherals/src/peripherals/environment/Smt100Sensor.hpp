@@ -15,7 +15,6 @@
 #include "Smt100Protocol.hpp"
 #include <I2CManager.hpp>
 #include <Result.hpp>
-#include <Task.hpp>
 #include <peripherals/I2CSettings.hpp>
 #include <peripherals/Peripheral.hpp>
 #include <peripherals/api/ISoilMoistureSensor.hpp>
@@ -89,7 +88,7 @@ private:
     auto withProbe(Action action) -> decltype(action(std::declval<ISerialPort&>())) {
         auto session = TRY(link->open());
         auto start = steady_clock::now();
-        Task::delay(startupTime);
+        session->waitPoweredFor(startupTime);
         // Discard whatever the probe sent while starting up
         TRY(session->flushRx());
         auto result = action(*session);
