@@ -1,6 +1,7 @@
-name-template: $NEXT_PATCH_VERSION
-tag-template: $NEXT_PATCH_VERSION
+name-template: $RESOLVED_VERSION
+tag-template: $RESOLVED_VERSION
 
+# Give each PR one of the category labels below; a PR shows up under every category it matches
 categories:
   - title: 🚀 New features and improvements
     labels:
@@ -11,15 +12,36 @@ categories:
   - title: 📡 Protocol changes
     labels:
       - protocol
+  - title: 🔋 Power saving
+    labels:
+      - power-saving
   - title: 🐛 Bug Fixes
     labels:
       - bug
   - title: 🎛️ Adjustments
     labels:
       - adjustment
+  - title: 🗑️ Removed
+    labels:
+      - removal
+  - title: 🔍 Debugging and diagnostics
+    labels:
+      - debug
   - title: 🚦 Internal changes
     labels:
       - internal
+      - build
+      - firmware-size
+      - cleanup
+
+version-resolver:
+  minor:
+    labels:
+      - enhancement
+      - hardware
+      - protocol
+      - removal
+  default: patch
 
 exclude-labels:
   - no-changelog
