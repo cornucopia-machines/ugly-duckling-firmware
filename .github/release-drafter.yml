@@ -45,6 +45,8 @@ version-resolver:
 
 exclude-labels:
   - no-changelog
+  # Replaced by a later PR before it was released
+  - superseded
   - duplicate
   - invalid
   - wontfix
