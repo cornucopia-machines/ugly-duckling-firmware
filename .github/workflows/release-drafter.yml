@@ -37,8 +37,17 @@ jobs:
         env:
           # Through the environment, not inlined: PR titles contain quotes and backticks
           DRAFT_ID: ${{ steps.drafter.outputs.id }}
+          DRAFT_TAG: ${{ steps.drafter.outputs.tag_name }}
+          DRAFT_NAME: ${{ steps.drafter.outputs.name }}
           DRAFT_BODY: ${{ steps.drafter.outputs.body }}
         run: |
+          # Updating a draft without its tag_name replaces the tag with "untagged-<hash>", and
+          # publishing then creates that tag (it happened to 0.52.0)
+          if [ -z "$DRAFT_ID" ] || [ -z "$DRAFT_TAG" ] || [ -z "$DRAFT_NAME" ]; then
+            echo "::error::Release Drafter didn't report the draft's id, tag and name"
+            exit 1
+          fi
           { cat "$RUNNER_TEMP/summary.md"; printf '\n%s\n' "$DRAFT_BODY"; } > "$RUNNER_TEMP/body.md"
-          gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/$DRAFT_ID" -F "body=@$RUNNER_TEMP/body.md" --silent
+          gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/$DRAFT_ID" \
+            -f "tag_name=$DRAFT_TAG" -f "name=$DRAFT_NAME" -F "body=@$RUNNER_TEMP/body.md" --silent
           echo "Kept the summary in draft $DRAFT_ID"

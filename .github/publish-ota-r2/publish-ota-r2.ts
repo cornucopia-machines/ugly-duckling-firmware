@@ -132,6 +132,12 @@ function isSnapshot(version: string): boolean {
   return /-g[0-9a-f]+$/.test(version);
 }
 
+// A release ("1.2.3") or a snapshot `git describe` made from one ("1.2.3-4-ga728583"). Anything
+// else, e.g. a release published as "untagged-<hash>", must not reach devices.
+function isValidVersion(version: string): boolean {
+  return /^\d+\.\d+\.\d+(-\d+-g[0-9a-f]+)?$/.test(version);
+}
+
 function getChannel(version: string): Channel {
   return isSnapshot(version) ? "snapshots" : "releases";
 }
@@ -454,6 +460,12 @@ async function main() {
   const version =
     config.versionOverride || gitDescribe(config.repoRoot, commitSha);
   console.log(`Version: ${version}`);
+  if (!isValidVersion(version)) {
+    console.error(
+      `ERROR: '${version}' is not a release (1.2.3) or snapshot (1.2.3-4-gabc1234) version`,
+    );
+    process.exit(1);
+  }
 
   // Determine channel
   const channel = getChannel(version);
@@ -482,6 +494,16 @@ async function main() {
     channel,
   );
   console.log(`Existing builds in ${channel}: ${allManifests.length}`);
+
+  // Drop builds published under an invalid version before the check above existed
+  for (let i = allManifests.length - 1; i >= 0; i--) {
+    const invalid = allManifests[i].version;
+    if (!isValidVersion(invalid)) {
+      console.log(`Removing build with invalid version ${invalid}`);
+      await deleteVersionFromR2(client, config.r2BucketName, channel, invalid);
+      allManifests.splice(i, 1);
+    }
+  }
 
   // Check if this version already exists
   const existingIndex = allManifests.findIndex((m) => m.version === version);
