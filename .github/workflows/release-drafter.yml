@@ -14,5 +14,31 @@ permissions:
 jobs:
   update_release_draft:
     runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
     steps:
+      # Release Drafter rewrites the whole draft. A summary written by hand on GitHub, between
+      # <!-- summary --> and <!-- /summary -->, is saved here and put back above the generated list.
+      # A draft without one gets a placeholder to fill in.
+      - name: Save the hand-written summary
+        run: |
+          body=$(gh api "repos/$GITHUB_REPOSITORY/releases" --jq '[.[] | select(.draft)][0].body // ""')
+          summary=$(awk '/<!-- summary -->/ { keep = 1 } keep { print } /<!-- \/summary -->/ { exit }' <<<"$body")
+          # Without the closing marker the block would swallow the generated list
+          if ! grep -q '<!-- /summary -->' <<<"$summary"; then
+            summary=$'<!-- summary -->\nRelease summary here\n<!-- /summary -->'
+          fi
+          printf '%s\n' "$summary" > "$RUNNER_TEMP/summary.md"
+
       - uses: release-drafter/release-drafter@v7
+        id: drafter
+
+      - name: Put the summary back
+        env:
+          # Through the environment, not inlined: PR titles contain quotes and backticks
+          DRAFT_ID: ${{ steps.drafter.outputs.id }}
+          DRAFT_BODY: ${{ steps.drafter.outputs.body }}
+        run: |
+          { cat "$RUNNER_TEMP/summary.md"; printf '\n%s\n' "$DRAFT_BODY"; } > "$RUNNER_TEMP/body.md"
+          gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/$DRAFT_ID" -F "body=@$RUNNER_TEMP/body.md" --silent
+          echo "Kept the summary in draft $DRAFT_ID"
